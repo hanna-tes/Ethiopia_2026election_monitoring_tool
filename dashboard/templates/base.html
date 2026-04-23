@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Ethiopia Election Monitor{% endblock %}</title>
+    
+    <!-- Professional CSS Framework -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+    
+    <!-- Chart Libraries -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-gray-50">
+    <!-- Professional Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <img src="{% static 'images/cfa-logo.png' %}" alt="Code for Africa" class="h-12">
+                    <h1 class="ml-4 text-2xl font-bold text-gray-900">
+                        🇪🇹 Ethiopia Election Monitoring Tool
+                    </h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-gray-500">Last updated: {{ last_update_time }}</span>
+                    <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        Refresh Data
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Professional Navigation -->
+            <nav class="flex space-x-1 overflow-x-auto py-2">
+                {% for tab in tabs %}
+                <a href="{% url tab.url_name %}" 
+                   class="px-4 py-2 text-sm font-medium rounded-lg transition-colors {% if active_tab == tab.name %}bg-blue-100 text-blue-700{% else %}text-gray-700 hover:bg-gray-100{% endif %}">
+                    {{ tab.icon }} {{ tab.name }}
+                </a>
+                {% endfor %}
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Professional Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div class="flex justify-between items-center">
+                <p class="text-sm text-gray-500">
+                    Ethiopia Election Monitoring Dashboard • Code for Africa
+                </p>
+                <div class="flex space-x-4">
+                    <a href="#" class="text-sm text-gray-500 hover:text-gray-700">Documentation</a>
+                    <a href="#" class="text-sm text-gray-500 hover:text-gray-700">API</a>
+                    <a href="#" class="text-sm text-gray-500 hover:text-gray-700">Support</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{% static 'js/dashboard.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
