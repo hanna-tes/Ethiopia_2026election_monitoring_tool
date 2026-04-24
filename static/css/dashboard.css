@@ -1,139 +1,33 @@
-/* Modern Dashboard Styling */
 :root {
   --primary-blue: #3b82f6;
-  --primary-hover: #2563eb;
   --success-green: #10b981;
   --warning-orange: #f59e0b;
   --error-red: #ef4444;
-  --critical-red: #dc2626;
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8fafc;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --border-color: #e2e8f0;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
 
-/* Card Components */
 .metric-card {
-  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-all hover:shadow-md hover:border-blue-200;
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-all hover:shadow-md;
 }
 
-.metric-value {
-  @apply text-3xl font-bold text-gray-900;
-}
+.metric-value { @apply text-3xl font-bold text-gray-900; }
+.metric-label { @apply text-sm text-gray-500 mt-1; }
 
-.metric-label {
-  @apply text-sm text-gray-500 mt-1;
-}
-
-/* Narrative Cards */
 .narrative-card {
-  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4 transition-all hover:shadow-md hover:border-blue-200;
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4 transition-all hover:shadow-md;
 }
 
-.narrative-header {
-  @apply flex justify-between items-start mb-3;
-}
-
-.narrative-theme {
-  @apply text-lg font-semibold text-gray-900;
-}
-
-.narrative-meta {
-  @apply flex space-x-4 text-sm text-gray-500;
-}
-
-/* PEP Cards */
 .pep-card {
   @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-3 transition-all hover:shadow-md;
 }
 
-.pep-header {
-  @apply flex justify-between items-center mb-2;
-}
-
-.pep-name {
-  @apply font-semibold text-gray-900;
-}
-
-.pep-title {
-  @apply text-sm text-gray-500;
-}
-
-/* Network Visualization */
-.network-container {
-  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4;
-}
-
-.network-node {
-  @apply cursor-pointer transition-all hover:scale-110;
-}
-
-.network-node.critical {
-  @apply text-red-600 font-bold;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .metric-card {
-    @apply p-4;
-  }
-  
-  .metric-value {
-    @apply text-2xl;
-  }
-  
-  .narrative-header {
-    @apply flex-col items-start;
-  }
-  
-  .narrative-meta {
-    @apply mt-2 space-y-1;
-  }
-}
-
-/* Dark Mode Support */
 @media (prefers-color-scheme: dark) {
   :root {
     --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
     --text-primary: #f8fafc;
     --text-secondary: #cbd5e1;
-    --border-color: #475569;
   }
-  
   .metric-card, .narrative-card, .pep-card {
     @apply bg-gray-800 border-gray-700;
   }
-  
-  .metric-value, .narrative-theme, .pep-name {
-    @apply text-white;
-  }
-  
-  .metric-label, .narrative-meta, .pep-title {
-    @apply text-gray-400;
-  }
-}
-
-/* Utility Classes */
-.text-muted { @apply text-gray-500; }
-.text-success { @apply text-green-600; }
-.text-warning { @apply text-orange-600; }
-.text-error { @apply text-red-600; }
-.text-critical { @apply text-red-700 font-semibold; }
-
-.border-light { @apply border border-gray-200 rounded-lg; }
-.bg-card { @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6; }
-
-/* Animation */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
+  .metric-value, .narrative-theme, .pep-name { @apply text-white; }
 }
