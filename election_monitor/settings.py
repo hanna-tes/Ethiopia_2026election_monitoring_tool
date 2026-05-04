@@ -1,31 +1,19 @@
 """
 Django settings for Ethiopia Election Monitor project.
 """
-import os
 from pathlib import Path
-import environ  # ← MUST BE IMPORTED
+import os
 
-# Build paths
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Initialize environment variables ← MUST BE BEFORE using env()
-env = environ.Env(
-    DEBUG=(bool, True),
-    SECRET_KEY=(str, 'django-insecure-change-this'),
-)
-# Read .env file (optional but recommended)
-environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = 'django-insecure-change-this-in-production'
 
-# SECURITY - NOW env is defined, so this works:
-SECRET_KEY = env('SECRET_KEY')
-DEBUG = env('DEBUG')
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = True
 
-ALLOWED_HOSTS = [
-    'localhost',
-    '127.0.0.1',
-    '0.0.0.0',          # ← for local development
-    '63.33.41.232',     # ← EC2 IP for production
-]
+ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '0.0.0.0', '63.33.41.232']
 
 # Application definition
 INSTALLED_APPS = [
@@ -36,19 +24,19 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
-    # Third-party
+    # Third-party apps
     'rest_framework',
     'corsheaders',
     
-    # Local
+    # Local apps
     'dashboard',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # Should be high up
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -76,7 +64,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'election_monitor.wsgi.application'
 
-# Database (SQLite for simplicity - switch to PostgreSQL later if needed)
+# Database
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -84,47 +72,33 @@ DATABASES = {
     }
 }
 
-# Password validation, Internationalization, etc. (keep defaults)
+# Password validation
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
 
-# Static files
+# Internationalization
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE = 'Africa/Addis_Ababa'
+USE_I18N = True
+USE_TZ = True
+
+# Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
-# REST Framework (no auth for now)
+# Default primary key field type
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': [],
 }
 
-# CORS (development)
-if DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
-else:
-    CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
-        f'http://{ALLOWED_HOSTS[0]}:8505',
-    ])
-
-# Groq API
-GROQ_API_KEY = env('GROQ_API_KEY', default='')
-GROQ_MODEL = env('GROQ_MODEL', default='meta-llama/llama-4-scout-17b-16e-instruct')
-
-# Data source URLs
-MELTWATER_URL = env('MELTWATER_URL', default='')
-CIVICSIGNALS_URL = env('CIVICSIGNALS_URL', default='')
-TIKTOK_URL = env('TIKTOK_URL', default='')
-OPENMEASURES_URL = env('OPENMEASURES_URL', default='')
-ORIGINAL_POSTS_URL = env('ORIGINAL_POSTS_URL', default='')
-PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
-
-# Ethiopia timezone
-TIME_ZONE = 'Africa/Addis_Ababa'
-USE_TZ = True
-
-# File uploads
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-
-# Allow CSV uploads
-FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+# CORS (Allow all origins for development)
+CORS_ALLOW_ALL_ORIGINS = True
