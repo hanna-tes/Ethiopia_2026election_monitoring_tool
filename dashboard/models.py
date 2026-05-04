@@ -112,7 +112,46 @@ class NarrativeCluster(models.Model):
     
     def __str__(self):
         return f"Cluster {self.cluster_id} - {self.theme}"
-
+        
+class DataUpload(models.Model):
+    """Tracks user CSV uploads for processing"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+    ]
+    
+    uploaded_file = models.FileField(upload_to='uploads/%Y/%m/%d/')
+    original_filename = models.CharField(max_length=255)
+    uploaded_by = models.CharField(max_length=255, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    
+    # Processing metadata
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    processing_log = models.TextField(blank=True)  # Errors, warnings, progress
+    records_processed = models.IntegerField(default=0)
+    records_failed = models.IntegerField(default=0)
+    
+    # Data type
+    data_type = models.CharField(
+        max_length=50,
+        choices=[
+            ('meltwater', 'Meltwater/X'),
+            ('civicsignal', 'Civicsignal/Media'),
+            ('tiktok', 'TikTok'),
+            ('openmeasure', 'OpenMeasure/Telegram'),
+            ('custom', 'Custom Format'),
+        ],
+        default='custom'
+    )
+    
+    class Meta:
+        ordering = ['-uploaded_at']
+    
+    def __str__(self):
+        return f"{self.original_filename} ({self.status})"
+        
 
 class LexiconTerm(models.Model):
     """Your Ethiopia hate speech lexicon (for reference + scanning)"""
