@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.postgres.fields import ArrayField
 from django.utils import timezone
 
 
@@ -47,18 +46,14 @@ class ProcessedPost(models.Model):
     
     # Election-specific
     is_election_related = models.BooleanField(default=False)
-    election_keywords_matched = ArrayField(
-        models.CharField(max_length=100), 
-        blank=True, 
-        default=list
-    )
+    election_keywords_matched = models.JSONField(default=list, blank=True)
+    hashtags = models.JSONField(default=list, blank=True)
     
     # TikTok-specific fields (if applicable)
     play_count = models.BigIntegerField(null=True, blank=True)
     digg_count = models.BigIntegerField(null=True, blank=True)
     comment_count = models.BigIntegerField(null=True, blank=True)
     share_count = models.BigIntegerField(null=True, blank=True)
-    hashtags = ArrayField(models.CharField(max_length=100), blank=True, default=list)
     text_language = models.CharField(max_length=10, blank=True)
     
     # Lexicon analysis
