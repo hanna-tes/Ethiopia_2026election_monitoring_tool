@@ -16,7 +16,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-<<<<<<< Updated upstream
+
 # SECURITY
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
@@ -27,7 +27,7 @@ ALLOWED_HOSTS = [
     '0.0.0.0',          # ← for local development
     '63.33.41.232',     # ← EC2 IP for production
 ]
-=======
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
@@ -39,7 +39,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
->>>>>>> Stashed changes
 
 # Application definition
 
