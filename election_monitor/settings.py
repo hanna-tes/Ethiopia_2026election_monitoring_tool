@@ -128,11 +128,6 @@ MEDIA_ROOT = BASE_DIR / 'media'
 FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
 
-# In INSTALLED_APPS, ensure:
-INSTALLED_APPS = [
-    # ... existing apps ...
-    'dashboard',
-]
 
 # For serving media in development
 if DEBUG:
