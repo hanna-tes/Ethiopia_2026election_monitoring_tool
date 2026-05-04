@@ -1,24 +1,59 @@
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
+from django.utils import timezone
 
 
-class Post(models.Model):
-    """Social media post - election-focused"""
-    account_id = models.CharField(max_length=255, db_index=True)
+class DataSource(models.Model):
+    """Metadata about uploaded data sources"""
+    name = models.CharField(max_length=100, unique=True)  # e.g., "Meltwater_Ethiopia_Apr2026"
+    description = models.TextField(blank=True)
+    uploaded_by = models.CharField(max_length=255, blank=True)  # username or "system"
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    file_path = models.CharField(max_length=500, blank=True)  # if stored locally
+    source_url = models.URLField(blank=True, null=True)  # if from GitHub
+    record_count = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['-uploaded_at']
+    
+    def __str__(self):
+        return f"{self.name} ({self.record_count} records)"
+
+
+class ProcessedPost(models.Model):
+    """
+    STORES PROCESSED/MERGED DATA (output of combine_social_media_data + preprocessing)
+    This is what your dashboard queries - NOT raw CSV data
+    """
+    # Core identifiers
     content_id = models.CharField(max_length=255, unique=True, db_index=True)
-    object_id = models.TextField()
+    account_id = models.CharField(max_length=255, db_index=True)
+    
+    # Content
+    object_id = models.TextField()  # Raw post text
+    original_text = models.TextField()  # Cleaned text for analysis (after extract_original_text)
+    
+    # Metadata
     url = models.URLField(blank=True, null=True)
     timestamp_share = models.DateTimeField(db_index=True)
-    platform = models.CharField(max_length=50, db_index=True)
-    source_dataset = models.CharField(max_length=100, db_index=True)
-    original_text = models.TextField()
-    sentiment = models.CharField(max_length=20, blank=True, null=True)
-    cluster = models.IntegerField(default=-1, db_index=True)
+    platform = models.CharField(max_length=50, db_index=True)  # X, Telegram, TikTok, Media
+    source_dataset = models.ForeignKey(DataSource, on_delete=models.SET_NULL, null=True, db_index=True)
+    
+    # Preprocessing flags
+    is_original_post = models.BooleanField(default=True)  # After is_original_post() filter
+    sentiment = models.CharField(max_length=20, blank=True, null=True)  # Negative, Neutral
+    cluster = models.IntegerField(default=-1, db_index=True)  # After DBSCAN clustering
     
     # Election-specific
     is_election_related = models.BooleanField(default=False)
+    election_keywords_matched = ArrayField(
+        models.CharField(max_length=100), 
+        blank=True, 
+        default=list
+    )
     
-    # TikTok-specific
+    # TikTok-specific fields (if applicable)
     play_count = models.BigIntegerField(null=True, blank=True)
     digg_count = models.BigIntegerField(null=True, blank=True)
     comment_count = models.BigIntegerField(null=True, blank=True)
@@ -26,17 +61,61 @@ class Post(models.Model):
     hashtags = ArrayField(models.CharField(max_length=100), blank=True, default=list)
     text_language = models.CharField(max_length=10, blank=True)
     
+    # Lexicon analysis
+    lexicon_matches = models.JSONField(default=list, blank=True)  # [{term, category, severity}, ...]
+    risk_score = models.FloatField(default=0.0)
+    risk_level = models.CharField(
+        max_length=20,
+        choices=[('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')],
+        default='low'
+    )
+    
+    # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
+        indexes = [
+            models.Index(fields=['timestamp_share']),
+            models.Index(fields=['platform', 'timestamp_share']),
+            models.Index(fields=['cluster', 'timestamp_share']),
+            models.Index(fields=['is_election_related', 'timestamp_share']),
+            models.Index(fields=['risk_level', 'timestamp_share']),
+        ]
         ordering = ['-timestamp_share']
     
     def __str__(self):
-        return f"{self.platform} - {self.account_id[:30]}"
+        return f"{self.platform} - {self.account_id[:30]} - {self.timestamp_share.strftime('%Y-%m-%d')}"
+
+
+class NarrativeCluster(models.Model):
+    """Stores LLM-generated narrative summaries"""
+    cluster_id = models.IntegerField(unique=True, db_index=True)
+    theme = models.CharField(max_length=255)
+    llm_summary = models.TextField()  # Output from summarize_cluster_ethiopia()
+    total_reach = models.IntegerField(default=0)
+    virality_tier = models.CharField(
+        max_length=50,
+        choices=[
+            ('Tier 1: Limited', 'Tier 1: Limited'),
+            ('Tier 2: Moderate', 'Tier 2: Moderate'),
+            ('Tier 3: High Spread', 'Tier 3: High Spread'),
+            ('Tier 4: Viral Emergency', 'Tier 4: Viral Emergency')
+        ]
+    )
+    first_detected = models.DateTimeField()
+    last_updated = models.DateTimeField(auto_now=True)
+    is_election_related = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['-total_reach']
+    
+    def __str__(self):
+        return f"Cluster {self.cluster_id} - {self.theme}"
 
 
 class LexiconTerm(models.Model):
-    """Hate speech lexicon - election-focused"""
+    """Your Ethiopia hate speech lexicon (for reference + scanning)"""
     term = models.CharField(max_length=255, unique=True)
     category = models.CharField(max_length=100, db_index=True)
     severity = models.CharField(
@@ -54,30 +133,3 @@ class LexiconTerm(models.Model):
     
     def __str__(self):
         return f"{self.term} ({self.severity})"
-
-
-class PEP(models.Model):
-    """Political Exposed Person - election-focused"""
-    name = models.CharField(max_length=255, unique=True)
-    title = models.CharField(max_length=255, blank=True)
-    affiliation = models.CharField(max_length=255, blank=True)
-    ethnic_group = models.CharField(max_length=100, blank=True)
-    
-    # Social media
-    x_link = models.URLField(blank=True, null=True)
-    x_verified = models.BooleanField(default=False)
-    facebook_link = models.URLField(blank=True, null=True)
-    facebook_verified = models.BooleanField(default=False)
-    confidence_level = models.CharField(
-        max_length=20,
-        choices=[('high', 'High'), ('medium', 'Medium'), ('low', 'Low'), ('uncertain', 'Uncertain')],
-        blank=True
-    )
-    
-    is_active = models.BooleanField(default=True)
-    
-    class Meta:
-        ordering = ['name']
-    
-    def __str__(self):
-        return f"{self.name} - {self.title}"
