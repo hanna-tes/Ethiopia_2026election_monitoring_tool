@@ -113,3 +113,22 @@ PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
 # Ethiopia timezone
 TIME_ZONE = 'Africa/Addis_Ababa'
 USE_TZ = True
+
+# File uploads
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Allow CSV uploads
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+
+# In INSTALLED_APPS, ensure:
+INSTALLED_APPS = [
+    # ... existing apps ...
+    'dashboard',
+]
+
+# For serving media in development
+if DEBUG:
+    from django.conf.urls.static import static
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
