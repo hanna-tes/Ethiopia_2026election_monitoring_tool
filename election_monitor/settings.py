@@ -3,19 +3,20 @@ Django settings for Ethiopia Election Monitor project.
 """
 import os
 from pathlib import Path
-import environ
+import environ  # ← MUST BE IMPORTED
 
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Initialize environment variables
+# Initialize environment variables ← MUST BE BEFORE using env()
 env = environ.Env(
     DEBUG=(bool, True),
     SECRET_KEY=(str, 'django-insecure-change-this'),
 )
+# Read .env file (optional but recommended)
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
-# SECURITY
+# SECURITY - NOW env is defined, so this works:
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 
