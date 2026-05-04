@@ -96,6 +96,7 @@ DATABASES = {
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
+<<<<<<< HEAD
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -133,3 +134,42 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+=======
+# REST Framework (no auth for now)
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': [],
+}
+
+# CORS (development)
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
+        f'http://{ALLOWED_HOSTS[0]}:8505',
+    ])
+
+# Groq API
+GROQ_API_KEY = env('GROQ_API_KEY', default='')
+GROQ_MODEL = env('GROQ_MODEL', default='meta-llama/llama-4-scout-17b-16e-instruct')
+
+# Data source URLs
+MELTWATER_URL = env('MELTWATER_URL', default='')
+CIVICSIGNALS_URL = env('CIVICSIGNALS_URL', default='')
+TIKTOK_URL = env('TIKTOK_URL', default='')
+OPENMEASURES_URL = env('OPENMEASURES_URL', default='')
+ORIGINAL_POSTS_URL = env('ORIGINAL_POSTS_URL', default='')
+PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
+
+# Ethiopia timezone
+TIME_ZONE = 'Africa/Addis_Ababa'
+USE_TZ = True
+
+# File uploads
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Allow CSV uploads
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+>>>>>>> 7218f2c7210c53725a875ad17c847b356ba80009
