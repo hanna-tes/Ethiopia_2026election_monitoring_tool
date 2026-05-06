@@ -612,30 +612,22 @@ class HomeView(TemplateView):
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             
             cleaned_accounts = []
-            # List of known non-user values to filter out
             invalid_accounts = ['twitter', 'source', 'source twitter source', 'nan', 'none', '-', '', 'user', 'author', 'account']
 
             for acc in top_accounts_raw:
                 name = str(acc['account_id']) if acc['account_id'] else ''
-                
-                # 1. Remove specific artifacts
                 name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
                 name = re.sub(r'Source Twitter Source\s*', '', name, flags=re.IGNORECASE)
-                name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)  # Remove @mentions with metadata
-                name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)  # Remove pandas dtype info
-                
-                # 2. Clean whitespace
+                name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)
+                name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)
                 name = re.sub(r'\s+', ' ', name).strip()
                 
-                # 3. Filter out invalid accounts (case-insensitive check)
                 if name.lower() in invalid_accounts:
                     continue
                 
-                # 4. Add to list if valid
                 if name and name not in ['-', 'nan', 'None', '']:
                     cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
             
-            # Create chart if we have data
             if cleaned_accounts:
                 import pandas as pd
                 df_accounts = pd.DataFrame(cleaned_accounts)
@@ -653,7 +645,6 @@ class HomeView(TemplateView):
                 )
                 charts['accounts'] = fig_accounts.to_json()
 
-                
             # C. Risk Distribution
             risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
             if risk_dist:
@@ -667,23 +658,8 @@ class HomeView(TemplateView):
                     }
                 )
                 charts['risk'] = fig_risk.to_json()
-
-                         # C. Risk Distribution
-            risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
-            if risk_dist:
-                fig_risk = px.pie(
-                    risk_dist, names='risk_level', values='count',
-                    title='Risk Level Distribution',
-                    color='risk_level',
-                    color_discrete_map={
-                        'low': '#22c55e', 'medium': '#eab308', 
-                        'high': '#f97316', 'critical': '#dc2626'
-                    }
-                )
-                charts['risk'] = fig_risk.to_json()
             
-            # D. Daily Volume Chart (MISSING - ADD THIS)
-            # Group posts by day
+            # D. Daily Volume Chart
             daily_posts = posts.annotate(
                 day=TruncDay('timestamp_share')
             ).values('day').annotate(
@@ -691,9 +667,8 @@ class HomeView(TemplateView):
             ).order_by('day')
             
             if daily_posts:
-                # Convert to list for Plotly
                 daily_data = list(daily_posts)
-                if daily_data:
+                if daily_
                     fig_daily = px.line(
                         daily_data,
                         x='day',
@@ -741,7 +716,6 @@ class HomeView(TemplateView):
         })
         return context
 
-
 class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
     
@@ -769,7 +743,6 @@ class NarrativesView(TemplateView):
         })
         return context
 
-
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
@@ -783,14 +756,14 @@ class LexiconsView(TemplateView):
         all_matches = []
         posts_scanned = 0
         
-        for post in posts[:3000]:
+        for post in posts[:3000]:  # Limit for performance
             if post.original_text:
                 matches = scan_text_for_lexicon_terms(post.original_text)
                 if matches:
                     all_matches.extend(matches)
                     posts_scanned += 1
         
-        # Aggregate
+        # Aggregate analytics
         from collections import Counter
         term_counts = Counter([m['term'] for m in all_matches])
         category_counts = Counter([m['category'] for m in all_matches])
@@ -806,6 +779,43 @@ class LexiconsView(TemplateView):
                     metadata = terms[term]
                     break
             top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
+        
+        # === 🎨 WORD CLOUD (Streamlit-style) ===
+        wordcloud_base64 = None
+        if all_matches:
+            # Prepare frequency data for wordcloud
+            term_freq = {m['term']: term_counts[m['term']] for m in all_matches}
+            if term_freq:
+                try:
+                    wordcloud = generate_trigger_wordcloud(
+                        {'top_terms': [{'term': t, 'count': c} for t, c in term_counts.most_common(50)]},
+                        width=800, height=400
+                    )
+                    if wordcloud:
+                        wordcloud_base64 = wordcloud_to_base64(wordcloud)
+                except Exception as e:
+                    logger.warning(f"Word cloud generation failed: {e}")
+        
+        # === 🎯 TARGETED ENTITIES (Streamlit-style) ===
+        targeted_entities = []
+        if posts.exists():
+            # Entity patterns from your Streamlit app
+            entity_patterns = [
+                r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b',
+                r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b',
+                r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',  # Amharic names
+            ]
+            entities_found = Counter()
+            for post in posts[:1000]:  # Limit for performance
+                if post.original_text:
+                    for pattern in entity_patterns:
+                        matches = re.findall(pattern, post.original_text, re.IGNORECASE)
+                        for match in matches:
+                            # Handle tuple returns from regex
+                            entity = match[0] if isinstance(match, tuple) else match
+                            if len(entity.strip()) >= 3:
+                                entities_found[entity.strip()] += 1
+            targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
         
         context.update({
             'active_tab': 'lexicons',
@@ -823,6 +833,9 @@ class LexiconsView(TemplateView):
             'total_matches': len(all_matches),
             'posts_scanned': posts_scanned,
             'total_posts': total_posts,
+            # NEW: Streamlit-style additions
+            'wordcloud_base64': wordcloud_base64,
+            'targeted_entities': targeted_entities,
         })
         return context
         
