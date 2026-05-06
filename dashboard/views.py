@@ -486,7 +486,7 @@ class PEPsView(TemplateView):
 
 
 class NetworksView(TemplateView):
-    """Networks & TTPs - Coordination patterns in election discourse"""
+    """Networks & TTPs - Coordination patterns with interactive visualization"""
     template_name = 'dashboard/networks.html'
     
     def get_context_data(self, **kwargs):
@@ -498,7 +498,7 @@ class NetworksView(TemplateView):
         coordination = posts.values('original_text').annotate(
             account_count=Count('account_id', distinct=True),
             post_count=Count('id')
-        ).filter(account_count__gte=3).order_by('-account_count')[:10]
+        ).filter(account_count__gte=3).order_by('-account_count')[:20]
         
         # Calculate stats
         total_accounts = posts.values('account_id').distinct().count()
@@ -508,6 +508,7 @@ class NetworksView(TemplateView):
         # === GENERATE NETWORK GRAPH DATA ===
         import networkx as nx
         import random
+        from django.utils import timezone
         
         G = nx.Graph()
         
@@ -527,39 +528,81 @@ class NetworksView(TemplateView):
         
         # Generate layout if graph has edges
         coordination_data_json = '{"nodes": [], "edges": []}'
+        coordination_groups_list = []
+        
         if G.number_of_edges() > 0:
             # Get positions using spring layout
-            pos = nx.spring_layout(G, k=1, iterations=50)
+            pos = nx.spring_layout(G, k=1, iterations=50, seed=42)
             
             # Prepare node data
             nodes = []
             for node in G.nodes():
                 degree = G.degree(node)
                 if degree >= 2:  # Only show nodes with 2+ connections
+                    # Get platform distribution for this account
+                    node_posts = posts.filter(account_id=node)
+                    platforms = node_posts.values_list('platform', flat=True)
+                    platform_mode = max(set(platforms), key=platforms.count) if platforms else 'Unknown'
+                    
                     nodes.append({
-                        'id': node,
-                        'label': str(node)[:30],  # Truncate long names
+                        'id': str(node)[:50],
+                        'label': str(node)[:30],
                         'degree': degree,
+                        'post_count': node_posts.count(),
+                        'platform': platform_mode,
                         'x': float(pos[node][0]),
                         'y': float(pos[node][1]),
-                        'color': f'hsl({random.randint(0, 360)}, 70%, 60%)'  # Random color
+                        'color': self._get_platform_color(platform_mode)
                     })
             
             # Prepare edge data
             edges = []
             for u, v, data in G.edges(data=True):
                 if u in pos and v in pos:
+                    # Get sample posts for this edge
+                    shared_texts = posts.filter(
+                        account_id__in=[u, v]
+                    ).values('original_text').annotate(
+                        count=Count('id')
+                    ).filter(count__gte=2)
+                    
                     edges.append({
-                        'source': u,
-                        'target': v,
+                        'source': str(u)[:50],
+                        'target': str(v)[:50],
                         'weight': data.get('weight', 1),
                         'source_x': float(pos[u][0]),
                         'source_y': float(pos[u][1]),
                         'target_x': float(pos[v][0]),
-                        'target_y': float(pos[v][1])
+                        'target_y': float(pos[v][1]),
+                        'shared_messages': len(shared_texts)
                     })
             
             coordination_data_json = json.dumps({'nodes': nodes, 'edges': edges})
+            
+            # Prepare coordination groups with sample posts
+            for idx, group in enumerate(coordination[:10]):
+                text = group['original_text']
+                accounts = list(posts.filter(original_text=text).values_list('account_id', flat=True).distinct()[:10])
+                sample_posts = posts.filter(original_text=text)[:5]
+                
+                coordination_groups_list.append({
+                    'id': idx + 1,
+                    'accounts': accounts,
+                    'account_count': group['account_count'],
+                    'post_count': group['post_count'],
+                    'text_sample': text[:200] if text else '[Identical message]',
+                    'platforms': list(posts.filter(original_text=text).values_list('platform', flat=True).distinct()),
+                    'sample_posts': [
+                        {
+                            'account_id': str(p.account_id)[:50],
+                            'platform': p.platform,
+                            'url': p.url,
+                            'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'N/A',
+                            'text': p.original_text[:150]
+                        }
+                        for p in sample_posts
+                    ]
+                })
         
         context.update({
             'active_tab': 'networks',
@@ -572,14 +615,29 @@ class NetworksView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'coordination_groups': coordination,
+            'coordination_groups': coordination_groups_list,
             'coordination_data_json': coordination_data_json,
             'total_coordinated': coordination.count(),
             'total_accounts': total_accounts,
             'total_posts': total_posts_count,
             'avg_accounts': avg_accounts,
+            'max_connections': max([G.degree(n) for n in G.nodes()]) if G.nodes() else 0,
         })
         return context
+    
+    def _get_platform_color(self, platform):
+        """Get color hex code for platform"""
+        colors = {
+            'X': '#1DA1F2',
+            'Twitter': '#1DA1F2',
+            'Facebook': '#1877F2',
+            'TikTok': '#000000',
+            'Telegram': '#0088cc',
+            'Media': '#6B7280',
+            'News': '#6B7280',
+            'Unknown': '#9CA3AF'
+        }
+        return colors.get(platform, '#9CA3AF')
         
 
 class LexiconManagementView(TemplateView):
