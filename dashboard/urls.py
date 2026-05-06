@@ -13,4 +13,5 @@ urlpatterns = [
     # Upload URLs
     path('upload/', views.UploadDataView.as_view(), name='upload_data'),
     path('upload/process/', views.ProcessUploadView.as_view(), name='process_upload'),
+    path('upload/clear/', views.ClearDataView.as_view(), name='clear_data'),
 ]
