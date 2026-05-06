@@ -1,129 +1,246 @@
 {% extends 'dashboard/base.html' %}
 {% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
 
+{% block extra_head %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+    .network-container { position: relative; height: 600px; background: #f8fafc; border-radius: 12px; }
+    .coordination-card { transition: all 0.3s ease; }
+    .coordination-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); }
+    .platform-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; margin: 0.125rem; }
+    .platform-x { background: #1DA1F2; color: white; }
+    .platform-facebook { background: #1877F2; color: white; }
+    .platform-tiktok { background: #000000; color: white; }
+    .platform-telegram { background: #0088cc; color: white; }
+    .platform-media { background: #6B7280; color: white; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+    <!-- Header -->
     <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-bold text-gray-900">🕸️ Networks & Coordination</h2>
-        <span class="text-sm text-gray-500">{{ total_coordinated|default:0 }} coordinated groups</span>
+        <div>
+            <h2 class="text-2xl font-bold text-gray-900">🕸️ Networks & Coordination Intelligence</h2>
+            <p class="text-gray-600 mt-1">Detecting accounts sharing identical messages across platforms</p>
+        </div>
+        <span class="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg font-semibold">
+            {{ total_coordinated }} Coordinated Groups
+        </span>
     </div>
     
     {% if coordination_groups %}
     <!-- Stats Overview -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div class="bg-purple-50 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-purple-800">{{ total_coordinated }}</div>
-            <div class="text-xs text-purple-600">Coordinated Groups</div>
+        <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
+            <div class="text-3xl font-bold text-purple-800">{{ total_coordinated }}</div>
+            <div class="text-xs text-purple-600 mt-1">Coordinated Groups</div>
         </div>
-        <div class="bg-blue-50 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-blue-800">{{ total_accounts }}</div>
-            <div class="text-xs text-blue-600">Unique Accounts</div>
+        <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+            <div class="text-3xl font-bold text-blue-800">{{ total_accounts }}</div>
+            <div class="text-xs text-blue-600 mt-1">Unique Accounts</div>
         </div>
-        <div class="bg-green-50 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-green-800">{{ total_posts }}</div>
-            <div class="text-xs text-green-600">Total Posts</div>
+        <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
+            <div class="text-3xl font-bold text-green-800">{{ total_posts }}</div>
+            <div class="text-xs text-green-600 mt-1">Total Posts</div>
         </div>
-        <div class="bg-orange-50 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-orange-800">{{ avg_accounts }}</div>
-            <div class="text-xs text-orange-600">Avg Accounts/Group</div>
+        <div class="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
+            <div class="text-3xl font-bold text-orange-800">{{ max_connections }}</div>
+            <div class="text-xs text-orange-600 mt-1">Max Connections</div>
         </div>
     </div>
     
     <!-- Interactive Network Graph -->
     <div class="mb-8">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">🕸️ Coordination Network Visualization</h3>
-        <div id="network-graph" class="w-full h-96 border border-gray-200 rounded-lg"></div>
-        <p class="text-sm text-gray-500 mt-2">Nodes = Accounts | Edges = Shared identical messages | Size = Influence</p>
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold text-gray-800">🕸️ Coordination Network Visualization</h3>
+            <div class="flex gap-2">
+                <select id="layoutSelect" class="px-3 py-1 border border-gray-300 rounded-lg text-sm" onchange="updateLayout()">
+                    <option value="spring">Spring Layout</option>
+                    <option value="circular">Circular Layout</option>
+                    <option value="kamada">Kamada-Kawai</option>
+                </select>
+                <input type="range" id="minConnections" min="1" max="10" value="2" class="w-32" oninput="updateNetwork()" title="Minimum connections">
+                <span class="text-sm text-gray-600">Min Connections</span>
+            </div>
+        </div>
+        <div id="network-graph" class="network-container border border-gray-200 rounded-lg"></div>
+        <p class="text-sm text-gray-500 mt-2 text-center">
+            🎯 <strong>Nodes</strong> = Accounts (size = influence) | 
+            🔗 <strong>Edges</strong> = Shared identical messages (thickness = strength) | 
+            🎨 <strong>Colors</strong> = Platform
+        </p>
     </div>
     
-    <!-- Coordination Groups Table -->
-    <div class="overflow-x-auto">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">📋 Coordination Groups</h3>
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Accounts</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Posts</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sample Text</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200">
-                {% for group in coordination_groups %}
-                <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-sm font-medium text-gray-900">#{{ forloop.counter }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-700">{{ group.account_count }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-700">{{ group.post_count }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600 max-w-md truncate">
-                        {{ group.text_sample|default:"[Identical message]"|truncatechars:50 }}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <!-- Coordination Groups -->
+    <div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">📋 Detected Coordination Groups</h3>
+        <div class="space-y-4">
+            {% for group in coordination_groups %}
+            <div class="coordination-card bg-white border border-gray-200 rounded-xl p-5 hover:border-blue-300 transition-all">
+                <!-- Group Header -->
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-blue-100 text-blue-800 w-10 h-10 rounded-full flex items-center justify-center font-bold">
+                            {{ group.id }}
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-900">Coordination Group #{{ group.id }}</h4>
+                            <div class="flex items-center gap-4 text-sm text-gray-600 mt-1">
+                                <span>👥 {{ group.account_count }} accounts</span>
+                                <span>📝 {{ group.post_count }} identical posts</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        {% for platform in group.platforms %}
+                        <span class="platform-badge platform-{{ platform|lower }}">{{ platform }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <!-- Sample Text -->
+                <div class="bg-gray-50 rounded-lg p-3 mb-3">
+                    <p class="text-sm text-gray-700 italic">"{{ group.text_sample }}..."</p>
+                </div>
+                
+                <!-- Accounts -->
+                <div class="mb-3">
+                    <p class="text-xs text-gray-500 mb-1"><strong>Accounts involved:</strong></p>
+                    <div class="flex flex-wrap gap-2">
+                        {% for account in group.accounts %}
+                        <span class="px-2 py-1 bg-gray-100 rounded text-xs text-gray-700">{{ account|truncatechars:30 }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <!-- Sample Posts with Links -->
+                <details class="mt-3">
+                    <summary class="cursor-pointer text-blue-600 hover:text-blue-700 font-medium text-sm">
+                        📄 View {{ group.sample_posts|length }} Sample Posts →
+                    </summary>
+                    <div class="mt-3 space-y-2 bg-gray-50 rounded-lg p-3">
+                        {% for post in group.sample_posts %}
+                        <div class="bg-white border border-gray-200 rounded-lg p-3">
+                            <div class="flex justify-between items-start mb-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-medium text-sm text-gray-900">{{ post.account_id|truncatechars:25 }}</span>
+                                    <span class="platform-badge platform-{{ post.platform|lower }}">{{ post.platform }}</span>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ post.timestamp }}</span>
+                            </div>
+                            <p class="text-sm text-gray-700 mb-2">{{ post.text }}</p>
+                            {% if post.url %}
+                            <a href="{{ post.url }}" target="_blank" class="inline-flex items-center text-xs text-blue-600 hover:underline">
+                                🔗 View Original Post
+                            </a>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+            </div>
+            {% endfor %}
+        </div>
     </div>
+    
     {% else %}
     <!-- Empty State -->
-    <div class="text-center py-12">
+    <div class="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
         <div class="text-6xl mb-4">🔍</div>
         <h3 class="text-lg font-semibold text-gray-800 mb-2">No coordination detected yet</h3>
-        <p class="text-gray-500 mb-6">Upload social media data to identify accounts sharing identical messages across platforms.</p>
-        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            📤 Upload Data
+        <p class="text-gray-500 mb-6 max-w-md mx-auto">
+            Upload social media data to identify accounts sharing identical messages across platforms. 
+            Coordination is detected when 3+ accounts post the same content.
+        </p>
+        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+            📤 Upload Data to Analyze
         </a>
     </div>
     {% endif %}
 </div>
 
-<!-- Plotly.js for Network Graph -->
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
-    // Network graph data from Django context
+    // Network graph data from Django
     const coordinationData = {{ coordination_data_json|safe }};
+    let currentLayout = 'spring';
+    let minConnections = 2;
     
-    if (coordinationData && coordinationData.nodes && coordinationData.nodes.length > 0) {
-        // Create network graph
-        const nodeTrace = {
-            x: coordinationData.nodes.map(n => n.x),
-            y: coordinationData.nodes.map(n => n.y),
-            mode: 'markers+text',
-            marker: {
-                size: coordinationData.nodes.map(n => Math.max(10, n.degree * 3)),
-                color: coordinationData.nodes.map(n => n.color || '#636EFA'),
-                line: { width: 2, color: 'white' }
-            },
-            text: coordinationData.nodes.map(n => n.label),
-            textposition: 'top center',
-            hoverinfo: 'text',
-            hovertext: coordinationData.nodes.map(n => `${n.label}<br>Connections: ${n.degree}`),
-            name: 'Accounts'
-        };
+    function updateNetwork() {
+        minConnections = parseInt(document.getElementById('minConnections').value);
+        renderNetwork();
+    }
+    
+    function updateLayout() {
+        currentLayout = document.getElementById('layoutSelect').value;
+        // In a full implementation, you'd recalculate positions here
+        renderNetwork();
+    }
+    
+    function renderNetwork() {
+        if (!coordinationData || !coordinationData.nodes || coordinationData.nodes.length === 0) {
+            document.getElementById('network-graph').innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">No network data available</div>';
+            return;
+        }
         
-        // Create edges
+        // Filter nodes by minimum connections
+        const filteredNodes = coordinationData.nodes.filter(n => n.degree >= minConnections);
+        const filteredEdges = coordinationData.edges.filter(e => 
+            filteredNodes.some(n => n.id === e.source) && 
+            filteredNodes.some(n => n.id === e.target)
+        );
+        
+        // Create edge traces
         const edgeTraces = [];
-        coordinationData.edges.forEach(edge => {
+        filteredEdges.forEach(edge => {
             edgeTraces.push({
                 x: [edge.source_x, edge.target_x, null],
                 y: [edge.source_y, edge.target_y, null],
                 mode: 'lines',
-                line: { width: 1.5, color: 'rgba(150,150,150,0.3)' },
-                hoverinfo: 'none',
+                line: { 
+                    width: Math.max(1, edge.weight * 2), 
+                    color: 'rgba(100, 116, 139, 0.4)' 
+                },
+                hoverinfo: 'text',
+                text: `${edge.weight} shared messages`,
                 showlegend: false
             });
         });
         
+        // Create node trace
+        const nodeTrace = {
+            x: filteredNodes.map(n => n.x),
+            y: filteredNodes.map(n => n.y),
+            mode: 'markers+text',
+            marker: {
+                size: filteredNodes.map(n => Math.max(12, n.degree * 4)),
+                color: filteredNodes.map(n => n.color),
+                line: { width: 2, color: 'white' },
+                opacity: 0.9
+            },
+            text: filteredNodes.map(n => n.label),
+            textposition: 'top center',
+            textfont: { size: 9, color: '#1F2937' },
+            hovertemplate: '<b>%{text}</b><br>Platform: %{customdata[0]}<br>Connections: %{customdata[1]}<br>Posts: %{customdata[2]}<extra></extra>',
+            customdata: filteredNodes.map(n => [n.platform, n.degree, n.post_count]),
+            name: 'Accounts'
+        };
+        
         const layout = {
-            title: 'Account Coordination Network',
+            title: `Coordination Network — ${filteredNodes.length} accounts, ${filteredEdges.length} connections`,
             showlegend: false,
             hovermode: 'closest',
-            margin: { b: 20, l: 5, r: 5, t: 40 },
-            xaxis: { showgrid: false, zeroline: false, showticklabels: false },
-            yaxis: { showgrid: false, zeroline: false, showticklabels: false },
-            plot_bgcolor: 'rgba(240,240,240,0.5)',
-            paper_bgcolor: 'rgba(0,0,0,0)'
+            margin: { b: 20, l: 20, r: 20, t: 60 },
+            xaxis: { showgrid: false, zeroline: false, showticklabels: false, range: [-1.2, 1.2] },
+            yaxis: { showgrid: false, zeroline: false, showticklabels: false, range: [-1.2, 1.2] },
+            plot_bgcolor: 'rgba(248, 250, 252, 0.8)',
+            paper_bgcolor: 'rgba(255, 255, 255, 0.8)'
         };
         
         Plotly.newPlot('network-graph', [...edgeTraces, nodeTrace], layout, {responsive: true});
     }
+    
+    // Initial render
+    document.addEventListener('DOMContentLoaded', renderNetwork);
 </script>
 {% endblock %}
