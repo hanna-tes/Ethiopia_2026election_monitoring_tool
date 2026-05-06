@@ -255,25 +255,36 @@ class HomeView(TemplateView):
             )
             charts['platform'] = fig_platform.to_json()
             
-            # B. Top Accounts (Cleaned Names)
-            # Get raw top accounts
+            # B. Top Accounts
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             
-            # Clean account names - remove metadata, prefixes, etc.
             cleaned_accounts = []
+            # List of known non-user values to filter out
+            invalid_accounts = ['twitter', 'source', 'source twitter source', 'nan', 'none', '-', '', 'user', 'author', 'account']
+
             for acc in top_accounts_raw:
                 name = str(acc['account_id']) if acc['account_id'] else ''
-                # Remove common prefixes/suffixes from Meltwater/Twitter exports
+                
+                # 1. Remove specific artifacts
                 name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
+                name = re.sub(r'Source Twitter Source\s*', '', name, flags=re.IGNORECASE)
                 name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)  # Remove @mentions with metadata
                 name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)  # Remove pandas dtype info
-                name = re.sub(r'\s+', ' ', name).strip()  # Clean extra spaces
-                # Keep only if valid and not placeholder
+                
+                # 2. Clean whitespace
+                name = re.sub(r'\s+', ' ', name).strip()
+                
+                # 3. Filter out invalid accounts (case-insensitive check)
+                if name.lower() in invalid_accounts:
+                    continue
+                
+                # 4. Add to list if valid
                 if name and name not in ['-', 'nan', 'None', '']:
                     cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
             
             # Create chart if we have data
             if cleaned_accounts:
+                import pandas as pd
                 df_accounts = pd.DataFrame(cleaned_accounts)
                 fig_accounts = px.bar(
                     df_accounts, 
@@ -288,7 +299,7 @@ class HomeView(TemplateView):
                     height=400
                 )
                 charts['accounts'] = fig_accounts.to_json()
-            
+                
             # C. Risk Distribution
             risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
             if risk_dist:
