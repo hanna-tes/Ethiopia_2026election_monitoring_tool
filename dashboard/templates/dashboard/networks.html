@@ -1,0 +1,87 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold text-gray-900">🕸️ Networks & Coordination</h2>
+        <span class="text-sm text-gray-500">{{ total_coordinated|default:0 }} coordinated groups</span>
+    </div>
+    
+    {% if coordination_groups %}
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-purple-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-purple-800">{{ total_coordinated }}</div>
+            <div class="text-xs text-purple-600">Coordinated Groups</div>
+        </div>
+        <div class="bg-blue-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-blue-800">{{ total_accounts }}</div>
+            <div class="text-xs text-blue-600">Unique Accounts</div>
+        </div>
+        <div class="bg-green-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-green-800">{{ total_posts }}</div>
+            <div class="text-xs text-green-600">Coordinated Posts</div>
+        </div>
+        <div class="bg-orange-50 rounded-lg p-4 text-center">
+            <div class="text-2xl font-bold text-orange-800">{{ avg_accounts }}</div>
+            <div class="text-xs text-orange-600">Avg Accounts/Group</div>
+        </div>
+    </div>
+    
+    <!-- Coordination Groups Table -->
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Group</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Accounts</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Posts</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Platforms</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sample Text</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+                {% for group in coordination_groups %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-sm font-medium text-gray-900">#{{ forloop.counter }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ group.account_count }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ group.post_count }}</td>
+                    <td class="px-4 py-3 text-sm">
+                        {% if group.platforms %}
+                        <span class="px-2 py-1 bg-gray-100 rounded text-xs">{{ group.platforms|join:", " }}</span>
+                        {% else %}
+                        <span class="text-gray-400">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
+                        {{ group.text_sample|default:"[Identical message]"|truncatechars:40 }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Network Visualization Placeholder -->
+    <div class="mt-8 p-6 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-center">
+        <div class="text-4xl mb-3">🕸️</div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">Interactive Network Graph</h3>
+        <p class="text-gray-500 mb-4">Visualize account coordination patterns with an interactive force-directed graph.</p>
+        <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled>
+            Coming Soon
+        </button>
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="text-center py-12">
+        <div class="text-6xl mb-4">🔍</div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">No coordination detected yet</h3>
+        <p class="text-gray-500 mb-6">Upload social media data to identify accounts sharing identical messages across platforms.</p>
+        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            📤 Upload Data
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
