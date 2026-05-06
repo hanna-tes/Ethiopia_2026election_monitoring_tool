@@ -55,7 +55,7 @@
 </div>
 
 <!-- Charts Section -->
-{% if charts.empty %}
+{% if not charts %}
 <div class="bg-white rounded-xl shadow-sm p-12 text-center border border-gray-200">
     <p class="text-gray-500 text-lg">📊 No data yet. Upload CSV files to generate insights.</p>
     <a href="{% url 'upload_data' %}" class="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload Data</a>
@@ -68,8 +68,14 @@
         <div id="chart-platform" class="w-full h-80"></div>
     </div>
     
-    <!-- Daily Volume -->
+    <!-- Risk Distribution -->
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+        <h3 class="text-lg font-semibold mb-4">⚠️ Risk Level Distribution</h3>
+        <div id="chart-risk" class="w-full h-80"></div>
+    </div>
+    
+    <!-- Daily Volume Chart -->
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100 lg:col-span-2">
         <h3 class="text-lg font-semibold mb-4">📈 Daily Post Volume</h3>
         <div id="chart-daily" class="w-full h-80"></div>
     </div>
@@ -89,10 +95,17 @@
     var platformData = {{ charts.platform|safe }};
     Plotly.newPlot('chart-platform', platformData.data, platformData.layout, {responsive: true});
     {% endif %}
+    
+    {% if charts.risk %}
+    var riskData = {{ charts.risk|safe }};
+    Plotly.newPlot('chart-risk', riskData.data, riskData.layout, {responsive: true});
+    {% endif %}
+    
     {% if charts.daily %}
     var dailyData = {{ charts.daily|safe }};
     Plotly.newPlot('chart-daily', dailyData.data, dailyData.layout, {responsive: true});
     {% endif %}
+    
     {% if charts.accounts %}
     var accountsData = {{ charts.accounts|safe }};
     Plotly.newPlot('chart-accounts', accountsData.data, accountsData.layout, {responsive: true});
