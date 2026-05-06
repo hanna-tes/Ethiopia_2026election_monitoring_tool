@@ -355,17 +355,11 @@ class NarrativesView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get election-related narratives ONLY
-        clusters = NarrativeCluster.objects.filter(
-            is_election_related=True
-        ).order_by('-total_reach')[:10]
+        # Get all narrative clusters
+        clusters = NarrativeCluster.objects.all().order_by('-total_reach')[:10]
         
-        # Get sample posts for each cluster (top 3)
-        for cluster in clusters:
-            cluster.sample_posts = ProcessedPost.objects.filter(
-                cluster=cluster.cluster_id,
-                is_election_related=True
-            ).order_by('-timestamp_share')[:3]
+        # If no clusters, try to get recent posts as a fallback
+        recent_posts_count = ProcessedPost.objects.count()
         
         context.update({
             'active_tab': 'narratives',
@@ -379,9 +373,10 @@ class NarrativesView(TemplateView):
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
             'clusters': clusters,
+            'recent_posts_count': recent_posts_count,
         })
         return context
-
+        
 
 class LexiconsView(TemplateView):
     """Mapped Lexicons - Hate speech terms with temporal analysis"""
@@ -390,12 +385,12 @@ class LexiconsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get election-filtered posts
-        queryset, start_date, end_date = get_election_posts_queryset(self.request)
+        # Get ALL posts (not just date-filtered)
+        posts = ProcessedPost.objects.all()
         
-        # Scan for lexicon matches in election content only
+        # Scan for lexicon matches
         all_matches = []
-        for post in queryset[:1000]:  # Limit for performance
+        for post in posts[:1000]:  # Limit for performance
             matches = scan_text_for_lexicon_terms(post.original_text)
             if matches:
                 all_matches.extend(matches)
@@ -424,11 +419,8 @@ class LexiconsView(TemplateView):
             )} for term, count in top_terms],
             'category_counts': dict(category_counts),
             'total_matches': len(all_matches),
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d'),
         })
         return context
-
 
 class PEPsView(TemplateView):
     """PEPs/PIPs Tracker - Political figures with targeting analysis"""
@@ -681,7 +673,10 @@ class UploadDataView(TemplateView):
 
 class ProcessUploadView(View):
     def post(self, request):
-        # 🔍 DEBUG: Log exactly what we receive
+        import os
+        import uuid
+        from django.utils import timezone
+        
         logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
         logger.info(f"📁 FILES: {list(request.FILES.keys())}")
         
@@ -692,48 +687,63 @@ class ProcessUploadView(View):
         
         results = []
         for uploaded_file in uploaded_files:
-            # Save file temporarily
-            file_path = default_storage.save(f'uploads/{uploaded_file.name}', uploaded_file)
-            full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-            
-            logger.info(f"🔄 Processing: {uploaded_file.name} -> {full_path}")
-            
-            # Create upload record
-            upload = DataUpload.objects.create(
-                uploaded_file=file_path,
-                original_filename=uploaded_file.name,
-                uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
-                data_type=request.POST.get('data_type', 'custom'),
-                status='processing'
-            )
-            
-            # Process the file
-            success, message, count = process_uploaded_csv(
-                full_path, 
-                upload.data_type, 
-                request.POST.get('source_name', 'User Upload')
-            )
-            
-            # Update record
-            upload.status = 'completed' if success else 'failed'
-            upload.processing_log = message
-            upload.records_processed = count if success else 0
-            upload.save()
-            
-            results.append((uploaded_file.name, success, message, count))
-            logger.info(f"{'✅' if success else '❌'} {uploaded_file.name}: {message}")
+            try:
+                # Generate unique filename to avoid conflicts
+                unique_id = uuid.uuid4().hex[:8]
+                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+                original_name = uploaded_file.name
+                name_without_ext = os.path.splitext(original_name)[0]
+                ext = os.path.splitext(original_name)[1]
+                
+                # Create unique filename: originalname_timestamp_uniqueid.ext
+                unique_filename = f"{name_without_ext}_{timestamp}_{unique_id}{ext}"
+                
+                # Save file with unique name
+                file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
+                full_path = os.path.join(settings.MEDIA_ROOT, file_path)
+                
+                logger.info(f"🔄 Processing: {original_name} -> {unique_filename}")
+                
+                # Create upload record
+                upload = DataUpload.objects.create(
+                    uploaded_file=file_path,
+                    original_filename=original_name,  # Keep original name for display
+                    uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
+                    data_type=request.POST.get('data_type', 'custom'),
+                    status='processing'
+                )
+                
+                # Process the file
+                success, message, count = process_uploaded_csv(
+                    full_path, 
+                    upload.data_type, 
+                    request.POST.get('source_name', 'User Upload')
+                )
+                
+                # Update record
+                upload.status = 'completed' if success else 'failed'
+                upload.processing_log = message
+                upload.records_processed = count if success else 0
+                upload.save()
+                
+                results.append((original_name, success, message, count))
+                logger.info(f"{'✅' if success else '❌'} {original_name}: {message}")
+                
+            except Exception as e:
+                logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
+                results.append((uploaded_file.name, False, str(e), 0))
         
         # Show summary in UI
         success_count = sum(1 for _, s, _, _ in results if s)
         if success_count == len(uploaded_files):
-            messages.success(request, f"✅ All {len(uploaded_files)} files processed!")
+            messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully!")
         elif success_count > 0:
             messages.warning(request, f"⚠️ {success_count}/{len(uploaded_files)} succeeded. Check logs for errors.")
         else:
             messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
         
         return redirect('upload_data')
-
+        
 class ClearDataView(View):
     """Clear all uploaded data from database"""
     def post(self, request):
