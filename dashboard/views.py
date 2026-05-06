@@ -513,6 +513,62 @@ class NetworksView(TemplateView):
         total_posts_count = posts.count()
         avg_accounts = round(coordination.aggregate(avg=Count('account_id'))['avg'] or 0, 1)
         
+        # === GENERATE NETWORK GRAPH DATA ===
+        import networkx as nx
+        import random
+        
+        G = nx.Graph()
+        
+        # Build graph from coordination data
+        for group in coordination:
+            text = group['original_text']
+            accounts_with_text = posts.filter(original_text=text).values_list('account_id', flat=True).distinct()
+            
+            # Add edges between all accounts sharing this text
+            accounts_list = list(accounts_with_text)
+            for i in range(len(accounts_list)):
+                for j in range(i+1, len(accounts_list)):
+                    if G.has_edge(accounts_list[i], accounts_list[j]):
+                        G[accounts_list[i]][accounts_list[j]]['weight'] += 1
+                    else:
+                        G.add_edge(accounts_list[i], accounts_list[j], weight=1)
+        
+        # Generate layout if graph has edges
+        coordination_data_json = '{"nodes": [], "edges": []}'
+        if G.number_of_edges() > 0:
+            # Get positions using spring layout
+            pos = nx.spring_layout(G, k=1, iterations=50)
+            
+            # Prepare node data
+            nodes = []
+            for node in G.nodes():
+                degree = G.degree(node)
+                if degree >= 2:  # Only show nodes with 2+ connections
+                    nodes.append({
+                        'id': node,
+                        'label': str(node)[:30],  # Truncate long names
+                        'degree': degree,
+                        'x': float(pos[node][0]),
+                        'y': float(pos[node][1]),
+                        'color': f'hsl({random.randint(0, 360)}, 70%, 60%)'  # Random color
+                    })
+            
+            # Prepare edge data
+            edges = []
+            for u, v, data in G.edges(data=True):
+                if u in pos and v in pos:
+                    edges.append({
+                        'source': u,
+                        'target': v,
+                        'weight': data.get('weight', 1),
+                        'source_x': float(pos[u][0]),
+                        'source_y': float(pos[u][1]),
+                        'target_x': float(pos[v][0]),
+                        'target_y': float(pos[v][1])
+                    })
+            
+            coordination_data_json = json.dumps({'nodes': nodes, 'edges': edges})
+        
         context.update({
             'active_tab': 'networks',
             'tabs': [
@@ -525,13 +581,14 @@ class NetworksView(TemplateView):
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
             'coordination_groups': coordination,
+            'coordination_data_json': coordination_data_json,
             'total_coordinated': coordination.count(),
             'total_accounts': total_accounts,
             'total_posts': total_posts_count,
             'avg_accounts': avg_accounts,
         })
         return context
-
+        
 
 class LexiconManagementView(TemplateView):
     """Lexicon Management - Add/edit hate speech terms"""
