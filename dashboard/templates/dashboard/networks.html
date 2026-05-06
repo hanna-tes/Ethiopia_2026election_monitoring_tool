@@ -145,19 +145,20 @@
     </div>
     
     {% else %}
-    <!-- Empty State -->
-    <div class="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-        <div class="text-6xl mb-4">🔍</div>
-        <h3 class="text-lg font-semibold text-gray-800 mb-2">No coordination detected yet</h3>
-        <p class="text-gray-500 mb-6 max-w-md mx-auto">
-            Upload social media data to identify accounts sharing identical messages across platforms. 
-            Coordination is detected when 3+ accounts post the same content.
-        </p>
-        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
-            📤 Upload Data to Analyze
-        </a>
-    </div>
-    {% endif %}
+<!-- Empty State -->
+<div class="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+    <div class="text-6xl mb-4">🔍</div>
+    <h3 class="text-lg font-semibold text-gray-800 mb-2">No coordination detected yet</h3>
+    <p class="text-gray-500 mb-2">You have <strong>{{ total_posts }}</strong> posts in the database.</p>
+    <p class="text-gray-500 mb-6 max-w-md mx-auto">
+        Coordination is detected when 3+ accounts post identical or near-identical messages.
+        Upload more diverse data or check your uploaded content.
+    </p>
+    <a href="{% url 'upload_data' %}" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+        📤 Upload Data to Analyze
+    </a>
+</div>
+{% endif %}
 </div>
 
 <script>
