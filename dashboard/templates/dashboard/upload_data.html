@@ -46,8 +46,9 @@
         </button>
     </form>
 </div>
+
 <!-- Recent Uploads -->
-<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
     <h3 class="text-lg font-semibold mb-4">📋 Recent Uploads</h3>
     
     {% if recent_uploads %}
@@ -86,4 +87,17 @@
     <p class="text-gray-500 text-sm">No uploads yet. Upload your first CSV file above!</p>
     {% endif %}
 </div>
+
+<!-- Clear Data Section (Added Here) -->
+<div class="bg-red-50 border border-red-200 rounded-xl p-6">
+    <h3 class="text-lg font-semibold text-red-800 mb-2">⚠️ Danger Zone</h3>
+    <p class="text-sm text-red-600 mb-4">Clear all uploaded posts and reset your dashboard data. This action cannot be undone.</p>
+    <form method="post" action="{% url 'clear_data' %}" onsubmit="return confirm('⚠️ Are you SURE you want to delete ALL data? This will empty your database!');">
+        {% csrf_token %}
+        <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm">
+            🗑️ Clear All Data & Reset Dashboard
+        </button>
+    </form>
+</div>
+
 {% endblock %}
