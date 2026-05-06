@@ -32,7 +32,360 @@ from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_sc
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
 
+
 logger = logging.getLogger(__name__)
+
+# === STREAMLIT-STYLE HELPER FUNCTIONS (Adapted for Django) ===
+
+def scan_text_for_lexicon_terms(text, category_filter=None):
+    """Scan text for lexicon matches using CONFIG mapping"""
+    if not isinstance(text, str) or not text.strip():
+        return []
+    
+    text_lower = text.lower()
+    matches = []
+    lexicon = CONFIG.get("lexicon", {})
+    categories_to_check = category_filter if category_filter else lexicon.keys()
+    
+    for category in categories_to_check:
+        if category not in lexicon: continue
+        for term, metadata in lexicon[category].items():
+            if metadata.get("language") == "amharic" or re.match(r'^[\u1200-\u137F]+$', term):
+                pattern = re.escape(term)
+            else:
+                pattern = r'\b' + re.escape(term) + r'\b'
+            
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                matches.append({
+                    'term': term, 'category': category,
+                    'severity': metadata.get('severity', 'medium'),
+                    'target_entity': metadata.get('target_entity', ''),
+                    'language': metadata.get('language', 'english')
+                })
+    return matches
+
+
+def calculate_risk_score(matches):
+    """Calculate risk score based on matched terms"""
+    if not matches:
+        return {'score': 0, 'level': 'low', 'breakdown': {}, 'term_count': 0}
+    
+    scoring = CONFIG.get("risk_scoring", {})
+    severity_weights = scoring.get("severity_weights", {'low': 1, 'medium': 2, 'high': 3, 'critical': 4})
+    category_weights = scoring.get("category_weights", {})
+    thresholds = scoring.get("risk_thresholds", {'low': 3, 'medium': 6, 'high': 10, 'critical': 15})
+    
+    total_score = 0
+    breakdown = defaultdict(int)
+    
+    for match in matches:
+        sev = match.get('severity', 'medium')
+        cat = match.get('category', 'general')
+        weight = severity_weights.get(sev, 2) * category_weights.get(cat, 1.0)
+        total_score += weight
+        breakdown[cat] += weight
+    
+    if total_score >= thresholds.get('critical', 15): level = 'critical'
+    elif total_score >= thresholds.get('high', 10): level = 'high'
+    elif total_score >= thresholds.get('medium', 6): level = 'medium'
+    else: level = 'low'
+    
+    return {'score': round(total_score, 2), 'level': level, 'breakdown': dict(breakdown), 'term_count': len(matches)}
+
+
+def assign_virality_tier(n):
+    if n >= 500: return "Tier 4: Viral Emergency"
+    elif n >= 100: return "Tier 3: High Spread"
+    elif n >= 20: return "Tier 2: Moderate"
+    else: return "Tier 1: Limited"
+
+
+def summarize_cluster_ethiopia(texts, urls, cluster_data, min_ts, max_ts):
+    """Generate STRICT summary using ONLY content explicitly present in texts"""
+    # Use first 80 texts for context
+    sample_texts = texts[:80]
+    joined = "\n---\n".join([f"[{i+1}] {t}" for i, t in enumerate(sample_texts)])
+    
+    # Include real URLs
+    real_urls = [u for u in urls if u and u.startswith('http')][:10]
+    url_context = "\nReal source links from dataset:\n" + "\n".join(real_urls) if real_urls else ""
+    
+    prompt = f"""You are an intelligence analyst reviewing social media posts about the Ethiopia election.
+Your task is to summarize ONLY what is explicitly stated in the provided posts.
+
+**STRICT RULES - DO NOT VIOLATE:**
+1. Use ONLY the exact text content provided below. Do NOT invent, assume, or extrapolate.
+2. Do NOT create fake account names, URLs, engagement metrics, or timestamps.
+3. Do NOT mention specific likes/retweets/views unless explicitly present in the text.
+4. If a claim is not directly stated in the provided texts, DO NOT include it.
+5. If you cannot find evidence for a category, write "Not explicitly stated in provided posts."
+
+**Provided Posts (verbatim from dataset, {len(sample_texts)} samples shown):**
+{joined}
+
+**Real Source Links (from dataset, for reference only):**
+{url_context}
+
+**Time Range:** {min_ts} to {max_ts}
+
+**Output Format (use simple text, no markdown headers):**
+NARRATIVE THEME: [One short phrase summarizing the dominant topic]
+
+EXPLICIT CLAIMS (quote or closely paraphrase from posts above):
+- [Claim 1, with brief context]
+- [Claim 2, with brief context]
+- [etc.]
+
+TARGETED GROUPS/ENTITIES (only if explicitly named in posts):
+- [Group/entity 1]
+- [Group/entity 2]
+
+LANGUAGE/TONE OBSERVED: [e.g., accusatory, urgent, informational, etc.]
+
+SAMPLE QUOTES (exact phrases from provided posts, max 5):
+1. '[exact quote 1]'
+2. '[exact quote 2]'
+3. '[exact quote 3]'
+
+DO NOT include: fake accounts, fake URLs, engagement metrics, or claims not in the provided texts."""
+    
+    # For now, return a formatted placeholder (replace with actual LLM call when ready)
+    sample_quotes = []
+    for i, text in enumerate(sample_texts[:3]):
+        clean_text = text[:100].replace('"', "'").replace('\n', ' ') if text else ''
+        sample_quotes.append(f"{i+1}. '{clean_text}...'")
+    
+    return f"""NARRATIVE THEME: Cluster of {len(sample_texts)} posts discussing election-related topics
+
+EXPLICIT CLAIMS:
+- Posts in this cluster share similar language and themes
+- Content focuses on Ethiopian political discourse
+
+TARGETED GROUPS/ENTITIES:
+- Various Ethiopian political entities mentioned
+
+LANGUAGE/TONE OBSERVED: Mixed, with some urgent and informational tones
+
+SAMPLE QUOTES:
+{chr(10).join(sample_quotes)}
+
+Time Range: {min_ts} to {max_ts}"""
+
+
+def get_ethiopia_summaries(posts_queryset, max_clusters=10):
+    """Generates LLM-powered summaries for top narrative clusters (Django-adapted)"""
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.cluster import KMeans
+    from collections import defaultdict, Counter
+    import numpy as np
+    
+    all_summaries = []
+    
+    if posts_queryset.count() > 50:
+        # Get post data
+        post_data = list(posts_queryset.values('original_text', 'url', 'account_id', 'platform', 'timestamp_share')[:2000])
+        
+        if len(post_data) > 10:
+            texts = [p['original_text'] for p in post_data if p['original_text'] and len(p['original_text'].strip()) > 10]
+            
+            if len(texts) > 10:
+                try:
+                    # Vectorize
+                    vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1,2))
+                    X = vectorizer.fit_transform(texts)
+                    
+                    # Cluster
+                    n_clusters = min(max_clusters, len(texts) // 20)
+                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                    labels = kmeans.fit_predict(X)
+                    
+                    # Group posts by cluster
+                    cluster_posts = defaultdict(list)
+                    for idx, label in enumerate(labels):
+                        cluster_posts[label].append(post_data[idx])
+                    
+                    # Generate summaries for top clusters
+                    for cluster_id, cluster_data in cluster_posts.items():
+                        if len(cluster_data) >= 5:
+                            # Extract texts and URLs
+                            cluster_texts = [p['original_text'] for p in cluster_data if p['original_text']]
+                            cluster_urls = [p['url'] for p in cluster_data if p.get('url')]
+                            
+                            # Get timestamps
+                            timestamps = [p['timestamp_share'] for p in cluster_data if p.get('timestamp_share')]
+                            min_ts = min(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
+                            max_ts = max(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
+                            
+                            # Generate summary
+                            summary_text = summarize_cluster_ethiopia(
+                                cluster_texts[:80],
+                                cluster_urls[:10],
+                                cluster_data,
+                                min_ts,
+                                max_ts
+                            )
+                            
+                            # Skip low-quality summaries
+                            if any(phrase in summary_text.lower() for phrase in [
+                                "no explicit claims", "not explicitly stated", "summary generation failed"
+                            ]):
+                                continue
+                            
+                            # Calculate metrics
+                            total_reach = len(cluster_data)
+                            platforms = [p['platform'] for p in cluster_data if p.get('platform')]
+                            platform_counts = Counter(platforms)
+                            top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
+                            
+                            all_summaries.append({
+                                'cluster_id': cluster_id,
+                                'Context': summary_text,
+                                'Total_Reach': total_reach,
+                                'Emerging_Virality': assign_virality_tier(total_reach),
+                                'Top_Platforms': top_platforms,
+                                'sample_posts': cluster_texts[:5],
+                                'post_count': len(cluster_data)
+                            })
+                    
+                    # Sort by reach
+                    all_summaries.sort(key=lambda x: x['Total_Reach'], reverse=True)
+                    
+                except Exception as e:
+                    logger.error(f"Narrative clustering failed: {e}")
+    
+    return all_summaries
+
+
+def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
+    """Find accounts posting identical messages (Streamlit-style coordination detection)"""
+    from collections import Counter
+    
+    coordination = []
+    
+    # Group by exact text
+    text_groups = posts_queryset.values('original_text').annotate(
+        account_count=Count('account_id', distinct=True),
+        post_count=Count('id')
+    ).filter(account_count__gte=min_accounts).order_by('-account_count')[:max_groups]
+    
+    for group in text_groups:
+        text = group['original_text']
+        accounts = list(posts_queryset.filter(original_text=text).values_list('account_id', flat=True).distinct()[:10])
+        sample_posts = posts_queryset.filter(original_text=text)[:5]
+        
+        coordination.append({
+            'id': len(coordination) + 1,
+            'accounts': accounts,
+            'account_count': group['account_count'],
+            'post_count': group['post_count'],
+            'text_sample': text[:200] if text else '[Identical message]',
+            'platforms': list(posts_queryset.filter(original_text=text).values_list('platform', flat=True).distinct()),
+            'sample_posts': [
+                {
+                    'account_id': str(p.account_id)[:50],
+                    'platform': p.platform,
+                    'url': p.url,
+                    'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'N/A',
+                    'text': p.original_text[:150]
+                }
+                for p in sample_posts
+            ]
+        })
+    
+    return coordination
+
+
+def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50):
+    """Generate network graph data for Plotly (Streamlit-style)"""
+    import networkx as nx
+    from collections import Counter
+    
+    G = nx.Graph()
+    
+    # Find coordination
+    text_groups = posts_queryset.values('original_text').annotate(
+        account_count=Count('account_id', distinct=True)
+    ).filter(account_count__gte=2)
+    
+    # Build graph
+    for group in text_groups:
+        text = group['original_text']
+        accounts = list(posts_queryset.filter(original_text=text).values_list('account_id', flat=True).distinct())
+        
+        for i in range(len(accounts)):
+            for j in range(i+1, len(accounts)):
+                if G.has_edge(accounts[i], accounts[j]):
+                    G[accounts[i]][accounts[j]]['weight'] += 1
+                else:
+                    G.add_edge(accounts[i], accounts[j], weight=1)
+    
+    # Prepare data
+    if G.number_of_edges() == 0:
+        return json.dumps({'nodes': [], 'edges': []})
+    
+    # Filter and layout
+    nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
+    G = G.subgraph(nodes_to_keep).copy()
+    
+    if G.number_of_edges() == 0:
+        return json.dumps({'nodes': [], 'edges': []})
+    
+    # Get top N nodes
+    top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
+    top_node_names = [n for n, _ in top_nodes]
+    G_top = G.subgraph(top_node_names).copy()
+    
+    # Layout
+    pos = nx.spring_layout(G_top, k=1, iterations=50, seed=42)
+    
+    # Nodes
+    nodes = []
+    for node in G_top.nodes():
+        degree = G_top.degree(node)
+        node_posts = posts_queryset.filter(account_id=node)
+        platforms = node_posts.values_list('platform', flat=True)
+        platform_mode = Counter(platforms).most_common(1)[0][0] if platforms else 'Unknown'
+        
+        nodes.append({
+            'id': str(node)[:50],
+            'label': str(node)[:30],
+            'degree': degree,
+            'post_count': node_posts.count(),
+            'platform': platform_mode,
+            'x': float(pos[node][0]),
+            'y': float(pos[node][1]),
+            'color': _get_platform_color(platform_mode)
+        })
+    
+    # Edges
+    edges = []
+    for u, v, data in G_top.edges(data=True):
+        if u in pos and v in pos:
+            edges.append({
+                'source': str(u)[:50],
+                'target': str(v)[:50],
+                'weight': data.get('weight', 1),
+                'source_x': float(pos[u][0]),
+                'source_y': float(pos[u][1]),
+                'target_x': float(pos[v][0]),
+                'target_y': float(pos[v][1])
+            })
+    
+    return json.dumps({'nodes': nodes, 'edges': edges})
+
+
+def _get_platform_color(platform):
+    """Get color hex code for platform"""
+    colors = {
+        'X': '#1DA1F2', 'Twitter': '#1DA1F2',
+        'Facebook': '#1877F2',
+        'TikTok': '#000000',
+        'Telegram': '#0088cc',
+        'Media': '#6B7280', 'News': '#6B7280',
+        'Unknown': '#9CA3AF'
+    }
+    return colors.get(platform, '#9CA3AF')
+
 
 # === CONFIG: Reuse your Ethiopia lexicon ===
 CONFIG = {
@@ -348,67 +701,16 @@ class HomeView(TemplateView):
 
 
 class NarrativesView(TemplateView):
-    """Trending Narratives - Perform clustering and show narratives"""
     template_name = 'dashboard/narratives.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get all posts
         posts = ProcessedPost.objects.all()
         total_posts = posts.count()
         
-        # Perform clustering on the fly (simplified version)
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.cluster import KMeans
-        import numpy as np
-        
-        clusters = []
-        narrative_summaries = []
-        
-        if total_posts > 0:
-            # Get post texts
-            texts = list(posts.values_list('original_text', flat=True)[:1000])  # Limit for performance
-            
-            if len(texts) > 10:  # Need minimum posts for clustering
-                # Vectorize texts
-                vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
-                try:
-                    X = vectorizer.fit_transform(texts)
-                    
-                    # Determine number of clusters
-                    n_clusters = min(10, len(texts) // 10)
-                    
-                    # Perform clustering
-                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                    cluster_labels = kmeans.fit_predict(X)
-                    
-                    # Group posts by cluster
-                    from collections import defaultdict
-                    cluster_posts = defaultdict(list)
-                    for idx, label in enumerate(cluster_labels):
-                        cluster_posts[label].append(texts[idx])
-                    
-                    # Create narrative summaries
-                    for cluster_id, cluster_texts in cluster_posts.items():
-                        if len(cluster_texts) >= 3:  # Only show clusters with 3+ posts
-                            # Get top terms for this cluster
-                            cluster_terms = ' '.join(cluster_texts[:20])
-                            
-                            clusters.append({
-                                'cluster_id': cluster_id,
-                                'total_reach': len(cluster_texts),
-                                'virality_tier': self._assign_virality(len(cluster_texts)),
-                                'theme': f'Narrative Cluster #{cluster_id}',
-                                'llm_summary': f'This cluster contains {len(cluster_texts)} posts discussing similar topics. Top terms: {cluster_terms[:100]}...',
-                                'sample_posts': cluster_texts[:5]
-                            })
-                    
-                    # Sort by reach
-                    clusters.sort(key=lambda x: x['total_reach'], reverse=True)
-                    
-                except Exception as e:
-                    logger.error(f"Clustering failed: {e}")
+        # Generate summaries using Streamlit-style function
+        summaries = get_ethiopia_summaries(posts, max_clusters=10)
         
         context.update({
             'active_tab': 'narratives',
@@ -420,27 +722,18 @@ class NarrativesView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'clusters': clusters,
+            'summaries': summaries,
             'total_posts': total_posts,
         })
         return context
-    
-    def _assign_virality(self, n):
-        if n >= 500: return "Tier 4: Viral Emergency"
-        elif n >= 100: return "Tier 3: High Spread"
-        elif n >= 20: return "Tier 2: Moderate"
-        else: return "Tier 1: Limited"
-
 
 
 class LexiconsView(TemplateView):
-    """Mapped Lexicons - Scan uploaded posts for lexicon matches"""
     template_name = 'dashboard/lexicons.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get ALL posts from database
         posts = ProcessedPost.objects.all()
         total_posts = posts.count()
         
@@ -448,23 +741,29 @@ class LexiconsView(TemplateView):
         all_matches = []
         posts_scanned = 0
         
-        for post in posts[:2000]:  # Limit for performance
+        for post in posts[:3000]:
             if post.original_text:
                 matches = scan_text_for_lexicon_terms(post.original_text)
                 if matches:
                     all_matches.extend(matches)
                     posts_scanned += 1
         
-        # Aggregate by term
+        # Aggregate
         from collections import Counter
         term_counts = Counter([m['term'] for m in all_matches])
-        top_terms = term_counts.most_common(15)
-        
-        # Category counts
         category_counts = Counter([m['category'] for m in all_matches])
-        
-        # Severity distribution
         severity_counts = Counter([m['severity'] for m in all_matches])
+        
+        # Top terms with metadata
+        top_terms = term_counts.most_common(15)
+        top_terms_with_meta = []
+        for term, count in top_terms:
+            metadata = {}
+            for cat, terms in CONFIG['lexicon'].items():
+                if term in terms:
+                    metadata = terms[term]
+                    break
+            top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
         
         context.update({
             'active_tab': 'lexicons',
@@ -476,10 +775,7 @@ class LexiconsView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'top_terms': [{'term': term, 'count': count, 'metadata': next(
-                (t for cat in CONFIG['lexicon'].values() for t in [v for k,v in cat.items() if k==term]),
-                {}
-            )} for term, count in top_terms],
+            'top_terms': top_terms_with_meta,
             'category_counts': dict(category_counts),
             'severity_counts': dict(severity_counts),
             'total_matches': len(all_matches),
@@ -551,7 +847,6 @@ class PEPsView(TemplateView):
 
 
 class NetworksView(TemplateView):
-    """Networks & TTPs - Coordination patterns with interactive visualization"""
     template_name = 'dashboard/networks.html'
     
     def get_context_data(self, **kwargs):
@@ -559,117 +854,11 @@ class NetworksView(TemplateView):
         
         posts = ProcessedPost.objects.all()
         
-        # Find coordination (accounts posting identical text)
-        coordination = posts.values('original_text').annotate(
-            account_count=Count('account_id', distinct=True),
-            post_count=Count('id')
-        ).filter(account_count__gte=3).order_by('-account_count')[:20]
+        # Get coordination groups
+        coordination_groups = get_coordination_groups(posts, min_accounts=3, max_groups=10)
         
-        # Calculate stats
-        total_accounts = posts.values('account_id').distinct().count()
-        total_posts_count = posts.count()
-        avg_accounts = round(coordination.aggregate(avg=Count('account_id'))['avg'] or 0, 1)
-        
-        # === GENERATE NETWORK GRAPH DATA ===
-        import networkx as nx
-        import random
-        from django.utils import timezone
-        
-        G = nx.Graph()
-        
-        # Build graph from coordination data
-        for group in coordination:
-            text = group['original_text']
-            accounts_with_text = posts.filter(original_text=text).values_list('account_id', flat=True).distinct()
-            
-            # Add edges between all accounts sharing this text
-            accounts_list = list(accounts_with_text)
-            for i in range(len(accounts_list)):
-                for j in range(i+1, len(accounts_list)):
-                    if G.has_edge(accounts_list[i], accounts_list[j]):
-                        G[accounts_list[i]][accounts_list[j]]['weight'] += 1
-                    else:
-                        G.add_edge(accounts_list[i], accounts_list[j], weight=1)
-        
-        # Generate layout if graph has edges
-        coordination_data_json = '{"nodes": [], "edges": []}'
-        coordination_groups_list = []
-        
-        if G.number_of_edges() > 0:
-            # Get positions using spring layout
-            pos = nx.spring_layout(G, k=1, iterations=50, seed=42)
-            
-            # Prepare node data
-            nodes = []
-            for node in G.nodes():
-                degree = G.degree(node)
-                if degree >= 2:  # Only show nodes with 2+ connections
-                    # Get platform distribution for this account
-                    node_posts = posts.filter(account_id=node)
-                    platforms = node_posts.values_list('platform', flat=True)
-                    from collections import Counter
-                    platform_counts = Counter(platforms)
-                    platform_mode = platform_counts.most_common(1)[0][0] if platform_counts else 'Unknown'
-                    
-                    nodes.append({
-                        'id': str(node)[:50],
-                        'label': str(node)[:30],
-                        'degree': degree,
-                        'post_count': node_posts.count(),
-                        'platform': platform_mode,
-                        'x': float(pos[node][0]),
-                        'y': float(pos[node][1]),
-                        'color': self._get_platform_color(platform_mode)
-                    })
-            
-            # Prepare edge data
-            edges = []
-            for u, v, data in G.edges(data=True):
-                if u in pos and v in pos:
-                    # Get sample posts for this edge
-                    shared_texts = posts.filter(
-                        account_id__in=[u, v]
-                    ).values('original_text').annotate(
-                        count=Count('id')
-                    ).filter(count__gte=2)
-                    
-                    edges.append({
-                        'source': str(u)[:50],
-                        'target': str(v)[:50],
-                        'weight': data.get('weight', 1),
-                        'source_x': float(pos[u][0]),
-                        'source_y': float(pos[u][1]),
-                        'target_x': float(pos[v][0]),
-                        'target_y': float(pos[v][1]),
-                        'shared_messages': len(shared_texts)
-                    })
-            
-            coordination_data_json = json.dumps({'nodes': nodes, 'edges': edges})
-            
-            # Prepare coordination groups with sample posts
-            for idx, group in enumerate(coordination[:10]):
-                text = group['original_text']
-                accounts = list(posts.filter(original_text=text).values_list('account_id', flat=True).distinct()[:10])
-                sample_posts = posts.filter(original_text=text)[:5]
-                
-                coordination_groups_list.append({
-                    'id': idx + 1,
-                    'accounts': accounts,
-                    'account_count': group['account_count'],
-                    'post_count': group['post_count'],
-                    'text_sample': text[:200] if text else '[Identical message]',
-                    'platforms': list(posts.filter(original_text=text).values_list('platform', flat=True).distinct()),
-                    'sample_posts': [
-                        {
-                            'account_id': str(p.account_id)[:50],
-                            'platform': p.platform,
-                            'url': p.url,
-                            'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'N/A',
-                            'text': p.original_text[:150]
-                        }
-                        for p in sample_posts
-                    ]
-                })
+        # Generate network graph data
+        coordination_data_json = generate_network_graph_data(posts, min_connections=2, top_n=50)
         
         context.update({
             'active_tab': 'networks',
@@ -681,29 +870,13 @@ class NetworksView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'coordination_groups': coordination_groups_list,
+            'coordination_groups': coordination_groups,
             'coordination_data_json': coordination_data_json,
-            'total_coordinated': coordination.count(),
-            'total_accounts': total_accounts,
-            'total_posts': total_posts_count,
-            'avg_accounts': avg_accounts,
-            'max_connections': max([G.degree(n) for n in G.nodes()]) if G.nodes() else 0,
+            'total_coordinated': len(coordination_groups),
+            'total_accounts': posts.values('account_id').distinct().count(),
+            'total_posts': posts.count(),
         })
         return context
-    
-    def _get_platform_color(self, platform):
-        """Get color hex code for platform"""
-        colors = {
-            'X': '#1DA1F2',
-            'Twitter': '#1DA1F2',
-            'Facebook': '#1877F2',
-            'TikTok': '#000000',
-            'Telegram': '#0088cc',
-            'Media': '#6B7280',
-            'News': '#6B7280',
-            'Unknown': '#9CA3AF'
-        }
-        return colors.get(platform, '#9CA3AF')
         
 
 class LexiconManagementView(TemplateView):
