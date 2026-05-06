@@ -327,7 +327,6 @@ class HomeView(TemplateView):
             'active_tab': 'home',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
                 {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
                 {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
@@ -415,7 +414,6 @@ class NarrativesView(TemplateView):
             'active_tab': 'narratives',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
                 {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
                 {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
@@ -472,7 +470,6 @@ class LexiconsView(TemplateView):
             'active_tab': 'lexicons',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
                 {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
                 {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
@@ -538,7 +535,6 @@ class PEPsView(TemplateView):
             'active_tab': 'peps',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
                 {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
                 {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
@@ -679,7 +675,6 @@ class NetworksView(TemplateView):
             'active_tab': 'networks',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
                 {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
                 {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
@@ -748,7 +743,6 @@ class LexiconManagementView(TemplateView):
             'active_tab': 'lexicon_management',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
                 {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
                 {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
@@ -789,12 +783,11 @@ class UploadDataView(TemplateView):
         context['active_tab'] = 'upload'
         context['tabs'] = [
             {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-            {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
-            {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-            {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-            {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
+                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
+                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
+                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
         ]
         context['recent_uploads'] = DataUpload.objects.order_by('-uploaded_at')[:10]
         return context
