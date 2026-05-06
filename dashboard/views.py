@@ -27,6 +27,7 @@ from .utils.csv_processor import process_uploaded_csv, map_columns_by_type, prep
 from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_score, generate_lexicon_analytics
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
+from .utils.csv_processor import process_uploaded_csv
 
 logger = logging.getLogger(__name__)
 
@@ -556,49 +557,69 @@ class UploadDataView(TemplateView):
 
 
 class ProcessUploadView(View):
-    """Handle CSV upload and processing"""
-    
     def post(self, request):
-        uploaded_file = request.FILES.get('csv_file')
-        data_type = request.POST.get('data_type', 'custom')
-        source_name = request.POST.get('source_name', 'User Upload')
+        # 🔍 DEBUG: See what Django actually receives
+        print(f" POST keys: {list(request.POST.keys())}")
+        print(f"📁 FILES keys: {list(request.FILES.keys())}")
+        print(f"📄 csv_files count: {len(request.FILES.getlist('csv_files'))}")
         
-        if not uploaded_file:
-            messages.error(request, "No file uploaded")
+        uploaded_files = request.FILES.getlist('csv_files')
+        
+        if not uploaded_files:
+            messages.error(request, "No files received. Please select at least one CSV file.")
             return redirect('upload_data')
-        
-        # Save uploaded file temporarily
-        from django.core.files.storage import default_storage
-        import os
-        file_path = default_storage.save(f'uploads/{uploaded_file.name}', uploaded_file)
-        full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-        
-        # Create upload record
-        upload = DataUpload.objects.create(
-            uploaded_file=file_path,
-            original_filename=uploaded_file.name,
-            uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
-            data_type=data_type,
-            status='processing'
-        )
-        
-        # Process the file
-        success, message, count = process_uploaded_csv(full_path, data_type, source_name)
-        
-        # Update upload record
-        upload.status = 'completed' if success else 'failed'
-        upload.processing_log = message
-        upload.records_processed = count if success else 0
-        upload.save()
-        
-        # Show result
-        if success:
-            messages.success(request, f"✅ {message}")
+            
+        success_count = 0
+        for uploaded_file in uploaded_files:
+            try:
+                # Ensure uploads directory exists
+                upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
+                os.makedirs(upload_dir, exist_ok=True)
+                
+                # Save file temporarily
+                file_path = default_storage.save(f'uploads/{uploaded_file.name}', uploaded_file)
+                full_path = os.path.join(settings.MEDIA_ROOT, file_path)
+                
+                # Create upload record
+                upload = DataUpload.objects.create(
+                    uploaded_file=file_path,
+                    original_filename=uploaded_file.name,
+                    uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
+                    data_type=request.POST.get('data_type', 'custom'),
+                    status='processing'
+                )
+                
+                # Process the file
+                success, message, count = process_uploaded_csv(
+                    full_path, 
+                    upload.data_type, 
+                    request.POST.get('source_name', 'User Upload')
+                )
+                
+                # Update record
+                upload.status = 'completed' if success else 'failed'
+                upload.processing_log = message
+                upload.records_processed = count if success else 0
+                upload.save()
+                
+                if success:
+                    success_count += 1
+                else:
+                    logger.error(f"Failed to process {uploaded_file.name}: {message}")
+                    
+            except Exception as e:
+                logger.error(f"Exception processing {uploaded_file.name}: {str(e)}")
+                messages.error(request, f"Error processing {uploaded_file.name}: {str(e)}")
+                
+        # Show summary
+        if success_count == len(uploaded_files):
+            messages.success(request, f"✅ Successfully processed {success_count} file(s)!")
+        elif success_count > 0:
+            messages.warning(request, f"️ Processed {success_count}/{len(uploaded_files)} files. Check logs for errors.")
         else:
-            messages.error(request, f"❌ {message}")
-        
+            messages.error(request, "❌ Failed to process any files.")
+            
         return redirect('upload_data')
-
 
 # === API Endpoints ===
 
