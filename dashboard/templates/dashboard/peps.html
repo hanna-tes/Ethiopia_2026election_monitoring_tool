@@ -1,0 +1,38 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}PEPs/PIPs Tracker{% endblock %}
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+    <h2 class="text-xl font-bold mb-4"> Ethiopian PEPs/PIPs Tracker</h2>
+    <p class="text-gray-600 mb-4">Total tracked: <span class="font-bold">{{ total_peps }}</span></p>
+    {% if peps %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">X (Twitter)</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facebook</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for pep in peps %}
+                <tr>
+                    <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{{ pep.name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-gray-500">{{ pep.title }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if pep.x_link %}<a href="{{ pep.x_link }}" target="_blank" class="text-blue-600 hover:underline">{{ pep.x_verified|yesno:"✓ Verified,Link" }}</a>{% else %}<span class="text-gray-400">—</span>{% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if pep.facebook_link %}<a href="{{ pep.facebook_link }}" target="_blank" class="text-blue-600 hover:underline">{{ pep.facebook_verified|yesno:"✓ Verified,Link" }}</a>{% else %}<span class="text-gray-400">—</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-gray-500 italic">No PEPs loaded yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
