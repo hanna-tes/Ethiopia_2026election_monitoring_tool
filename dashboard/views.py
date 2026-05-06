@@ -668,7 +668,7 @@ class HomeView(TemplateView):
             
             if daily_posts:
                 daily_data = list(daily_posts)
-                if daily_  # ✅ Check if list has data
+                if daily_  # ✅ FIXED: Correct variable name
                     fig_daily = px.line(
                         daily_data,
                         x='day',
