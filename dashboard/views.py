@@ -4,7 +4,7 @@ Reuses your Streamlit app.py logic but queries database instead of CSVs
 """
 import json
 import logging
-import os  # ✅ ADDED: Required for file paths
+import os  
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -400,53 +400,101 @@ class LexiconsView(TemplateView):
         return context
 
 
-class PEPsView(TemplateView):
-    """PEPs/PIPs Tracker - Political figures with targeting analysis"""
-    template_name = 'dashboard/peps.html'
+class HomeView(TemplateView):
+    """Executive dashboard - election-focused"""
+    template_name = 'dashboard/home.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Load PEPs from GitHub CSV (dynamic, not hardcoded)
-        peps_csv_url = getattr(settings, 'PEPS_CSV_URL', None)
-        if peps_csv_url:
-            try:
-                peps_data = load_peps_from_github(peps_csv_url)
-                for pep_data in peps_data:
-                    PEP.objects.update_or_create(
-                        name=pep_data['Name (English)'],
-                        defaults={
-                            'title': pep_data.get('Position', ''),
-                            'x_link': pep_data.get('X (Twitter) Link') if pep_data.get('X (Twitter) Link') != 'No verified personal account found' else None,
-                            'x_verified': pep_data.get('Verified X (Twitter) Account (Yes/No)', '').lower() == 'yes',
-                            'facebook_link': pep_data.get('Facebook Link') if pep_data.get('Facebook Link') not in ['No verified personal account found', 'None found (no official page identified)'] else None,
-                            'facebook_verified': pep_data.get('Verified Facebook Account (Yes/No)', '').lower() == 'yes',
-                            'confidence_level': pep_data.get('Confidence', 'medium').lower(),
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Failed to load PEPs from GitHub: {e}")
+        # 1. Fetch data and calculate metrics
+        posts = ProcessedPost.objects.all()
+        total_posts = posts.count()
         
-        # Get all active PEPs from database
-        peps = PEP.objects.filter(is_active=True).order_by('name')
+        # Platform breakdown
+        platforms = posts.values('platform').annotate(count=Count('id')).order_by('-count')
+        top_platform = platforms.first()['platform'] if platforms.exists() else "—"
         
-        # Track PEP mentions over time in election content ONLY
-        pep_timeline = {}
-        for pep in peps[:10]:  # Top 10 PEPs
-            mentions = ProcessedPost.objects.filter(
-                is_election_related=True,
-                original_text__icontains=pep.name
-            ).values('timestamp_share__date').annotate(count=Count('id'))
+        # Risk and account metrics
+        unique_accounts = posts.values('account_id').distinct().count()
+        high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
+        alert_level = '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low'
+        
+        peps_tracked = PEP.objects.filter(is_active=True).count()
+        last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
+        
+        # 2. Prepare Charts
+        charts = {}
+        if posts.exists():
+            # A. Platform Distribution
+            fig_platform = px.bar(
+                platforms, x='platform', y='count', 
+                labels={'platform': 'Platform', 'count': 'Posts'},
+                color='count', color_continuous_scale='Blues'
+            )
+            charts['platform'] = fig_platform.to_json()
             
-            pep_timeline[pep.name] = list(mentions)
+            # B. Top Accounts (Cleaned Names)
+            # Get raw top accounts
+            top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
+            
+            # Clean account names - remove metadata, prefixes, etc.
+            cleaned_accounts = []
+            for acc in top_accounts_raw:
+                name = str(acc['account_id']) if acc['account_id'] else ''
+                # Remove common prefixes/suffixes from Meltwater/Twitter exports
+                name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
+                name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)  # Remove @mentions with metadata
+                name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)  # Remove pandas dtype info
+                name = re.sub(r'\s+', ' ', name).strip()  # Clean extra spaces
+                # Keep only if valid and not placeholder
+                if name and name not in ['-', 'nan', 'None', '']:
+                    cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
+            
+            # Create chart if we have data
+            if cleaned_accounts:
+                import pandas as pd
+                df_accounts = pd.DataFrame(cleaned_accounts)
+                fig_accounts = px.bar(
+                    df_accounts, 
+                    x='account_id', y='count',
+                    labels={'account_id': 'Account', 'count': 'Posts'},
+                    color='count', color_continuous_scale='Viridis',
+                    title='Top 10 Accounts by Activity'
+                )
+                fig_accounts.update_layout(
+                    xaxis_tickangle=-45, 
+                    margin=dict(b=100, t=50, l=50, r=20),
+                    height=400
+                )
+                charts['accounts'] = fig_accounts.to_json()
+            
+            # C. Risk Distribution
+            risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
+            if risk_dist:
+                fig_risk = px.pie(
+                    risk_dist, names='risk_level', values='count',
+                    title='Risk Level Distribution',
+                    color='risk_level',
+                    color_discrete_map={
+                        'low': '#22c55e', 'medium': '#eab308', 
+                        'high': '#f97316', 'critical': '#dc2626'
+                    }
+                )
+                charts['risk'] = fig_risk.to_json()
         
-        # Calculate stats
-        total_peps = peps.count()
-        verified_x_count = peps.filter(x_verified=True).count()
-        verified_fb_count = peps.filter(facebook_verified=True).count()
+        # 3. Recent Upload Summary
+        from datetime import timedelta
+        recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
+        upload_summary = {
+            'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
+            'files': recent_uploads,
+            'total_records': sum(u.records_processed for u in recent_uploads),
+        }
         
+        # 4. Build Context
         context.update({
-            'active_tab': 'peps',
+            'active_tab': 'home',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
                 {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
@@ -456,14 +504,18 @@ class PEPsView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'peps': peps,
-            'pep_timeline': json.dumps(pep_timeline),
-            'total_peps': total_peps,
-            'verified_x_count': verified_x_count,
-            'verified_fb_count': verified_fb_count,
+            'metrics': {
+                'total_posts': total_posts,
+                'unique_accounts': unique_accounts,
+                'top_platform': top_platform,
+                'peps_tracked': peps_tracked,
+                'alert_level': alert_level,
+                'last_update': last_update,
+            },
+            'charts': charts,
+            'upload_summary': upload_summary,
         })
         return context
-
 
 class NetworksView(TemplateView):
     """Networks & TTPs - Coordination patterns in election discourse"""
