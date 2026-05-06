@@ -221,60 +221,85 @@ def get_election_posts_queryset(request):
 
 
 class HomeView(TemplateView):
-    """Executive dashboard - election-focused"""
     template_name = 'dashboard/home.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get election-filtered posts
-        queryset, start_date, end_date = get_election_posts_queryset(self.request)
+        # Fetch data
+        posts = ProcessedPost.objects.all()
+        total_posts = posts.count()
+        platforms = posts.values('platform').annotate(count=Count('id')).order_by('-count')
+        top_platform = platforms.first()['platform'] if platforms.exists() else "—"
         
-        # Key metrics
-        total_posts = queryset.count()
-        unique_accounts = queryset.values('account_id').distinct().count()
-        
-        # Platform breakdown
-        platform_counts = queryset.values('platform').annotate(
-            count=Count('id')
-        ).order_by('-count')
-        top_platform = platform_counts.first()['platform'] if platform_counts.exists() else "—"
-        
-        # Risk metrics
-        high_risk_count = queryset.filter(risk_level__in=['high', 'critical']).count()
-        
-        # Narrative metrics
-        active_narratives = NarrativeCluster.objects.filter(
-            is_election_related=True
-        ).count()
-        
-        # PEP metrics
+        # Metrics
+        unique_accounts = posts.values('account_id').distinct().count()
+        high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
+        alert_level = '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low'
         peps_tracked = PEP.objects.filter(is_active=True).count()
+        last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
+        
+        # === PLOTLY CHARTS ===
+        charts = {}
+        if not posts.exists():
+            charts['empty'] = True
+        else:
+            # 1. Platform Distribution
+            fig_platform = px.bar(platforms, x='platform', y='count', 
+                                  labels={'platform': 'Platform', 'count': 'Posts'},
+                                  color='count', color_continuous_scale='Blues')
+            charts['platform'] = fig_platform.to_json()
+            
+            # 2. Daily Post Volume
+            daily = posts.annotate(day=TruncDay('timestamp_share')).values('day').annotate(count=Count('id')).order_by('day')
+            if daily:
+                fig_daily = px.line(daily, x='day', y='count', labels={'day': 'Date', 'count': 'Posts'},
+                                    title='Daily Post Volume', line_shape='spline')
+                charts['daily'] = fig_daily.to_json()
+            
+            # 3. Top Accounts/Influencers
+            top_accounts = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
+            if top_accounts:
+                fig_accounts = px.bar(top_accounts, x='account_id', y='count',
+                                      labels={'account_id': 'Account', 'count': 'Posts'},
+                                      color='count', color_continuous_scale='Viridis')
+                charts['accounts'] = fig_accounts.to_json()
+            
+            # 4. Alert Level Gauge (Simple)
+            charts['alert_level'] = alert_level
+            
+        # Recent successful uploads (for post-upload summary)
+        recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
+        upload_summary = {
+            'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
+            'files': recent_uploads,
+            'total_records': sum(u.records_processed for u in recent_uploads),
+            'platforms': list(set(u.data_type for u in recent_uploads))
+        }
         
         context.update({
-            'total_posts': total_posts,
-            'unique_accounts': unique_accounts,
-            'top_platform': top_platform,
-            'high_risk_count': high_risk_count,
-            'active_narratives': active_narratives,
-            'peps_tracked': peps_tracked,
-            'alert_level': '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low',
-            'last_update_time': timezone.now().strftime('%Y-%m-%d %H:%M UTC'),
-            'start_date': start_date.strftime('%Y-%m-%d'),
-            'end_date': end_date.strftime('%Y-%m-%d'),
+            'active_tab': 'home',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
             ],
-            'active_tab': 'home'
+            'metrics': {
+                'total_posts': total_posts,
+                'unique_accounts': unique_accounts,
+                'top_platform': top_platform,
+                'peps_tracked': peps_tracked,
+                'alert_level': alert_level,
+                'last_update': last_update,
+            },
+            'charts': charts,
+            'upload_summary': upload_summary,
         })
         return context
-
 
 class NarrativesView(TemplateView):
     """Trending Narratives - Top narratives with sample posts"""
@@ -299,12 +324,12 @@ class NarrativesView(TemplateView):
             'active_tab': 'narratives',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
             ],
             'clusters': clusters,
         })
@@ -348,12 +373,12 @@ class LexiconsView(TemplateView):
             'active_tab': 'lexicons',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
             ],
             'hate_timeline': json.dumps(hate_timeline),
             'top_terms': [
@@ -423,12 +448,12 @@ class PEPsView(TemplateView):
             'active_tab': 'peps',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
             ],
             'peps': peps,
             'pep_timeline': json.dumps(pep_timeline),
@@ -468,12 +493,12 @@ class NetworksView(TemplateView):
             'active_tab': 'networks',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
             ],
             'coordination_groups': coordination_data[:20],  # Top 20
             'network_stats': {
@@ -522,12 +547,12 @@ class LexiconManagementView(TemplateView):
             'active_tab': 'lexicon_management',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
                 {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-                {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
             ],
             'lexicon_terms': lexicon_terms,
             'categories': categories,
@@ -563,12 +588,12 @@ class UploadDataView(TemplateView):
         context['active_tab'] = 'upload'
         context['tabs'] = [
             {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+            {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
             {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
             {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
             {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
         ]
         context['recent_uploads'] = DataUpload.objects.all()[:10]
         return context
