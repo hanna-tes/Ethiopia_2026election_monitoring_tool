@@ -783,18 +783,14 @@ class LexiconsView(TemplateView):
         # === 🎨 WORD CLOUD (Streamlit-style) ===
         wordcloud_base64 = None
         if all_matches:
-            # Prepare frequency data for wordcloud
-            term_freq = {m['term']: term_counts[m['term']] for m in all_matches}
-            if term_freq:
-                try:
-                    # generate_trigger_wordcloud only accepts dataset_triggers argument
-                    wordcloud = generate_trigger_wordcloud(
-                        {'top_terms': [{'term': t, 'count': c} for t, c in term_counts.most_common(50)]}
-                    )
-                    if wordcloud:
-                        wordcloud_base64 = wordcloud_to_base64(wordcloud)
-                except Exception as e:
-                    logger.warning(f"Word cloud generation failed: {e}")
+            try:
+                wordcloud = generate_trigger_wordcloud(
+                    {'top_terms': [{'term': t, 'count': c} for t, c in term_counts.most_common(50)]}
+                )
+                if wordcloud:
+                    wordcloud_base64 = wordcloud_to_base64(wordcloud)
+            except Exception as e:
+                logger.warning(f"Word cloud generation failed: {e}")
         
         # === 🎯 TARGETED ENTITIES (Streamlit-style) ===
         targeted_entities = []
