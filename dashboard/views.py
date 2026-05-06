@@ -4,7 +4,8 @@ Reuses your Streamlit app.py logic but queries database instead of CSVs
 """
 import json
 import logging
-import os  
+import os
+import re
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -16,8 +17,9 @@ from django.http import JsonResponse, HttpResponse
 from django.db.models import Count, Q, F, Case, When, Value, CharField
 from django.utils import timezone
 from django.conf import settings
-from django.core.files.storage import default_storage  
+from django.core.files.storage import default_storage
 from django.core.paginator import Paginator
+from django.db.models.functions import TruncDay
 import networkx as nx
 import plotly.express as px
 import plotly.graph_objects as go
@@ -29,8 +31,6 @@ from .utils.csv_processor import process_uploaded_csv, map_columns_by_type, prep
 from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_score, generate_lexicon_analytics
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
-from django.db.models.functions import TruncDay
-# REMOVED: Duplicate 'from .utils.csv_processor import process_uploaded_csv'
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ CONFIG = {
         "ethnic_identity": {
             "አማራ": {"severity": "medium", "target_entity": "Amhara", "language": "amharic"},
             "amhara": {"severity": "medium", "target_entity": "Amhara", "language": "english"},
-            "ነፍጠኛ": {"severity": "high", "target_entity": "Amhara", "language": "amharic"},
+            "ነፍኛ": {"severity": "high", "target_entity": "Amhara", "language": "amharic"},
             "neftegna": {"severity": "high", "target_entity": "Amhara", "language": "english"},
             "ኦሮሞ": {"severity": "medium", "target_entity": "Oromo", "language": "amharic"},
             "oromo": {"severity": "medium", "target_entity": "Oromo", "language": "english"},
@@ -81,11 +81,11 @@ CONFIG = {
         
         # === Violence & Incitement Terms ===
         "violence_incitement": {
-            "ግደል": {"severity": "critical", "target_entity": "", "language": "amharic"},
+            "ግል": {"severity": "critical", "target_entity": "", "language": "amharic"},
             "kill": {"severity": "critical", "target_entity": "", "language": "english"},
-            "ግደ": {"severity": "critical", "target_entity": "", "language": "amharic"},
+            "ግሉ": {"severity": "critical", "target_entity": "", "language": "amharic"},
             "kill them": {"severity": "critical", "target_entity": "", "language": "english"},
-            "አጥፋ": {"severity": "critical", "target_entity": "", "language": "amharic"},
+            "አጥ": {"severity": "critical", "target_entity": "", "language": "amharic"},
             "destroy": {"severity": "critical", "target_entity": "", "language": "english"},
             "ጦርነት": {"severity": "high", "target_entity": "", "language": "amharic"},
             "war": {"severity": "high", "target_entity": "", "language": "english"},
@@ -121,7 +121,7 @@ CONFIG = {
             "vote": {"severity": "low", "target_entity": "", "language": "english"},
             "ነቤ": {"severity": "low", "target_entity": "NEBE", "language": "amharic"},
             "nebe": {"severity": "low", "target_entity": "NEBE", "language": "english"},
-            "የተጭበረበረ": {"severity": "medium", "target_entity": "", "language": "amharic"},
+            "የተጭበበረ": {"severity": "medium", "target_entity": "", "language": "amharic"},
             "rigged": {"severity": "medium", "target_entity": "", "language": "english"},
             "ማጭበርበር": {"severity": "medium", "target_entity": "", "language": "amharic"},
             "fraud": {"severity": "medium", "target_entity": "", "language": "english"},
@@ -129,13 +129,13 @@ CONFIG = {
         
         # === Foreign Interference & Geopolitics ===
         "foreign_interference": {
-            "ግብ": {"severity": "low", "target_entity": "Egypt", "language": "amharic"},
+            "ግብፅ": {"severity": "low", "target_entity": "Egypt", "language": "amharic"},
             "egypt": {"severity": "low", "target_entity": "Egypt", "language": "english"},
             "ሱዳን": {"severity": "low", "target_entity": "Sudan", "language": "amharic"},
             "sudan": {"severity": "low", "target_entity": "Sudan", "language": "english"},
             "ኤርትራ": {"severity": "low", "target_entity": "Eritrea", "language": "amharic"},
             "eritrea": {"severity": "low", "target_entity": "Eritrea", "language": "english"},
-            "አሜሪ": {"severity": "low", "target_entity": "USA", "language": "amharic"},
+            "አሜሪካ": {"severity": "low", "target_entity": "USA", "language": "amharic"},
             "america": {"severity": "low", "target_entity": "USA", "language": "english"},
             "ቻይና": {"severity": "low", "target_entity": "China", "language": "amharic"},
             "china": {"severity": "low", "target_entity": "China", "language": "english"},
@@ -145,7 +145,7 @@ CONFIG = {
         
         # === Religious & Cultural Terms ===
         "religious_cultural": {
-            "ኦርቶዶስ": {"severity": "low", "target_entity": "Orthodox", "language": "amharic"},
+            "ኦርቶዶክስ": {"severity": "low", "target_entity": "Orthodox", "language": "amharic"},
             "orthodox": {"severity": "low", "target_entity": "Orthodox", "language": "english"},
             "እስልምና": {"severity": "low", "target_entity": "Islam", "language": "amharic"},
             "islam": {"severity": "low", "target_entity": "Islam", "language": "english"},
@@ -222,62 +222,96 @@ def get_election_posts_queryset(request):
 
 
 class HomeView(TemplateView):
+    """Executive dashboard - election-focused"""
     template_name = 'dashboard/home.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Fetch data
+        # 1. Fetch data and calculate metrics
         posts = ProcessedPost.objects.all()
         total_posts = posts.count()
+        
+        # Platform breakdown
         platforms = posts.values('platform').annotate(count=Count('id')).order_by('-count')
         top_platform = platforms.first()['platform'] if platforms.exists() else "—"
         
-        # Metrics
+        # Risk and account metrics
         unique_accounts = posts.values('account_id').distinct().count()
         high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
         alert_level = '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low'
+        
         peps_tracked = PEP.objects.filter(is_active=True).count()
         last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
         
-        # === PLOTLY CHARTS ===
+        # 2. Prepare Charts
         charts = {}
-        if not posts.exists():
-            charts['empty'] = True
-        else:
-            # 1. Platform Distribution
-            fig_platform = px.bar(platforms, x='platform', y='count', 
-                                  labels={'platform': 'Platform', 'count': 'Posts'},
-                                  color='count', color_continuous_scale='Blues')
+        if posts.exists():
+            # A. Platform Distribution
+            fig_platform = px.bar(
+                platforms, x='platform', y='count', 
+                labels={'platform': 'Platform', 'count': 'Posts'},
+                color='count', color_continuous_scale='Blues'
+            )
             charts['platform'] = fig_platform.to_json()
             
-            # 2. Daily Post Volume
-            daily = posts.annotate(day=TruncDay('timestamp_share')).values('day').annotate(count=Count('id')).order_by('day')
-            if daily:
-                fig_daily = px.line(daily, x='day', y='count', labels={'day': 'Date', 'count': 'Posts'},
-                                    title='Daily Post Volume', line_shape='spline')
-                charts['daily'] = fig_daily.to_json()
+            # B. Top Accounts (Cleaned Names)
+            # Get raw top accounts
+            top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             
-            # 3. Top Accounts/Influencers
-            top_accounts = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
-            if top_accounts:
-                fig_accounts = px.bar(top_accounts, x='account_id', y='count',
-                                      labels={'account_id': 'Account', 'count': 'Posts'},
-                                      color='count', color_continuous_scale='Viridis')
+            # Clean account names - remove metadata, prefixes, etc.
+            cleaned_accounts = []
+            for acc in top_accounts_raw:
+                name = str(acc['account_id']) if acc['account_id'] else ''
+                # Remove common prefixes/suffixes from Meltwater/Twitter exports
+                name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
+                name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)  # Remove @mentions with metadata
+                name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)  # Remove pandas dtype info
+                name = re.sub(r'\s+', ' ', name).strip()  # Clean extra spaces
+                # Keep only if valid and not placeholder
+                if name and name not in ['-', 'nan', 'None', '']:
+                    cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
+            
+            # Create chart if we have data
+            if cleaned_accounts:
+                df_accounts = pd.DataFrame(cleaned_accounts)
+                fig_accounts = px.bar(
+                    df_accounts, 
+                    x='account_id', y='count',
+                    labels={'account_id': 'Account', 'count': 'Posts'},
+                    color='count', color_continuous_scale='Viridis',
+                    title='Top 10 Accounts by Activity'
+                )
+                fig_accounts.update_layout(
+                    xaxis_tickangle=-45, 
+                    margin=dict(b=100, t=50, l=50, r=20),
+                    height=400
+                )
                 charts['accounts'] = fig_accounts.to_json()
             
-            # 4. Alert Level Gauge (Simple)
-            charts['alert_level'] = alert_level
-            
-        # Recent successful uploads (for post-upload summary)
+            # C. Risk Distribution
+            risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
+            if risk_dist:
+                fig_risk = px.pie(
+                    risk_dist, names='risk_level', values='count',
+                    title='Risk Level Distribution',
+                    color='risk_level',
+                    color_discrete_map={
+                        'low': '#22c55e', 'medium': '#eab308', 
+                        'high': '#f97316', 'critical': '#dc2626'
+                    }
+                )
+                charts['risk'] = fig_risk.to_json()
+        
+        # 3. Recent Upload Summary
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
         upload_summary = {
             'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
             'files': recent_uploads,
             'total_records': sum(u.records_processed for u in recent_uploads),
-            'platforms': list(set(u.data_type for u in recent_uploads))
         }
         
+        # 4. Build Context
         context.update({
             'active_tab': 'home',
             'tabs': [
@@ -301,6 +335,7 @@ class HomeView(TemplateView):
             'upload_summary': upload_summary,
         })
         return context
+
 
 class NarrativesView(TemplateView):
     """Trending Narratives - Top narratives with sample posts"""
@@ -354,21 +389,12 @@ class LexiconsView(TemplateView):
             if matches:
                 all_matches.extend(matches)
         
-        # Temporal trend of hate speech in election content
-        hate_timeline = {}
-        for match in all_matches:
-            # Find the post timestamp for this match
-            post = ProcessedPost.objects.filter(
-                original_text__icontains=match['term'],
-                is_election_related=True
-            ).first()
-            if post and post.timestamp_share:
-                date_key = post.timestamp_share.strftime('%Y-%m-%d')
-                hate_timeline[date_key] = hate_timeline.get(date_key, 0) + 1
-        
         # Top terms by frequency
         term_counts = Counter([m['term'] for m in all_matches])
-        top_terms = term_counts.most_common(10)
+        top_terms = term_counts.most_common(15)
+        
+        # Category counts
+        category_counts = Counter([m['category'] for m in all_matches])
         
         context.update({
             'active_tab': 'lexicons',
@@ -381,18 +407,11 @@ class LexiconsView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'hate_timeline': json.dumps(hate_timeline),
-            'top_terms': [
-                {
-                    'term': term,
-                    'count': count,
-                    'metadata': next(
-                        (t for cat in CONFIG['lexicon'].values() for t in [v for k,v in cat.items() if k==term]),
-                        {}
-                    )
-                }
-                for term, count in top_terms
-            ],
+            'top_terms': [{'term': term, 'count': count, 'metadata': next(
+                (t for cat in CONFIG['lexicon'].values() for t in [v for k,v in cat.items() if k==term]),
+                {}
+            )} for term, count in top_terms],
+            'category_counts': dict(category_counts),
             'total_matches': len(all_matches),
             'start_date': start_date.strftime('%Y-%m-%d'),
             'end_date': end_date.strftime('%Y-%m-%d'),
@@ -400,101 +419,51 @@ class LexiconsView(TemplateView):
         return context
 
 
-class HomeView(TemplateView):
-    """Executive dashboard - election-focused"""
-    template_name = 'dashboard/home.html'
+class PEPsView(TemplateView):
+    """PEPs/PIPs Tracker - Political figures with targeting analysis"""
+    template_name = 'dashboard/peps.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Fetch data and calculate metrics
-        posts = ProcessedPost.objects.all()
-        total_posts = posts.count()
+        # Load PEPs from GitHub CSV (dynamic, not hardcoded)
+        peps_csv_url = getattr(settings, 'PEPS_CSV_URL', None)
+        if peps_csv_url:
+            try:
+                peps_data = load_peps_from_github(peps_csv_url)
+                for pep_data in peps_data: 
+                    PEP.objects.update_or_create(
+                        name=pep_data['Name (English)'],
+                        defaults={
+                            'title': pep_data.get('Position', ''),
+                            'x_link': pep_data.get('X (Twitter) Link') if pep_data.get('X (Twitter) Link') != 'No verified personal account found' else None,
+                            'x_verified': pep_data.get('Verified X (Twitter) Account (Yes/No)', '').lower() == 'yes',
+                            'facebook_link': pep_data.get('Facebook Link') if pep_data.get('Facebook Link') not in ['No verified personal account found', 'None found (no official page identified)'] else None,
+                            'facebook_verified': pep_data.get('Verified Facebook Account (Yes/No)', '').lower() == 'yes',
+                            'confidence_level': pep_data.get('Confidence', 'medium').lower(),
+                        }
+                    )
+            except Exception as e:
+                logger.error(f"Failed to load PEPs from GitHub: {e}")
         
-        # Platform breakdown
-        platforms = posts.values('platform').annotate(count=Count('id')).order_by('-count')
-        top_platform = platforms.first()['platform'] if platforms.exists() else "—"
+        # Get all active PEPs from database
+        peps = PEP.objects.filter(is_active=True).order_by('name')
         
-        # Risk and account metrics
-        unique_accounts = posts.values('account_id').distinct().count()
-        high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
-        alert_level = '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low'
-        
-        peps_tracked = PEP.objects.filter(is_active=True).count()
-        last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
-        
-        # 2. Prepare Charts
-        charts = {}
-        if posts.exists():
-            # A. Platform Distribution
-            fig_platform = px.bar(
-                platforms, x='platform', y='count', 
-                labels={'platform': 'Platform', 'count': 'Posts'},
-                color='count', color_continuous_scale='Blues'
-            )
-            charts['platform'] = fig_platform.to_json()
+        # Track PEP mentions over time (JSON-safe)
+        pep_timeline = {}
+        for pep in peps[:10]:
+            mentions = ProcessedPost.objects.filter(
+                is_election_related=True,
+                original_text__icontains=pep.name
+            ).values('timestamp_share__date').annotate(count=Count('id'))
             
-            # B. Top Accounts (Cleaned Names)
-            # Get raw top accounts
-            top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
-            
-            # Clean account names - remove metadata, prefixes, etc.
-            cleaned_accounts = []
-            for acc in top_accounts_raw:
-                name = str(acc['account_id']) if acc['account_id'] else ''
-                # Remove common prefixes/suffixes from Meltwater/Twitter exports
-                name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
-                name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)  # Remove @mentions with metadata
-                name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)  # Remove pandas dtype info
-                name = re.sub(r'\s+', ' ', name).strip()  # Clean extra spaces
-                # Keep only if valid and not placeholder
-                if name and name not in ['-', 'nan', 'None', '']:
-                    cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
-            
-            # Create chart if we have data
-            if cleaned_accounts:
-                import pandas as pd
-                df_accounts = pd.DataFrame(cleaned_accounts)
-                fig_accounts = px.bar(
-                    df_accounts, 
-                    x='account_id', y='count',
-                    labels={'account_id': 'Account', 'count': 'Posts'},
-                    color='count', color_continuous_scale='Viridis',
-                    title='Top 10 Accounts by Activity'
-                )
-                fig_accounts.update_layout(
-                    xaxis_tickangle=-45, 
-                    margin=dict(b=100, t=50, l=50, r=20),
-                    height=400
-                )
-                charts['accounts'] = fig_accounts.to_json()
-            
-            # C. Risk Distribution
-            risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
-            if risk_dist:
-                fig_risk = px.pie(
-                    risk_dist, names='risk_level', values='count',
-                    title='Risk Level Distribution',
-                    color='risk_level',
-                    color_discrete_map={
-                        'low': '#22c55e', 'medium': '#eab308', 
-                        'high': '#f97316', 'critical': '#dc2626'
-                    }
-                )
-                charts['risk'] = fig_risk.to_json()
+            pep_timeline[pep.name] = [
+                {'date': str(m['timestamp_share__date']), 'count': m['count']} 
+                for m in mentions if m['timestamp_share__date'] is not None
+            ]
         
-        # 3. Recent Upload Summary
-        from datetime import timedelta
-        recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
-        upload_summary = {
-            'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
-            'files': recent_uploads,
-            'total_records': sum(u.records_processed for u in recent_uploads),
-        }
-        
-        # 4. Build Context
         context.update({
-            'active_tab': 'home',
+            'active_tab': 'peps',
             'tabs': [
                 {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
                 {'name': 'Upload Data', 'url_name': 'upload_data', 'icon': '📤'},
@@ -504,18 +473,14 @@ class HomeView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'metrics': {
-                'total_posts': total_posts,
-                'unique_accounts': unique_accounts,
-                'top_platform': top_platform,
-                'peps_tracked': peps_tracked,
-                'alert_level': alert_level,
-                'last_update': last_update,
-            },
-            'charts': charts,
-            'upload_summary': upload_summary,
+            'peps': peps,
+            'pep_timeline': json.dumps(pep_timeline),
+            'total_peps': peps.count(),
+            'verified_x_count': peps.filter(x_verified=True).count(),
+            'verified_fb_count': peps.filter(facebook_verified=True).count(),
         })
         return context
+
 
 class NetworksView(TemplateView):
     """Networks & TTPs - Coordination patterns in election discourse"""
@@ -524,23 +489,18 @@ class NetworksView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get election-focused coordination data
-        # Build coordination graph from posts with identical text
-        queryset = ProcessedPost.objects.filter(
-            is_election_related=True,
-            cluster__gte=0  # Only posts in clusters
-        )
+        posts = ProcessedPost.objects.all()
         
-        # Group by original_text to find coordination
-        coordination_data = queryset.values('original_text').annotate(
+        # Find coordination (accounts posting identical text)
+        coordination = posts.values('original_text').annotate(
             account_count=Count('account_id', distinct=True),
-            post_count=Count('id'),
-            platforms=Count('platform', distinct=True)
-        ).filter(account_count__gte=2)
+            post_count=Count('id')
+        ).filter(account_count__gte=3).order_by('-account_count')[:10]
         
-        # Calculate network stats
-        total_nodes = queryset.values('account_id').distinct().count()
-        total_edges = coordination_data.count()
+        # Calculate stats
+        total_accounts = posts.values('account_id').distinct().count()
+        total_posts_count = posts.count()
+        avg_accounts = round(coordination.aggregate(avg=Count('account_id'))['avg'] or 0, 1)
         
         context.update({
             'active_tab': 'networks',
@@ -553,12 +513,11 @@ class NetworksView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'coordination_groups': coordination_data[:20],  # Top 20
-            'network_stats': {
-                'total_nodes': total_nodes,
-                'total_edges': total_edges,
-                'avg_connections': total_edges / total_nodes if total_nodes > 0 else 0
-            }
+            'coordination_groups': coordination,
+            'total_coordinated': coordination.count(),
+            'total_accounts': total_accounts,
+            'total_posts': total_posts_count,
+            'avg_accounts': avg_accounts,
         })
         return context
 
@@ -615,8 +574,8 @@ class LexiconManagementView(TemplateView):
         })
         return context
 
-    # ✅ ADDED: This method handles the "Add New Term" form submission
     def post(self, request, *args, **kwargs):
+        """Handle adding new lexicon terms from the form"""
         term = request.POST.get('term')
         if term:
             LexiconTerm.objects.get_or_create(
@@ -648,74 +607,65 @@ class UploadDataView(TemplateView):
             {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
             {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
         ]
-        context['recent_uploads'] = DataUpload.objects.all()[:10]
+        context['recent_uploads'] = DataUpload.objects.order_by('-uploaded_at')[:10]
         return context
 
 
 class ProcessUploadView(View):
     def post(self, request):
-        # 🔍 DEBUG: See what Django actually receives
-        print(f" POST keys: {list(request.POST.keys())}")
-        print(f"📁 FILES keys: {list(request.FILES.keys())}")
-        print(f"📄 csv_files count: {len(request.FILES.getlist('csv_files'))}")
+        # 🔍 DEBUG: Log exactly what we receive
+        logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
+        logger.info(f"📁 FILES: {list(request.FILES.keys())}")
         
         uploaded_files = request.FILES.getlist('csv_files')
-        
         if not uploaded_files:
-            messages.error(request, "No files received. Please select at least one CSV file.")
+            messages.error(request, "No files received.")
             return redirect('upload_data')
-            
-        success_count = 0
+        
+        results = []
         for uploaded_file in uploaded_files:
-            try:
-                # Ensure uploads directory exists
-                upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploads')
-                os.makedirs(upload_dir, exist_ok=True)
-                
-                # Save file temporarily
-                file_path = default_storage.save(f'uploads/{uploaded_file.name}', uploaded_file)
-                full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-                
-                # Create upload record
-                upload = DataUpload.objects.create(
-                    uploaded_file=file_path,
-                    original_filename=uploaded_file.name,
-                    uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
-                    data_type=request.POST.get('data_type', 'custom'),
-                    status='processing'
-                )
-                
-                # Process the file
-                success, message, count = process_uploaded_csv(
-                    full_path, 
-                    upload.data_type, 
-                    request.POST.get('source_name', 'User Upload')
-                )
-                
-                # Update record
-                upload.status = 'completed' if success else 'failed'
-                upload.processing_log = message
-                upload.records_processed = count if success else 0
-                upload.save()
-                
-                if success:
-                    success_count += 1
-                else:
-                    logger.error(f"Failed to process {uploaded_file.name}: {message}")
-                    
-            except Exception as e:
-                logger.error(f"Exception processing {uploaded_file.name}: {str(e)}")
-                messages.error(request, f"Error processing {uploaded_file.name}: {str(e)}")
-                
-        # Show summary
-        if success_count == len(uploaded_files):
-            messages.success(request, f"✅ Successfully processed {success_count} file(s)!")
-        elif success_count > 0:
-            messages.warning(request, f"️ Processed {success_count}/{len(uploaded_files)} files. Check logs for errors.")
-        else:
-            messages.error(request, "❌ Failed to process any files.")
+            # Save file temporarily
+            file_path = default_storage.save(f'uploads/{uploaded_file.name}', uploaded_file)
+            full_path = os.path.join(settings.MEDIA_ROOT, file_path)
             
+            logger.info(f"🔄 Processing: {uploaded_file.name} -> {full_path}")
+            
+            # Create upload record
+            upload = DataUpload.objects.create(
+                uploaded_file=file_path,
+                original_filename=uploaded_file.name,
+                uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
+                data_type=request.POST.get('data_type', 'custom'),
+                status='processing'
+            )
+            
+            # Process the file
+            success, message, count = process_uploaded_csv(
+                full_path, 
+                upload.data_type, 
+                request.POST.get('source_name', 'User Upload')
+            )
+            
+            # Update record
+            upload.status = 'completed' if success else 'failed'
+            upload.processing_log = message
+            upload.records_processed = count if success else 0
+            upload.save()
+            
+            results.append((uploaded_file.name, success, message, count))
+            logger.info(f"{'✅' if success else '❌'} {uploaded_file.name}: {message}")
+        
+        # Show summary in UI
+        success_count = sum(1 for _, s, _, _ in results if s)
+        if success_count == len(uploaded_files):
+            messages.success(request, f"✅ All {len(uploaded_files)} files processed!")
+        elif success_count > 0:
+            messages.warning(request, f"⚠️ {success_count}/{len(uploaded_files)} succeeded. Check logs for errors.")
+        else:
+            messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
+        
         return redirect('upload_data')
+
 
 # === API Endpoints ===
 
