@@ -1,458 +1,233 @@
 import pandas as pd
-import numpy as np
-import re
 import logging
-from io import StringIO
-import requests
+import re
+from dashboard.models import ProcessedPost, DataSource
 from .lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_score
 
 logger = logging.getLogger(__name__)
 
+def clean_text(text):
+    """Basic text cleaning"""
+    if pd.isna(text):
+        return ''
+    return str(text).strip()
 
-def load_data_robustly(file_path_or_url, name="Data", default_sep=','):
-    """
-    Load CSV from file path or URL with automatic encoding/separator detection.
-    Mirrors your Streamlit app's robust loading logic.
-    """
-    df = pd.DataFrame()
-    
-    # --- Handle local files ---
-    if not str(file_path_or_url).startswith('http'):
-        import os
-        if os.path.exists(file_path_or_url):
-            try:
-                # Try multiple encodings and separators
-                attempts = [
-                    (',', 'utf-8'), (',', 'utf-8-sig'), (',', 'utf-16'), 
-                    ('\t', 'utf-8'), (';', 'utf-8'), (',', 'latin-1'), (',', 'windows-1252')
-                ]
-                for sep, enc in attempts:
-                    try:
-                        df = pd.read_csv(
-                            file_path_or_url, 
-                            sep=sep, 
-                            encoding=enc,
-                            low_memory=False,
-                            on_bad_lines='skip'
-                        )
-                        if not df.empty and len(df.columns) > 1:
-                            logger.info(f"✅ {name} loaded (Sep: '{sep}', Enc: '{enc}', Shape: {df.shape})")
-                            return df
-                    except (pd.errors.ParserError, UnicodeDecodeError):
-                        continue
-                logger.error(f"❌ {name}: Could not parse after all encoding/separator attempts")
-                return pd.DataFrame()
-            except Exception as e:
-                logger.error(f"❌ {name} local load failed: {e}")
-                return pd.DataFrame()
-        logger.error(f"❌ {name}: Local file not found: {file_path_or_url}")
-        return pd.DataFrame()
-    
-    # --- Handle URLs ---
-    try:
-        response = requests.get(file_path_or_url, timeout=30)
-        response.raise_for_status()
-        content = response.text
-        
-        # Try parsing with multiple encodings/separators
-        attempts = [
-            (',', 'utf-8'), (',', 'utf-8-sig'), (',', 'utf-16'),
-            ('\t', 'utf-8'), (';', 'utf-8'), (',', 'latin-1'), (',', 'windows-1252')
-        ]
-        
-        for sep, enc in attempts:
-            try:
-                df = pd.read_csv(
-                    StringIO(content), 
-                    sep=sep, 
-                    encoding=enc,
-                    low_memory=False,
-                    on_bad_lines='skip'
-                )
-                if not df.empty and len(df.columns) > 1:
-                    logger.info(f"✅ {name} loaded from URL (Sep: '{sep}', Enc: '{enc}', Shape: {df.shape})")
-                    return df
-            except (pd.errors.ParserError, UnicodeDecodeError):
-                continue
-        
-        logger.error(f"❌ {name}: Could not parse CSV content after all attempts")
-        return pd.DataFrame()
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ {name}: Failed to fetch URL - {e}")
-        return pd.DataFrame()
-    except Exception as e:
-        logger.error(f"❌ {name}: Unexpected error - {type(e).__name__}: {e}")
-        return pd.DataFrame()
-
-
-def get_col(df, cols):
-    """
-    Get column from dataframe trying multiple possible names.
-    First tries exact match (case-sensitive), then normalized match.
-    """
-    # First try exact column name match (case-sensitive)
-    for col in cols:
-        if col in df.columns:
-            return df[col]
-    
-    # Then try normalized match (lowercase, stripped)
-    df_cols = [c.lower().strip() for c in df.columns]
-    for col in cols:
-        norm = col.lower().strip()
-        if norm in df_cols:
-            return df[df.columns[df_cols.index(norm)]]
-    
-    return pd.Series([np.nan]*len(df), index=df.index)
-
-
-def combine_social_media_data(meltwater_df, civicsignals_df, tiktok_df=None, openmeasures_df=None):
-    """
-    Combine datasets from different sources into unified schema.
-    Mirrors your Streamlit app's column mapping logic.
-    """
-    combined = []
-    
-    if meltwater_df is not None and not meltwater_df.empty:
-        mw = pd.DataFrame()
-        mw['account_id'] = get_col(meltwater_df, ['influencer'])
-        mw['content_id'] = get_col(meltwater_df, ['tweet id', 'post id', 'id'])
-        mw['object_id'] = get_col(meltwater_df, ['hit sentence', 'opening text', 'headline', 'text', 'content'])
-        mw['URL'] = get_col(meltwater_df, ['url'])
-        mw['timestamp_share'] = get_col(meltwater_df, ['date', 'timestamp', 'alternate date format'])
-        mw['source_dataset'] = 'Meltwater'
-        combined.append(mw)
-    
-    if civicsignals_df is not None and not civicsignals_df.empty:
-        cs = pd.DataFrame()
-        cs['account_id'] = get_col(civicsignals_df, ['media_name', 'author', 'username'])
-        cs['content_id'] = get_col(civicsignals_df, ['stories_id', 'post_id', 'id'])
-        cs['object_id'] = get_col(civicsignals_df, ['title', 'text', 'content', 'body'])
-        cs['URL'] = get_col(civicsignals_df, ['url', 'link'])
-        cs['timestamp_share'] = get_col(civicsignals_df, ['publish_date', 'timestamp', 'date'])
-        cs['source_dataset'] = 'Civicsignal'
-        combined.append(cs)
-    
-    if tiktok_df is not None and not tiktok_df.empty:
-        tt = pd.DataFrame()
-        tt['object_id'] = get_col(tiktok_df, ['text', 'Transcript', 'caption', 'content'])
-        tt['account_id'] = get_col(tiktok_df, ['authorMeta/name', 'username', 'creator'])
-        tt['content_id'] = get_col(tiktok_df, ['id', 'video_id', 'itemId'])
-        tt['URL'] = get_col(tiktok_df, ['webVideoUrl', 'TikTok Link', 'url'])
-        tt['timestamp_share'] = get_col(tiktok_df, ['createTimeISO', 'timestamp', 'date', 'createTime'])
-        tt['source_dataset'] = 'TikTok'
-        
-        # Preserve engagement metrics
-        for col in ['playCount', 'diggCount', 'commentCount', 'shareCount', 'repostCount', 'textLanguage']:
-            if col in tiktok_df.columns:
-                tt[col] = tiktok_df[col]
-        
-        # Preserve hashtags
-        for i in range(5):
-            hashtag_col = f'hashtags/{i}/name'
-            if hashtag_col in tiktok_df.columns:
-                tt[f'hashtag_{i}'] = tiktok_df[hashtag_col]
-        
-        combined.append(tt)
-    
-    if openmeasures_df is not None and not openmeasures_df.empty:
-        om = pd.DataFrame()
-        om['account_id'] = get_col(openmeasures_df, ['context_name', 'channelusername', 'channeltitle'])
-        om['content_id'] = get_col(openmeasures_df, ['id', 'url'])
-        om['object_id'] = get_col(openmeasures_df, ['text', 'message', 'body'])
-        om['URL'] = get_col(openmeasures_df, ['url'])
-        
-        # Fix timestamp format: remove '@' for proper parsing
-        raw_dates = get_col(openmeasures_df, ['created_at', 'date'])
-        om['timestamp_share'] = raw_dates.astype(str).str.replace(' @ ', ' ', regex=False)
-        
-        om['source_dataset'] = 'OpenMeasure_Telegram'
-        combined.append(om)
-    
-    return pd.concat(combined, ignore_index=True) if combined else pd.DataFrame()
-
-
-def extract_original_text(text):
-    """Clean text by removing RT markers, URLs, mentions, etc."""
-    if pd.isna(text) or not isinstance(text, str):
-        return ""
-    cleaned = re.sub(r'^(RT|rt|QT|qt|repost|shared|via|credit)\s*[:@]\s*', '', text, flags=re.IGNORECASE).strip()
-    cleaned = re.sub(r'@\w+|http\S+|www\S+|https\S+', '', cleaned).strip()
-    cleaned = re.sub(r'\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{4}\b', '', cleaned)
-    return re.sub(r'\s+', ' ', cleaned).strip().lower()
-
-
-def is_original_post(text):
-    """Filter out reposts/retweets."""
-    if pd.isna(text) or not isinstance(text, str):
-        return False
-    lower = text.strip().lower()
-    if not lower:
-        return False
-    patterns = [
-        r'^🔁.*reposted', r'\b(reposted|reshared|retweeted)\b',
-        r'^(rt|qt|repost)\s*[:@\s]', r'^\s*[🔁↪️➡️]\s*@?\w*'
-    ]
-    if any(re.search(p, lower, flags=re.IGNORECASE) for p in patterns):
-        return False
-    if len(re.sub(r'http\S+|\@\w+', '', text).strip()) < 15:
-        return False
-    return len(lower) >= 20 and not re.search(r'^\s*["\u201c]|\s*@\w+\s*[":]', lower)
-
-
-def parse_timestamp_robust(timestamp):
-    """Parse timestamp with multiple format attempts."""
-    if pd.isna(timestamp):
+def parse_timestamp_robust(val):
+    """Parse timestamps with fallback to UTC"""
+    if pd.isna(val):
         return pd.NaT
-    ts_str = re.sub(r'\s+GMT$', '', str(timestamp).strip(), flags=re.IGNORECASE)
+    s = str(val).strip().replace(' @ ', ' ')  # Fix OpenMeasure format
     try:
-        parsed = pd.to_datetime(ts_str, errors='coerce', utc=True)
-        if pd.notna(parsed):
-            return parsed
-    except:
-        pass
-    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%d/%m/%Y %H:%M', '%b %d, %Y %H:%M', '%Y-%m-%d']:
-        try:
-            parsed = pd.to_datetime(ts_str, format=fmt, errors='coerce', utc=True)
-            if pd.notna(parsed):
-                return parsed
-        except:
-            continue
-    return pd.NaT
+        return pd.to_datetime(s, utc=True, errors='coerce')
+    except Exception:
+        return pd.NaT
 
+def load_csv_for_platform(file_path, data_type):
+    """Load CSV with platform-specific encoding & separator"""
+    dt = data_type.lower()
+    
+    if dt in ['meltwater', 'x', 'twitter']:
+        # Your script uses: encoding='utf-16', sep='\t'
+        return pd.read_csv(file_path, encoding='utf-16', sep='\t', low_memory=False, on_bad_lines='skip')
+    elif dt in ['openmeasure', 'telegram']:
+        return pd.read_csv(file_path, encoding='utf-8', low_memory=False, on_bad_lines='skip')
+    elif dt in ['media', 'civicsignal', 'news']:
+        return pd.read_csv(file_path, encoding='utf-8', low_memory=False, on_bad_lines='skip')
+    elif dt in ['tiktok']:
+        return pd.read_csv(file_path, encoding='utf-8', low_memory=False, on_bad_lines='skip')
+    else:
+        # Fallback: try multiple encodings
+        for enc in ['utf-8', 'utf-8-sig', 'utf-16', 'latin-1', 'windows-1252']:
+            try:
+                return pd.read_csv(file_path, encoding=enc, low_memory=False, on_bad_lines='skip')
+            except Exception:
+                continue
+        raise ValueError(f"Could not decode {file_path} with any supported encoding")
 
-def infer_platform_from_url(url):
-    """Infer platform from URL domain."""
-    if pd.isna(url) or not isinstance(url, str) or not url.startswith("http"):
-        return "Unknown"
-    url = url.lower()
-    platforms = {
-        "tiktok.com": "TikTok", "vt.tiktok.com": "TikTok",
-        "facebook.com": "Facebook", "fb.watch": "Facebook",
-        "twitter.com": "X", "x.com": "X",
-        "youtube.com": "YouTube", "youtu.be": "YouTube",
-        "instagram.com": "Instagram",
-        "telegram.me": "Telegram", "t.me": "Telegram", "telegram.org": "Telegram"
-    }
-    for key, val in platforms.items():
-        if key in url:
-            return val
-    if any(d in url for d in ["nytimes.com", "bbc.com", "cnn.com", "reuters.com", "aljazeera.com"]):
-        return "News/Media"
-    return "Media"
-
-
-def final_preprocess_and_map_columns(df, coordination_mode="Text Content"):
+def standardize_to_common_schema(df, data_type):
     """
-    Clean and preprocess dataframe, mapping columns to standard schema.
+    Map platform-specific columns to your proven common schema:
+    Source, URL, Timestamp, text, Platform
     """
-    if df.empty:
-        return pd.DataFrame(columns=[
-            'account_id','content_id','object_id','URL','timestamp_share',
-            'Platform','original_text','Outlet','Channel','cluster','source_dataset','Sentiment'
-        ])
+    dt = data_type.lower()
+    df = df.copy()
     
-    dfp = df.copy()
-    
-    # Filter by sentiment if column exists
-    if 'Sentiment' in dfp.columns:
-        dfp = dfp[dfp['Sentiment'].isin(['Negative', 'Neutral'])]
-    
-    # Filter to original posts only
-    if 'object_id' in dfp.columns:
-        mask = dfp['object_id'].apply(is_original_post) & (~dfp['object_id'].str.contains('🔁', na=False)) & (~dfp['object_id'].str.startswith('RT @', na=False))
-        dfp = dfp[mask].copy()
-    
-    # Clean text columns
-    dfp['object_id'] = dfp['object_id'].astype(str).replace('nan','').fillna('')
-    dfp = dfp[dfp['object_id'].str.strip() != ""]
-    
-    # Extract original text
-    dfp['original_text'] = dfp['object_id'].apply(extract_original_text) if coordination_mode=="Text Content" else dfp['URL'].astype(str).replace('nan','')
-    dfp = dfp[dfp['original_text'].str.strip() != ""].reset_index(drop=True)
-    
-    # Infer platform from URL
-    dfp['Platform'] = dfp['URL'].apply(infer_platform_from_url)
-    
-    # Map source_dataset to Platform
-    if 'source_dataset' in dfp.columns:
-        dfp['source_dataset'] = dfp['source_dataset'].fillna('')
-        
-        # Map TikTok
-        tiktok_mask = dfp['source_dataset'].str.contains('TikTok|tiktok|vt.tiktok', case=False, na=False)
-        dfp.loc[tiktok_mask, 'Platform'] = 'TikTok'
-        
-        # Map Telegram/OpenMeasure
-        telegram_mask = dfp['source_dataset'].str.contains('Telegram|telegram|t.me|OpenMeasure', case=False, na=False)
-        dfp.loc[telegram_mask, 'Platform'] = 'Telegram'
-        
-        # Map Media/News
-        media_mask = dfp['source_dataset'].str.contains('Media|News|Civicsignal', case=False, na=False)
-        dfp.loc[media_mask, 'Platform'] = 'Media'
-    
-    # Fill unknown platforms
-    dfp['Platform'] = dfp['Platform'].replace('', 'Unknown').fillna('Unknown')
-    
-    # Add missing columns with defaults
-    dfp['Outlet'] = dfp.get('Outlet', np.nan)
-    dfp['Channel'] = dfp.get('Channel', np.nan)
-    dfp['cluster'] = dfp.get('cluster', -1)
-    if 'Sentiment' not in dfp.columns:
-        dfp['Sentiment'] = np.nan
-    
-    # Return standard columns
-    cols = ['account_id','content_id','object_id','URL','timestamp_share','Platform','original_text','Outlet','Channel','cluster','source_dataset','Sentiment']
-    return dfp[[c for c in cols if c in dfp.columns]].copy()
+    # Helper: find column case-insensitively or by partial match
+    def find_col(possible_names):
+        for name in possible_names:
+            # Exact match
+            if name in df.columns:
+                return name
+            # Case-insensitive match
+            match = next((c for c in df.columns if c.lower().strip() == name.lower()), None)
+            if match:
+                return match
+            # Partial match
+            match = next((c for c in df.columns if name.lower() in c.lower()), None)
+            if match:
+                return match
+        return None
 
+    if dt in ['meltwater', 'x', 'twitter']:
+        col_map = {
+            find_col(['Influencer', 'influencer', 'author', 'account']): 'Source',
+            find_col(['URL', 'url', 'link']): 'URL',
+            find_col(['Date', 'date', 'timestamp', 'posted_at']): 'Timestamp',
+            find_col(['Hit Sentence', 'hit sentence', 'text', 'content', 'opening text']): 'text'
+        }
+        df = df.rename(columns={k: v for k, v in col_map.items() if k is not None})
+        df['Platform'] = 'X'
+        
+    elif dt in ['openmeasure', 'telegram']:
+        col_map = {
+            find_col(['actor_username', 'channeltitle', 'channelusername', 'context_name', 'author']): 'Source',
+            find_col(['url', 'link']): 'URL',
+            find_col(['created_at', 'date', 'timestamp']): 'Timestamp',
+            find_col(['text', 'message', 'body', 'content']): 'text'
+        }
+        df = df.rename(columns={k: v for k, v in col_map.items() if k is not None})
+        # Try to extract platform from metadata if available
+        plat_col = find_col(['openmeasures_meta_source_endpoint', 'platform', 'source_type'])
+        if plat_col:
+            df['Platform'] = df[plat_col]
+        else:
+            df['Platform'] = 'Telegram'
+            
+    elif dt in ['media', 'civicsignal', 'news']:
+        col_map = {
+            find_col(['media_name', 'outlet', 'author', 'source']): 'Source',
+            find_col(['url', 'link', 'story_url']): 'URL',
+            find_col(['publish_date', 'date', 'timestamp', 'published_at']): 'Timestamp',
+            find_col(['title', 'text', 'headline', 'content']): 'text'
+        }
+        df = df.rename(columns={k: v for k, v in col_map.items() if k is not None})
+        df['Platform'] = 'Media'
+        
+    elif dt in ['tiktok']:
+        col_map = {
+            find_col(['authorMeta/name', 'authorMeta/name', 'username', 'creator', 'author']): 'Source',
+            find_col(['webVideoUrl', 'TikTok Link', 'url', 'link']): 'URL',
+            find_col(['createTimeISO', 'createTime', 'date', 'timestamp']): 'Timestamp',
+            find_col(['text', 'Transcript', 'caption', 'description']): 'text'
+        }
+        df = df.rename(columns={k: v for k, v in col_map.items() if k is not None})
+        df['Platform'] = 'TikTok'
+        
+    else:
+        # Generic fallback
+        col_map = {
+            find_col(['source', 'author', 'account', 'influencer', 'username']): 'Source',
+            find_col(['url', 'link']): 'URL',
+            find_col(['timestamp', 'date', 'created_at', 'posted_at']): 'Timestamp',
+            find_col(['text', 'content', 'message', 'body', 'title']): 'text'
+        }
+        df = df.rename(columns={k: v for k, v in col_map.items() if k is not None})
+        df['Platform'] = data_type.title()
+
+    # Ensure all required columns exist
+    for col in ['Source', 'URL', 'Timestamp', 'text', 'Platform']:
+        if col not in df.columns:
+            df[col] = ''
+            
+    return df[['Source', 'URL', 'Timestamp', 'text', 'Platform']]
 
 def process_uploaded_csv(file_path, data_type='custom', source_name='User Upload'):
     """
-    Process uploaded CSV file and save to database.
+    Main upload processor. Matches your working script's logic exactly.
     Returns: (success: bool, message: str, count: int)
     """
     try:
-        # Load CSV with robust encoding detection
-        df = load_data_robustly(file_path, name=source_name)
+        logger.info(f"📥 Processing {file_path} | Type: {data_type} | Source: {source_name}")
+        
+        # 1. Load with correct encoding/separator
+        df = load_csv_for_platform(file_path, data_type)
+        logger.info(f"✅ Loaded {len(df)} rows. Columns: {list(df.columns)}")
+        
+        # 2. Standardize to common schema
+        df = standardize_to_common_schema(df, data_type)
+        
+        # 3. Clean text & filter empty rows
+        df['text'] = df['text'].apply(clean_text)
+        df = df[df['text'].str.len() > 3].copy()
+        logger.info(f"🧹 After cleaning: {len(df)} valid rows")
+        
+        # 4. Parse timestamps
+        df['Timestamp'] = df['Timestamp'].apply(parse_timestamp_robust)
+        df = df[df['Timestamp'].notna()].copy()
+        logger.info(f"📅 After timestamp parsing: {len(df)} rows")
         
         if df.empty:
-            return False, "Could not load CSV file. Check encoding and format.", 0
-        
-        # Combine with other sources (even if empty, this normalizes schema)
-        df_combined = combine_social_media_data(
-            meltwater_df=df if data_type == 'meltwater' else None,
-            civicsignals_df=df if data_type == 'civicsignal' else None,
-            tiktok_df=df if data_type == 'tiktok' else None,
-            openmeasures_df=df if data_type == 'openmeasure' else None
-        )
-        
-        # Preprocess and map columns
-        df_processed = final_preprocess_and_map_columns(df_combined if not df_combined.empty else df)
-        
-        # Parse timestamps
-        if 'timestamp_share' in df_processed.columns:
-            df_processed['timestamp_share'] = df_processed['timestamp_share'].apply(parse_timestamp_robust)
-        
-        # Validate required columns
-        required_cols = ['content_id', 'account_id', 'original_text', 'timestamp_share', 'platform']
-        # Map 'Platform' to 'platform' for database
-        if 'Platform' in df_processed.columns and 'platform' not in df_processed.columns:
-            df_processed['platform'] = df_processed['Platform']
-        
-        missing_cols = [col for col in required_cols if col not in df_processed.columns]
-        if missing_cols:
-            return False, f"Missing required columns: {', '.join(missing_cols)}. Found: {list(df_processed.columns)}", 0
-        
-        # Save to database
-        from dashboard.models import ProcessedPost, DataSource
-        from django.utils import timezone
-        from datetime import datetime
-        
-        # Get or create data source
+            return False, "No valid rows after cleaning. Check column names & date formats.", 0
+            
+        # 5. Save to PostgreSQL
         data_source, _ = DataSource.objects.get_or_create(
             name=source_name,
             defaults={'description': f'Uploaded via UI - {data_type}', 'record_count': 0}
         )
         
         success_count = 0
-        failed_count = 0
+        fail_count = 0
         
-        for idx, row in df_processed.iterrows():
+        for _, row in df.iterrows():
             try:
-                # Parse timestamp
-                timestamp = row['timestamp_share']
-                if isinstance(timestamp, str):
-                    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%d/%m/%Y %H:%M']:
-                        try:
-                            timestamp = datetime.strptime(timestamp, fmt)
-                            break
-                        except ValueError:
-                            continue
-                    else:
-                        timestamp = timezone.now()
-                elif not isinstance(timestamp, datetime):
-                    timestamp = timezone.now()
+                # Generate unique content_id
+                content_id = str(row.get('URL', row.get('Source', '')) + str(row['Timestamp']))[:255]
+                if not content_id or content_id.lower() in ['nan', 'nat']:
+                    content_id = f"{source_name}_{success_count}_{hash(str(row['text']))}"
                 
-                # Scan for lexicon matches
-                text = row.get('original_text', '')
-                lexicon_matches = scan_text_for_lexicon_terms(text)
-                risk = calculate_risk_score(lexicon_matches)
+                text = str(row['text'])
+                matches = scan_text_for_lexicon_terms(text)
+                risk = calculate_risk_score(matches)
                 
-                # Create or update post
                 ProcessedPost.objects.update_or_create(
-                    content_id=str(row['content_id']),
+                    content_id=content_id,
                     defaults={
-                        'account_id': str(row['account_id']),
-                        'object_id': row.get('object_id', ''),
+                        'account_id': str(row.get('Source', ''))[:255],
                         'original_text': text,
-                        'url': row.get('url', '') or row.get('URL', ''),
-                        'timestamp_share': timestamp,
-                        'platform': row.get('platform', row.get('Platform', 'Unknown')),
+                        'object_id': text[:500],
+                        'url': str(row.get('URL', ''))[:500],
+                        'timestamp_share': row['Timestamp'],
+                        'platform': str(row.get('Platform', 'Unknown'))[:50],
                         'source_dataset': data_source,
-                        'is_original_post': True,
-                        'sentiment': row.get('Sentiment', ''),
-                        'cluster': -1,
-                        'is_election_related': True,
-                        'election_keywords_matched': [],
-                        'hashtags': [],
-                        'play_count': row.get('playCount') or row.get('play_count'),
-                        'digg_count': row.get('diggCount') or row.get('digg_count'),
-                        'comment_count': row.get('commentCount') or row.get('comment_count'),
-                        'share_count': row.get('shareCount') or row.get('share_count'),
-                        'text_language': row.get('textLanguage') or row.get('text_language', ''),
-                        'lexicon_matches': lexicon_matches,
+                        'lexicon_matches': matches,
                         'risk_score': risk['score'],
                         'risk_level': risk['level'],
+                        'is_election_related': True,
+                        'is_original_post': True,
+                        'sentiment': '',
+                        'cluster': -1,
+                        'election_keywords_matched': [],
+                        'hashtags': [],
                     }
                 )
                 success_count += 1
-                
             except Exception as e:
-                logger.error(f"Failed to process row {idx}: {str(e)}")
-                failed_count += 1
+                logger.warning(f"⚠️ Row failed: {e}")
+                fail_count += 1
                 continue
-        
-        # Update data source record count
+                
+        # Update source record count
         data_source.record_count = ProcessedPost.objects.filter(source_dataset=data_source).count()
         data_source.save()
         
-        message = f"Processed {success_count} records ({failed_count} failed). Encoding auto-detected."
-        return True, message, success_count
+        msg = f"✅ {success_count} records saved"
+        if fail_count > 0:
+            msg += f" ({fail_count} skipped)"
+        logger.info(f"🎉 {msg}")
+        return True, msg, success_count
         
     except Exception as e:
-        error_msg = f"Error: {str(e)}"
-        logger.error(f"Failed to process {file_path}: {error_msg}")
-        return False, error_msg, 0
+        logger.error(f"❌ Upload failed: {e}", exc_info=True)
+        return False, f"Error: {str(e)}", 0
 
 
-def map_columns_by_type(df, data_type):
-    """
-    Map CSV columns to standard schema based on data source type.
-    (Kept for backward compatibility - main logic now in combine_social_media_data)
-    """
-    # This function is now largely handled by combine_social_media_data
-    # but kept for any direct calls
-    return df
-    
+# === Backward Compatibility Stubs ===
 def preprocess_dataframe(df):
-    """
-    Stub for backward compatibility.
-    Use final_preprocess_and_map_columns for full preprocessing.
-    """
-    # Simple cleanup for backward compatibility
-    if df.empty:
-        return df
-    
-    # Remove completely empty rows
+    if df.empty: return df
     df = df.dropna(how='all')
-    
-    # Strip whitespace from string columns
     for col in df.select_dtypes(include=['object']).columns:
         df[col] = df[col].str.strip() if hasattr(df[col], 'str') else df[col]
-    
-    # Fill NaN values with empty strings for text columns
-    text_cols = ['original_text', 'account_id', 'content_id', 'platform']
-    for col in text_cols:
-        if col in df.columns:
-            df[col] = df[col].fillna('')
-    
+    return df
+
+def map_columns_by_type(df, data_type):
     return df
