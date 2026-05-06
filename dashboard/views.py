@@ -16,7 +16,7 @@ from django.http import JsonResponse, HttpResponse
 from django.db.models import Count, Q, F, Case, When, Value, CharField
 from django.utils import timezone
 from django.conf import settings
-from django.core.files.storage import default_storage  # ✅ ADDED: Required for file uploads
+from django.core.files.storage import default_storage  
 from django.core.paginator import Paginator
 import networkx as nx
 import plotly.express as px
@@ -29,6 +29,7 @@ from .utils.csv_processor import process_uploaded_csv, map_columns_by_type, prep
 from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_score, generate_lexicon_analytics
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
+from django.db.models.functions import TruncDay
 # REMOVED: Duplicate 'from .utils.csv_processor import process_uploaded_csv'
 
 logger = logging.getLogger(__name__)
