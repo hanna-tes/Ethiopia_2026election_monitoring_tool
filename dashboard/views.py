@@ -243,29 +243,42 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
     return all_summaries
     
 def extract_narrative_description(summary_text, sample_posts):
-    """Extract a 1-2 sentence description of the main narrative"""
-    # Try to extract from NARRATIVE THEME section
-    if 'NARRATIVE THEME:' in summary_text:
-        theme_section = summary_text.split('NARRATIVE THEME:')[1].split('\n')[0].strip()
-        if theme_section and len(theme_section) < 200:
-            return theme_section
+    """Extract a meaningful 1-2 sentence description of the main narrative from actual posts"""
     
-    # Fallback: Use first sentence from EXPLICIT CLAIMS
+    # Priority 1: Extract from EXPLICIT CLAIMS section (most important)
     if 'EXPLICIT CLAIMS:' in summary_text:
-        claims_section = summary_text.split('EXPLICIT CLAIMS:')[1].split('\n')[0].strip()
-        if claims_section:
-            # Get first sentence or first 150 chars
-            first_sentence = claims_section.split('.')[0] + '.'
-            return first_sentence if len(first_sentence) < 200 else claims_section[:150] + '...'
+        claims_section = summary_text.split('EXPLICIT CLAIMS:')[1]
+        # Get the first claim (usually the most important)
+        if '- ' in claims_section:
+            first_claim = claims_section.split('- ')[1].split('\n')[0].strip()
+            # Clean and truncate to 300 chars
+            clean_claim = re.sub(r'^[-•]\s*', '', first_claim).strip()
+            if clean_claim and len(clean_claim) > 20:
+                return clean_claim[:300] + ('...' if len(clean_claim) > 200 else '')
     
-    # Last resort: Use first sample post
+    # Priority 2: Extract from NARRATIVE THEME
+    if 'NARRATIVE THEME:' in summary_text:
+        theme_line = summary_text.split('NARRATIVE THEME:')[1].split('\n')[0].strip()
+        if theme_line and len(theme_line) > 10 and theme_line.lower() not in ['cluster of posts discussing election-related topics']:
+            return theme_line[:200]
+    
+    # Priority 3: Use the most common/representative post from the cluster
     if sample_posts:
-        first_post = sample_posts[0]
-        # Clean and truncate
-        clean_post = re.sub(r'http\S+', '', first_post).strip()
-        return clean_post[:150] + '...' if len(clean_post) > 150 else clean_post
+        # Get the first non-empty post
+        for post in sample_posts:
+            if post and len(post.strip()) > 50:
+                # Clean the post (remove URLs, mentions)
+                clean_post = re.sub(r'http\S+', '', post).strip()
+                clean_post = re.sub(r'@\w+', '', clean_post).strip()
+                # Truncate to first sentence or 200 chars
+                if '.' in clean_post:
+                    first_sentence = clean_post.split('.')[0].strip() + '.'
+                    if len(first_sentence) > 30:
+                        return first_sentence[:200]
+                return clean_post[:200] + ('...' if len(clean_post) > 200 else '')
     
-    return "Narrative analysis in progress..."
+    # Fallback: Show what we have
+    return "Analyzing narrative content..."
     
 def analyze_ttps(coordination_groups, posts):
     """Analyze Tactics, Techniques, and Procedures from coordinated groups"""
