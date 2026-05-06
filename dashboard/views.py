@@ -652,6 +652,7 @@ class HomeView(TemplateView):
                     height=400
                 )
                 charts['accounts'] = fig_accounts.to_json()
+
                 
             # C. Risk Distribution
             risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
@@ -666,6 +667,47 @@ class HomeView(TemplateView):
                     }
                 )
                 charts['risk'] = fig_risk.to_json()
+
+                         # C. Risk Distribution
+            risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
+            if risk_dist:
+                fig_risk = px.pie(
+                    risk_dist, names='risk_level', values='count',
+                    title='Risk Level Distribution',
+                    color='risk_level',
+                    color_discrete_map={
+                        'low': '#22c55e', 'medium': '#eab308', 
+                        'high': '#f97316', 'critical': '#dc2626'
+                    }
+                )
+                charts['risk'] = fig_risk.to_json()
+            
+            # D. Daily Volume Chart (MISSING - ADD THIS)
+            # Group posts by day
+            daily_posts = posts.annotate(
+                day=TruncDay('timestamp_share')
+            ).values('day').annotate(
+                count=Count('id')
+            ).order_by('day')
+            
+            if daily_posts:
+                # Convert to list for Plotly
+                daily_data = list(daily_posts)
+                if daily_data:
+                    fig_daily = px.line(
+                        daily_data,
+                        x='day',
+                        y='count',
+                        labels={'day': 'Date', 'count': 'Posts'},
+                        title='Daily Post Volume',
+                        markers=True
+                    )
+                    fig_daily.update_layout(
+                        xaxis_tickangle=-45,
+                        margin=dict(b=100, t=50, l=50, r=20),
+                        height=400
+                    )
+                    charts['daily'] = fig_daily.to_json()
         
         # 3. Recent Upload Summary
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
