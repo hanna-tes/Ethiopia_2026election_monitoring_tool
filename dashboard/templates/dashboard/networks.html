@@ -2,246 +2,251 @@
 {% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
 
 {% block extra_head %}
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <style>
-    .network-container { position: relative; height: 600px; background: #f8fafc; border-radius: 12px; }
-    .coordination-card { transition: all 0.3s ease; }
-    .coordination-card:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); }
-    .platform-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; margin: 0.125rem; }
-    .platform-x { background: #1DA1F2; color: white; }
-    .platform-facebook { background: #1877F2; color: white; }
-    .platform-tiktok { background: #000000; color: white; }
-    .platform-telegram { background: #0088cc; color: white; }
-    .platform-media { background: #6B7280; color: white; }
+    .network-container { background: #0f172a; border-radius: 12px; padding: 1rem; }
+    .control-panel { background: #1e293b; border-radius: 8px; padding: 1rem; }
+    .stat-card { background: #1e293b; border-radius: 8px; padding: 1rem; }
+    .ttp-card { background: #334155; border-radius: 8px; padding: 1rem; border-left: 4px solid #3b82f6; }
+    input[type="range"] { width: 100%; accent-color: #3b82f6; }
+    select, input[type="number"] { background: #475569; color: white; border: none; border-radius: 6px; padding: 0.5rem; }
+    .account-table { background: #1e293b; border-radius: 8px; overflow: hidden; }
+    .account-table th { background: #334155; color: #94a3b8; font-weight: 600; }
+    .account-table td { border-bottom: 1px solid #334155; }
+    .account-table tr:hover { background: #334155; }
+    .coordination-card { background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .coordination-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .coordination-stats { display: flex; gap: 2rem; margin-bottom: 1rem; }
+    .stat-item { text-align: center; }
+    .stat-value { font-size: 1.5rem; font-weight: bold; color: #3b82f6; }
+    .stat-label { font-size: 0.875rem; color: #64748b; }
+    .text-sample { background: #f8fafc; padding: 1rem; border-radius: 8px; margin: 1rem 0; font-style: italic; color: #475569; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-    <!-- Header -->
-    <div class="flex justify-between items-center mb-6">
+    <h2 class="text-2xl font-bold text-gray-900 mb-2">🕸️ Account Coordination Network</h2>
+    <p class="text-gray-600 mb-6">Visualizing accounts sharing identical messages. Node size = influence, edge thickness = coordination strength.</p>
+    
+    <!-- Controls -->
+    <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 control-panel">
         <div>
-            <h2 class="text-2xl font-bold text-gray-900">🕸️ Networks & Coordination Intelligence</h2>
-            <p class="text-gray-600 mt-1">Detecting accounts sharing identical messages across platforms</p>
+            <label class="text-sm text-gray-300 mb-1 block">Minimum connections to show</label>
+            <input type="range" name="min_connections" min="1" max="10" value="{{ min_connections }}" 
+                   oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
+            <output class="text-sm text-blue-400">{{ min_connections }}</output>
         </div>
-        <span class="px-4 py-2 bg-blue-100 text-blue-800 rounded-lg font-semibold">
-            {{ total_coordinated }} Coordinated Groups
-        </span>
+        <div>
+            <label class="text-sm text-gray-300 mb-1 block">Show top N accounts</label>
+            <input type="range" name="top_n" min="10" max="100" step="10" value="{{ top_n }}" 
+                   oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
+            <output class="text-sm text-blue-400">{{ top_n }}</output>
+        </div>
+        <div>
+            <label class="text-sm text-gray-300 mb-1 block">Layout style</label>
+            <select name="layout" onchange="this.form.submit()">
+                <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
+                <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
+                <option value="kamada_kawai" {% if layout_style == 'kamada_kawai' %}selected{% endif %}>Kamada-Kawai</option>
+            </select>
+        </div>
+        <div class="flex items-end">
+            <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                🔄 Refresh Graph
+            </button>
+        </div>
+    </form>
+    
+    <!-- Network Graph -->
+    <div class="network-container mb-6">
+        <div id="network-graph" class="w-full h-[600px]"></div>
     </div>
     
-    {% if coordination_groups %}
-    <!-- Stats Overview -->
+    <!-- Stats -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
-            <div class="text-3xl font-bold text-purple-800">{{ total_coordinated }}</div>
-            <div class="text-xs text-purple-600 mt-1">Coordinated Groups</div>
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-blue-400">{{ total_coordinated }}</div>
+            <div class="text-sm text-gray-400">Coordinated Groups</div>
         </div>
-        <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
-            <div class="text-3xl font-bold text-blue-800">{{ total_accounts }}</div>
-            <div class="text-xs text-blue-600 mt-1">Unique Accounts</div>
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-green-400">{{ total_accounts }}</div>
+            <div class="text-sm text-gray-400">Unique Accounts</div>
         </div>
-        <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border border-green-200">
-            <div class="text-3xl font-bold text-green-800">{{ total_posts }}</div>
-            <div class="text-xs text-green-600 mt-1">Total Posts</div>
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-purple-400">{{ max_connections }}</div>
+            <div class="text-sm text-gray-400">Max Group Size</div>
         </div>
-        <div class="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
-            <div class="text-3xl font-bold text-orange-800">{{ max_connections }}</div>
-            <div class="text-xs text-orange-600 mt-1">Max Connections</div>
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-orange-400">{{ total_posts }}</div>
+            <div class="text-sm text-gray-400">Total Posts</div>
         </div>
     </div>
     
-    <!-- Interactive Network Graph -->
+    <!-- TTPs Section -->
+    {% if ttps %}
     <div class="mb-8">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-semibold text-gray-800">🕸️ Coordination Network Visualization</h3>
-            <div class="flex gap-2">
-                <select id="layoutSelect" class="px-3 py-1 border border-gray-300 rounded-lg text-sm" onchange="updateLayout()">
-                    <option value="spring">Spring Layout</option>
-                    <option value="circular">Circular Layout</option>
-                    <option value="kamada">Kamada-Kawai</option>
-                </select>
-                <input type="range" id="minConnections" min="1" max="10" value="2" class="w-32" oninput="updateNetwork()" title="Minimum connections">
-                <span class="text-sm text-gray-600">Min Connections</span>
-            </div>
-        </div>
-        <div id="network-graph" class="network-container border border-gray-200 rounded-lg"></div>
-        <p class="text-sm text-gray-500 mt-2 text-center">
-            🎯 <strong>Nodes</strong> = Accounts (size = influence) | 
-            🔗 <strong>Edges</strong> = Shared identical messages (thickness = strength) | 
-            🎨 <strong>Colors</strong> = Platform
-        </p>
-    </div>
-    
-    <!-- Coordination Groups -->
-    <div>
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">📋 Detected Coordination Groups</h3>
-        <div class="space-y-4">
-            {% for group in coordination_groups %}
-            <div class="coordination-card bg-white border border-gray-200 rounded-xl p-5 hover:border-blue-300 transition-all">
-                <!-- Group Header -->
-                <div class="flex justify-between items-start mb-3">
-                    <div class="flex items-center gap-3">
-                        <div class="bg-blue-100 text-blue-800 w-10 h-10 rounded-full flex items-center justify-center font-bold">
-                            {{ group.id }}
-                        </div>
-                        <div>
-                            <h4 class="font-semibold text-gray-900">Coordination Group #{{ group.id }}</h4>
-                            <div class="flex items-center gap-4 text-sm text-gray-600 mt-1">
-                                <span>👥 {{ group.account_count }} accounts</span>
-                                <span>📝 {{ group.post_count }} identical posts</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex gap-2">
-                        {% for platform in group.platforms %}
-                        <span class="platform-badge platform-{{ platform|lower }}">{{ platform }}</span>
-                        {% endfor %}
-                    </div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">🎯 Detected Tactics, Techniques & Procedures (TTPs)</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {% for ttp in ttps %}
+            <div class="ttp-card">
+                <div class="flex justify-between items-start mb-2">
+                    <h4 class="font-semibold text-white">{{ ttp.name }}</h4>
+                    <span class="px-2 py-1 rounded text-xs font-medium
+                        {% if ttp.severity == 'High' %}bg-red-600 text-white
+                        {% elif ttp.severity == 'Medium' %}bg-yellow-600 text-white
+                        {% else %}bg-blue-600 text-white{% endif %}">
+                        {{ ttp.severity }}
+                    </span>
                 </div>
-                
-                <!-- Sample Text -->
-                <div class="bg-gray-50 rounded-lg p-3 mb-3">
-                    <p class="text-sm text-gray-700 italic">"{{ group.text_sample }}..."</p>
-                </div>
-                
-                <!-- Accounts -->
-                <div class="mb-3">
-                    <p class="text-xs text-gray-500 mb-1"><strong>Accounts involved:</strong></p>
-                    <div class="flex flex-wrap gap-2">
-                        {% for account in group.accounts %}
-                        <span class="px-2 py-1 bg-gray-100 rounded text-xs text-gray-700">{{ account|truncatechars:30 }}</span>
-                        {% endfor %}
-                    </div>
-                </div>
-                
-                <!-- Sample Posts with Links -->
-                <details class="mt-3">
-                    <summary class="cursor-pointer text-blue-600 hover:text-blue-700 font-medium text-sm">
-                        📄 View {{ group.sample_posts|length }} Sample Posts →
-                    </summary>
-                    <div class="mt-3 space-y-2 bg-gray-50 rounded-lg p-3">
-                        {% for post in group.sample_posts %}
-                        <div class="bg-white border border-gray-200 rounded-lg p-3">
-                            <div class="flex justify-between items-start mb-2">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-medium text-sm text-gray-900">{{ post.account_id|truncatechars:25 }}</span>
-                                    <span class="platform-badge platform-{{ post.platform|lower }}">{{ post.platform }}</span>
-                                </div>
-                                <span class="text-xs text-gray-500">{{ post.timestamp }}</span>
-                            </div>
-                            <p class="text-sm text-gray-700 mb-2">{{ post.text }}</p>
-                            {% if post.url %}
-                            <a href="{{ post.url }}" target="_blank" class="inline-flex items-center text-xs text-blue-600 hover:underline">
-                                🔗 View Original Post
-                            </a>
-                            {% endif %}
-                        </div>
-                        {% endfor %}
-                    </div>
-                </details>
+                <p class="text-sm text-gray-300 mb-2">{{ ttp.description }}</p>
+                <p class="text-xs text-gray-400">Evidence: {{ ttp.evidence }}</p>
             </div>
             {% endfor %}
         </div>
     </div>
+    {% endif %}
     
-    {% else %}
-    <!-- Empty State -->
-    <div class="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-        <div class="text-6xl mb-4">🔍</div>
-        <h3 class="text-lg font-semibold text-gray-800 mb-2">No coordination detected yet</h3>
-        <p class="text-gray-500 mb-2">You have <strong>{{ total_posts }}</strong> posts in the database.</p>
-        <p class="text-gray-500 mb-6 max-w-md mx-auto">
-            Coordination is detected when 3+ accounts post identical or near-identical messages.
-            Upload more diverse data or check your uploaded content.
-        </p>
-        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
-            📤 Upload Data to Analyze
-        </a>
+    <!-- Detected Coordination Groups (Top 5 Only) -->
+    {% if coordination_groups %}
+    <div class="mb-8">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">📋 Detected Coordination Groups (Top 5)</h3>
+        
+        {% for group in coordination_groups|slice:":5" %}
+        <div class="coordination-card">
+            <div class="coordination-header">
+                <div class="flex items-center gap-4">
+                    <div class="bg-blue-100 text-blue-800 w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl">
+                        {{ group.id }}
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold text-gray-900">Coordination Group #{{ group.id }}</h4>
+                        <div class="coordination-stats">
+                            <div class="stat-item">
+                                <div class="stat-value">{{ group.account_count }}</div>
+                                <div class="stat-label">accounts</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">{{ group.post_count }}</div>
+                                <div class="stat-label">identical posts</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    {% for platform in group.platforms %}
+                    <span class="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                        {{ platform }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Text Sample -->
+            <div class="text-sample">
+                "{{ group.text_sample|truncatechars:200 }}"
+            </div>
+            
+            <!-- Accounts Table -->
+            <div class="mb-4">
+                <h5 class="text-sm font-semibold text-gray-700 mb-2">Accounts Involved (Top 10):</h5>
+                <div class="account-table overflow-x-auto">
+                    <table class="min-w-full">
+                        <thead>
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Account</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Platform</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Posts</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700">
+                            {% for account in group.accounts|slice:":10" %}
+                            <tr>
+                                <td class="px-4 py-3 text-sm text-white font-mono">{{ account|truncatechars:30 }}</td>
+                                <td class="px-4 py-3 text-sm text-gray-300">{{ group.platforms|first|default:"Unknown" }}</td>
+                                <td class="px-4 py-3 text-sm text-blue-400">{{ group.post_count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Sample Posts -->
+            <details class="mt-4">
+                <summary class="cursor-pointer text-blue-600 hover:underline font-medium text-sm">
+                    📄 View {{ group.sample_posts|length }} Sample Posts →
+                </summary>
+                <div class="mt-3 space-y-2 bg-gray-50 rounded-lg p-3">
+                    {% for post in group.sample_posts %}
+                    <div class="bg-white border border-gray-200 rounded-lg p-3">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium text-sm text-gray-900">{{ post.account_id|truncatechars:25 }}</span>
+                                <span class="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">{{ post.platform }}</span>
+                            </div>
+                            <span class="text-xs text-gray-500">{{ post.timestamp }}</span>
+                        </div>
+                        <p class="text-sm text-gray-700 mb-2">{{ post.text|truncatechars:150 }}</p>
+                        {% if post.url %}
+                        <a href="{{ post.url }}" target="_blank" class="inline-flex items-center text-xs text-blue-600 hover:underline">
+                            🔗 View Original Post
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+        </div>
+        {% endfor %}
     </div>
     {% endif %}
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
-    // Network graph data from Django
-    const coordinationData = {{ coordination_data_json|safe }};
-    let currentLayout = 'spring';
-    let minConnections = 2;
-    
-    function updateNetwork() {
-        minConnections = parseInt(document.getElementById('minConnections').value);
-        renderNetwork();
-    }
-    
-    function updateLayout() {
-        currentLayout = document.getElementById('layoutSelect').value;
-        // In a full implementation, you'd recalculate positions here
-        renderNetwork();
-    }
-    
-    function renderNetwork() {
-        if (!coordinationData || !coordinationData.nodes || coordinationData.nodes.length === 0) {
-            document.getElementById('network-graph').innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">No network data available</div>';
-            return;
-        }
-        
-        // Filter nodes by minimum connections
-        const filteredNodes = coordinationData.nodes.filter(n => n.degree >= minConnections);
-        const filteredEdges = coordinationData.edges.filter(e => 
-            filteredNodes.some(n => n.id === e.source) && 
-            filteredNodes.some(n => n.id === e.target)
-        );
-        
-        // Create edge traces
+    const graphData = {{ coordination_data_json|safe }};
+    if (graphData && graphData.nodes && graphData.nodes.length > 0) {
         const edgeTraces = [];
-        filteredEdges.forEach(edge => {
+        graphData.edges.forEach(edge => {
             edgeTraces.push({
                 x: [edge.source_x, edge.target_x, null],
                 y: [edge.source_y, edge.target_y, null],
                 mode: 'lines',
-                line: { 
-                    width: Math.max(1, edge.weight * 2), 
-                    color: 'rgba(100, 116, 139, 0.4)' 
-                },
-                hoverinfo: 'text',
-                text: `${edge.weight} shared messages`,
+                line: { width: edge.weight, color: 'rgba(59, 130, 246, 0.3)' },
+                hoverinfo: 'none',
                 showlegend: false
             });
         });
         
-        // Create node trace
         const nodeTrace = {
-            x: filteredNodes.map(n => n.x),
-            y: filteredNodes.map(n => n.y),
+            x: graphData.nodes.map(n => n.x),
+            y: graphData.nodes.map(n => n.y),
             mode: 'markers+text',
             marker: {
-                size: filteredNodes.map(n => Math.max(12, n.degree * 4)),
-                color: filteredNodes.map(n => n.color),
-                line: { width: 2, color: 'white' },
-                opacity: 0.9
+                size: graphData.nodes.map(n => Math.max(10, n.degree * 3)),
+                color: graphData.nodes.map(n => n.color),
+                line: { width: 1, color: 'white' }
             },
-            text: filteredNodes.map(n => n.label),
+            text: graphData.nodes.map(n => n.label),
             textposition: 'top center',
-            textfont: { size: 9, color: '#1F2937' },
-            hovertemplate: '<b>%{text}</b><br>Platform: %{customdata[0]}<br>Connections: %{customdata[1]}<br>Posts: %{customdata[2]}<extra></extra>',
-            customdata: filteredNodes.map(n => [n.platform, n.degree, n.post_count]),
+            textfont: { size: 8, color: '#ffffff' },
+            hoverinfo: 'text',
+            hovertext: graphData.nodes.map(n => `${n.label}<br>Connections: ${n.degree}<br>Posts: ${n.post_count}`),
             name: 'Accounts'
         };
         
         const layout = {
-            title: `Coordination Network — ${filteredNodes.length} accounts, ${filteredEdges.length} connections`,
             showlegend: false,
             hovermode: 'closest',
-            margin: { b: 20, l: 20, r: 20, t: 60 },
-            xaxis: { showgrid: false, zeroline: false, showticklabels: false, range: [-1.2, 1.2] },
-            yaxis: { showgrid: false, zeroline: false, showticklabels: false, range: [-1.2, 1.2] },
-            plot_bgcolor: 'rgba(248, 250, 252, 0.8)',
-            paper_bgcolor: 'rgba(255, 255, 255, 0.8)'
+            margin: { b: 20, l: 20, r: 20, t: 40 },
+            xaxis: { showgrid: false, zeroline: false, showticklabels: false },
+            yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+            plot_bgcolor: '#0f172a',
+            paper_bgcolor: '#0f172a'
         };
         
         Plotly.newPlot('network-graph', [...edgeTraces, nodeTrace], layout, {responsive: true});
     }
-    
-    // Initial render
-    document.addEventListener('DOMContentLoaded', renderNetwork);
 </script>
 {% endblock %}
