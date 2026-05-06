@@ -31,6 +31,8 @@ from .utils.csv_processor import process_uploaded_csv, map_columns_by_type, prep
 from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_score, generate_lexicon_analytics
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
 
 
 logger = logging.getLogger(__name__)
@@ -173,89 +175,141 @@ Time Range: {min_ts} to {max_ts}"""
 
 
 def get_ethiopia_summaries(posts_queryset, max_clusters=10):
-    """Generates LLM-powered summaries for top narrative clusters (Django-adapted)"""
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.cluster import KMeans
-    from collections import defaultdict, Counter
-    import numpy as np
-    
+    """Generates LLM-powered summaries for top narrative clusters"""
     all_summaries = []
     
-    if posts_queryset.count() > 50:
-        # Get post data
-        post_data = list(posts_queryset.values('original_text', 'url', 'account_id', 'platform', 'timestamp_share')[:2000])
+    if posts_queryset.count() < 50:
+        return all_summaries
+    
+    post_data = list(posts_queryset.values('original_text', 'url', 'account_id', 'platform', 'timestamp_share')[:2000])
+    
+    if len(post_data) < 20:
+        return all_summaries
+    
+    texts = [p['original_text'] for p in post_data if p['original_text'] and len(p['original_text'].strip()) > 10]
+    
+    if len(texts) < 20:
+        return all_summaries
+    
+    try:
+        vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1,2))
+        X = vectorizer.fit_transform(texts)
         
-        if len(post_data) > 10:
-            texts = [p['original_text'] for p in post_data if p['original_text'] and len(p['original_text'].strip()) > 10]
-            
-            if len(texts) > 10:
-                try:
-                    # Vectorize
-                    vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1,2))
-                    X = vectorizer.fit_transform(texts)
+        # Ensure n_clusters is at least 2
+        n_clusters = max(2, min(max_clusters, len(texts) // 20))
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(X)
+        
+        cluster_posts = defaultdict(list)
+        for idx, label in enumerate(labels):
+            cluster_posts[label].append(post_data[idx])
+        
+        for cluster_id, cluster_data in cluster_posts.items():
+            if len(cluster_data) >= 3:  # Reduced threshold
+                cluster_texts = [p['original_text'] for p in cluster_data if p['original_text']]
+                cluster_urls = [p['url'] for p in cluster_data if p.get('url')]
+                timestamps = [p['timestamp_share'] for p in cluster_data if p.get('timestamp_share')]
+                min_ts = min(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
+                max_ts = max(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
+                
+                summary_text = summarize_cluster_ethiopia(
+                    cluster_texts[:50], cluster_urls[:10], cluster_data, min_ts, max_ts
+                )
+                
+                if not any(phrase in summary_text.lower() for phrase in ["no explicit claims", "not explicitly stated", "summary generation failed"]):
+                    total_reach = len(cluster_data)
+                    platforms = [p['platform'] for p in cluster_data if p.get('platform')]
+                    platform_counts = Counter(platforms)
+                    top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
                     
-                    # Cluster
-                    n_clusters = min(max_clusters, len(texts) // 20)
-                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                    labels = kmeans.fit_predict(X)
-                    
-                    # Group posts by cluster
-                    cluster_posts = defaultdict(list)
-                    for idx, label in enumerate(labels):
-                        cluster_posts[label].append(post_data[idx])
-                    
-                    # Generate summaries for top clusters
-                    for cluster_id, cluster_data in cluster_posts.items():
-                        if len(cluster_data) >= 5:
-                            # Extract texts and URLs
-                            cluster_texts = [p['original_text'] for p in cluster_data if p['original_text']]
-                            cluster_urls = [p['url'] for p in cluster_data if p.get('url')]
-                            
-                            # Get timestamps
-                            timestamps = [p['timestamp_share'] for p in cluster_data if p.get('timestamp_share')]
-                            min_ts = min(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
-                            max_ts = max(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
-                            
-                            # Generate summary
-                            summary_text = summarize_cluster_ethiopia(
-                                cluster_texts[:80],
-                                cluster_urls[:10],
-                                cluster_data,
-                                min_ts,
-                                max_ts
-                            )
-                            
-                            # Skip low-quality summaries
-                            if any(phrase in summary_text.lower() for phrase in [
-                                "no explicit claims", "not explicitly stated", "summary generation failed"
-                            ]):
-                                continue
-                            
-                            # Calculate metrics
-                            total_reach = len(cluster_data)
-                            platforms = [p['platform'] for p in cluster_data if p.get('platform')]
-                            platform_counts = Counter(platforms)
-                            top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
-                            
-                            all_summaries.append({
-                                'cluster_id': cluster_id,
-                                'Context': summary_text,
-                                'Total_Reach': total_reach,
-                                'Emerging_Virality': assign_virality_tier(total_reach),
-                                'Top_Platforms': top_platforms,
-                                'sample_posts': cluster_texts[:5],
-                                'post_count': len(cluster_data)
-                            })
-                    
-                    # Sort by reach
-                    all_summaries.sort(key=lambda x: x['Total_Reach'], reverse=True)
-                    
-                except Exception as e:
-                    logger.error(f"Narrative clustering failed: {e}")
+                    all_summaries.append({
+                        'cluster_id': cluster_id,
+                        'Context': summary_text,
+                        'Total_Reach': total_reach,
+                        'Emerging_Virality': assign_virality_tier(total_reach),
+                        'Top_Platforms': top_platforms,
+                        'sample_posts': cluster_texts[:5],
+                        'post_count': len(cluster_data)
+                    })
+        
+        all_summaries.sort(key=lambda x: x['Total_Reach'], reverse=True)
+    except Exception as e:
+        logger.error(f"Narrative clustering failed: {e}")
     
     return all_summaries
 
-
+def analyze_ttps(coordination_groups, posts):
+    """Analyze Tactics, Techniques, and Procedures from coordinated groups"""
+    ttps = []
+    
+    if not coordination_groups:
+        return ttps
+    
+    # TTP 1: Coordinated Inauthentic Behavior (CIB)
+    cib_groups = [g for g in coordination_groups if g['account_count'] >= 5]
+    if cib_groups:
+        ttps.append({
+            'name': 'Coordinated Inauthentic Behavior',
+            'description': f'Detected {len(cib_groups)} groups with 5+ accounts sharing identical content.',
+            'severity': 'High',
+            'evidence': f'{sum(g["post_count"] for g in cib_groups)} total posts across groups.'
+        })
+    
+    # TTP 2: Cross-Platform Amplification
+    cross_platform = [g for g in coordination_groups if len(g['platforms']) > 1]
+    if cross_platform:
+        platforms = set(p for g in cross_platform for p in g['platforms'])
+        ttps.append({
+            'name': 'Cross-Platform Amplification',
+            'description': f'{len(cross_platform)} groups operating across multiple platforms ({", ".join(platforms)}).',
+            'severity': 'Medium',
+            'evidence': 'Identical messages spread across different social networks.'
+        })
+    
+    # TTP 3: Rapid Response / Burst Posting
+    burst_groups = [g for g in coordination_groups if g['post_count'] > 10]
+    if burst_groups:
+        ttps.append({
+            'name': 'Rapid Response / Burst Posting',
+            'description': f'{len(burst_groups)} groups showing high-volume posting patterns (>10 posts).',
+            'severity': 'Medium',
+            'evidence': 'Sudden spikes in identical content.'
+        })
+    
+    # TTP 4: Hashtag Manipulation (Simplified)
+    hashtag_groups = [g for g in coordination_groups if '#' in g['text_sample']]
+    if hashtag_groups:
+        # Extract hashtags more safely
+        hashtags = []
+        for g in hashtag_groups[:3]:  # Limit to first 3 groups
+            text = g['text_sample']
+            found = re.findall(r'#\w+', text)
+            hashtags.extend(found)
+        
+        if hashtags:
+            unique_hashtags = list(set(hashtags))[:3]
+            ttps.append({
+                'name': 'Hashtag Manipulation',
+                'description': f'Coordinated use of hashtags: {", ".join(unique_hashtags)}.',
+                'severity': 'Low',
+                'evidence': 'Identical hashtags used across multiple accounts.'
+            })
+    
+    return ttps
+    
+def get_top_pairs(coordination_groups):
+    """Get top coordinated account pairs"""
+    pairs = []
+    for group in coordination_groups[:10]:
+        accounts = group['accounts']
+        if len(accounts) >= 2:
+            pairs.append({
+                'accounts': f'{accounts[0][:20]}... ↔ {accounts[1][:20]}...',
+                'shared_posts': group['post_count'],
+                'platforms': group['platforms']
+            })
+    return pairs[:10]
+    
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     """Find accounts posting identical messages (Streamlit-style coordination detection)"""
     from collections import Counter
@@ -295,19 +349,14 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     return coordination
 
 
-def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50):
-    """Generate network graph data for Plotly (Streamlit-style)"""
-    import networkx as nx
-    from collections import Counter
-    
+def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, layout='spring'):
+    """Generate network graph data for Plotly"""
     G = nx.Graph()
     
-    # Find coordination
     text_groups = posts_queryset.values('original_text').annotate(
         account_count=Count('account_id', distinct=True)
-    ).filter(account_count__gte=2)
+    ).filter(account_count__gte=min_connections)
     
-    # Build graph
     for group in text_groups:
         text = group['original_text']
         accounts = list(posts_queryset.filter(original_text=text).values_list('account_id', flat=True).distinct())
@@ -319,26 +368,29 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50):
                 else:
                     G.add_edge(accounts[i], accounts[j], weight=1)
     
-    # Prepare data
     if G.number_of_edges() == 0:
-        return json.dumps({'nodes': [], 'edges': []})
+        return {'nodes': [], 'edges': []}
     
-    # Filter and layout
     nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
     G = G.subgraph(nodes_to_keep).copy()
     
     if G.number_of_edges() == 0:
-        return json.dumps({'nodes': [], 'edges': []})
+        return {'nodes': [], 'edges': []}
     
-    # Get top N nodes
     top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
     top_node_names = [n for n, _ in top_nodes]
     G_top = G.subgraph(top_node_names).copy()
     
     # Layout
-    pos = nx.spring_layout(G_top, k=1, iterations=50, seed=42)
+    if layout == 'circular':
+        pos = nx.circular_layout(G_top)
+    elif layout == 'kamada_kawai':
+        pos = nx.kamada_kawai_layout(G_top)
+    elif layout == 'spring':
+        pos = nx.spring_layout(G_top, k=0.5, iterations=50, seed=42)
+    else:
+        pos = nx.spring_layout(G_top, seed=42)
     
-    # Nodes
     nodes = []
     for node in G_top.nodes():
         degree = G_top.degree(node)
@@ -347,7 +399,7 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50):
         platform_mode = Counter(platforms).most_common(1)[0][0] if platforms else 'Unknown'
         
         nodes.append({
-            'id': str(node)[:50],
+            'id': str(node)[:30],
             'label': str(node)[:30],
             'degree': degree,
             'post_count': node_posts.count(),
@@ -357,13 +409,12 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50):
             'color': _get_platform_color(platform_mode)
         })
     
-    # Edges
     edges = []
     for u, v, data in G_top.edges(data=True):
         if u in pos and v in pos:
             edges.append({
-                'source': str(u)[:50],
-                'target': str(v)[:50],
+                'source': str(u)[:30],
+                'target': str(v)[:30],
                 'weight': data.get('weight', 1),
                 'source_x': float(pos[u][0]),
                 'source_y': float(pos[u][1]),
@@ -371,8 +422,7 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50):
                 'target_y': float(pos[v][1])
             })
     
-    return json.dumps({'nodes': nodes, 'edges': edges})
-
+    return {'nodes': nodes, 'edges': edges}
 
 def _get_platform_color(platform):
     """Get color hex code for platform"""
@@ -520,18 +570,6 @@ CONFIG = {
     # === Display Configuration ===
     "display": {"max_terms_per_category": 20, "show_amharic_first": True, "highlight_critical": True}
 }
-
-
-def assign_virality_tier(n):
-    """Assign virality tier based on post count"""
-    if n >= 500:
-        return "Tier 4: Viral Emergency"
-    elif n >= 100:
-        return "Tier 3: High Spread"
-    elif n >= 20:
-        return "Tier 2: Moderate"
-    else:
-        return "Tier 1: Limited"
 
 
 def get_election_posts_queryset(request):
@@ -725,7 +763,7 @@ class NarrativesView(TemplateView):
         posts = ProcessedPost.objects.all()
         total_posts = posts.count()
         
-        # Generate summaries using Streamlit-style function
+        # Generate summaries
         summaries = get_ethiopia_summaries(posts, max_clusters=10)
         
         context.update({
@@ -903,13 +941,22 @@ class NetworksView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
+        # Get controls from URL parameters
+        request = self.request
+        min_connections = int(request.GET.get('min_connections', 2))
+        top_n = int(request.GET.get('top_n', 50))
+        layout_style = request.GET.get('layout', 'spring')
+        
         posts = ProcessedPost.objects.all()
         
-        # Get coordination groups
-        coordination_groups = get_coordination_groups(posts, min_accounts=3, max_groups=10)
+        # Generate network graph
+        graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
         
-        # Generate network graph data
-        coordination_data_json = generate_network_graph_data(posts, min_connections=2, top_n=50)
+        # Get coordination groups for TTP analysis
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=20)
+        
+        # Analyze TTPs from coordinated groups
+        ttps = analyze_ttps(coordination_groups, posts)
         
         context.update({
             'active_tab': 'networks',
@@ -921,45 +968,40 @@ class NetworksView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
+            'coordination_data_json': json.dumps(graph_data),
             'coordination_groups': coordination_groups,
-            'coordination_data_json': coordination_data_json,
             'total_coordinated': len(coordination_groups),
             'total_accounts': posts.values('account_id').distinct().count(),
             'total_posts': posts.count(),
+            'max_connections': max([g['account_count'] for g in coordination_groups]) if coordination_groups else 0,
+            'top_coordinated_pairs': get_top_pairs(coordination_groups),
+            # Controls state
+            'min_connections': min_connections,
+            'top_n': top_n,
+            'layout_style': layout_style,
+            # TTPs
+            'ttps': ttps,
         })
         return context
         
 
 class LexiconManagementView(TemplateView):
-    """Lexicon Management - Add/edit hate speech terms"""
     template_name = 'dashboard/lexicon_management.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get lexicon terms from database (or fallback to CONFIG)
-        lexicon_terms = LexiconTerm.objects.filter(
-            is_election_related=True
-        ).order_by('category', 'severity')
+        lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
-        # If no terms in DB, use CONFIG as fallback
         if not lexicon_terms.exists():
-            # This would populate the DB on first run
             for category, terms in CONFIG['lexicon'].items():
                 for term, metadata in terms.items():
-                    LexiconTerm.objects.get_or_create(
-                        term=term,
-                        defaults={
-                            'category': category,
-                            'severity': metadata.get('severity', 'medium'),
-                            'target_entity': metadata.get('target_entity', ''),
-                            'language': metadata.get('language', 'english'),
-                            'is_election_related': True,
-                        }
-                    )
-            lexicon_terms = LexiconTerm.objects.filter(
-                is_election_related=True
-            ).order_by('category', 'severity')
+                    LexiconTerm.objects.get_or_create(term=term, defaults={
+                        'category': category, 'severity': metadata.get('severity', 'medium'),
+                        'target_entity': metadata.get('target_entity', ''),
+                        'language': metadata.get('language', 'english'), 'is_election_related': True
+                    })
+            lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
         categories = lexicon_terms.values_list('category', flat=True).distinct()
         
@@ -982,21 +1024,30 @@ class LexiconManagementView(TemplateView):
         return context
 
     def post(self, request, *args, **kwargs):
-        """Handle adding new lexicon terms from the form"""
-        term = request.POST.get('term')
-        if term:
-            LexiconTerm.objects.get_or_create(
-                term=term,
-                defaults={
+        action = request.POST.get('action')
+        
+        if action == 'add_term':
+            term = request.POST.get('term')
+            if term:
+                LexiconTerm.objects.get_or_create(term=term, defaults={
                     'category': request.POST.get('category', 'uncategorized'),
                     'severity': request.POST.get('severity', 'medium'),
                     'target_entity': request.POST.get('target_entity', ''),
                     'language': request.POST.get('language', 'english'),
                     'is_election_related': True,
+                })
+        
+        elif action == 'scan_text':
+            text = request.POST.get('scan_text', '')
+            if text:
+                matches = scan_text_for_lexicon_terms(text)
+                risk = calculate_risk_score(matches)
+                messages.success(request, f"Found {len(matches)} trigger terms. Risk: {risk['level'].upper()} (Score: {risk['score']})")
+                request.session['scan_results'] = {
+                    'matches': matches, 'risk': risk, 'text': text
                 }
-            )
+        
         return redirect('lexicon_management')
-
 
 class UploadDataView(TemplateView):
     """UI for uploading CSV files"""
