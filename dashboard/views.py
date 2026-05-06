@@ -734,6 +734,14 @@ class ProcessUploadView(View):
         
         return redirect('upload_data')
 
+class ClearDataView(View):
+    """Clear all uploaded data from database"""
+    def post(self, request):
+        ProcessedPost.objects.all().delete()
+        DataUpload.objects.all().delete()
+        messages.success(request, "✅ All data cleared successfully. You can now upload fresh data.")
+        return redirect('upload_data')
+
 
 # === API Endpoints ===
 
