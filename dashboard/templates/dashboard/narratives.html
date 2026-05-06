@@ -5,38 +5,34 @@
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
     <div class="flex justify-between items-center mb-6">
         <h2 class="text-2xl font-bold text-gray-900">📰 Trending Narratives</h2>
-        <span class="text-sm text-gray-500">{{ clusters|length }} narratives identified</span>
+        <span class="text-sm text-gray-500">{{ summaries|length }} active narratives</span>
     </div>
     
-    {% if clusters %}
-    <!-- Narrative Cards -->
-    <div class="space-y-4">
-        {% for cluster in clusters %}
+    {% if summaries %}
+    <div class="space-y-6">
+        {% for summary in summaries %}
         <div class="border border-gray-200 rounded-xl p-5 hover:border-blue-300 transition-colors">
             <div class="flex justify-between items-start mb-3">
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-900">
-                        {% if cluster.theme %}{{ cluster.theme }}{% else %}Narrative #{{ cluster.cluster_id }}{% endif %}
-                    </h3>
+                    <h3 class="text-lg font-semibold text-gray-900">Cluster #{{ summary.cluster_id }} — {{ summary.Emerging_Virality }}</h3>
                     <div class="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                        <span>📊 {{ cluster.total_reach }} posts</span>
-                        <span>🔗 {{ cluster.virality_tier }}</span>
+                        <span>📊 {{ summary.Total_Reach }} posts</span>
+                        <span>🔗 {{ summary.Top_Platforms }}</span>
                     </div>
                 </div>
             </div>
             
-            {% if cluster.llm_summary %}
-            <p class="text-gray-700 leading-relaxed mb-4">{{ cluster.llm_summary|truncatewords:50 }}</p>
-            {% endif %}
+            <div class="prose prose-sm max-w-none text-gray-700">
+                {{ summary.Context|linebreaks }}
+            </div>
             
-            <!-- Sample Posts -->
-            {% if cluster.sample_posts %}
-            <details class="text-sm">
-                <summary class="cursor-pointer text-blue-600 hover:underline font-medium">
-                    View {{ cluster.sample_posts|length }} sample posts →
+            {% if summary.sample_posts %}
+            <details class="mt-4">
+                <summary class="cursor-pointer text-blue-600 hover:underline font-medium text-sm">
+                    📂 View {{ summary.sample_posts|length }} Sample Posts →
                 </summary>
                 <div class="mt-3 space-y-2 bg-gray-50 rounded-lg p-3">
-                    {% for post in cluster.sample_posts %}
+                    {% for post in summary.sample_posts %}
                     <div class="border-l-2 border-blue-200 pl-3 py-1">
                         <div class="text-xs text-gray-500">{{ post|truncatechars:100 }}</div>
                     </div>
@@ -48,20 +44,16 @@
         {% endfor %}
     </div>
     {% else %}
-    <!-- Empty State - CORRECTED SYNTAX -->
-    <div class="text-center py-12">
+    <div class="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
         <div class="text-6xl mb-4">📰</div>
         <h3 class="text-lg font-semibold text-gray-800 mb-2">No narratives identified yet</h3>
         <p class="text-gray-500 mb-2">You have <strong>{{ total_posts }}</strong> posts in the database.</p>
-        <p class="text-gray-500 mb-6">Narrative clustering requires sufficient data volume. Upload more posts or wait for automated clustering to run.</p>
-        <div class="flex justify-center gap-4">
-            <a href="{% url 'upload_data' %}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                📤 Upload More Data
-            </a>
-            <a href="{% url 'home' %}" class="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">
-                🏠 View Dashboard
-            </a>
-        </div>
+        <p class="text-gray-500 mb-6 max-w-md mx-auto">
+            Narrative clustering requires sufficient data volume. Upload more posts or wait for automated clustering to run.
+        </p>
+        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            📤 Upload More Data
+        </a>
     </div>
     {% endif %}
 </div>
