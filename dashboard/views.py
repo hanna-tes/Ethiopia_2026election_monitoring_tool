@@ -611,7 +611,9 @@ class NetworksView(TemplateView):
                     # Get platform distribution for this account
                     node_posts = posts.filter(account_id=node)
                     platforms = node_posts.values_list('platform', flat=True)
-                    platform_mode = max(set(platforms), key=platforms.count) if platforms else 'Unknown'
+                    from collections import Counter
+                    platform_counts = Counter(platforms)
+                    platform_mode = platform_counts.most_common(1)[0][0] if platform_counts else 'Unknown'
                     
                     nodes.append({
                         'id': str(node)[:50],
