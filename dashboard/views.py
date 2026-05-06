@@ -222,9 +222,13 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
                     platform_counts = Counter(platforms)
                     top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
                     
+                    # Extract 1-2 sentence narrative description from the summary
+                    narrative_desc = extract_narrative_description(summary_text, cluster_texts[:5])
+                    
                     all_summaries.append({
                         'cluster_id': cluster_id,
                         'Context': summary_text,
+                        'Narrative_Description': narrative_desc,  # NEW: Brief description
                         'Total_Reach': total_reach,
                         'Emerging_Virality': assign_virality_tier(total_reach),
                         'Top_Platforms': top_platforms,
@@ -237,7 +241,32 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
         logger.error(f"Narrative clustering failed: {e}")
     
     return all_summaries
-
+    
+def extract_narrative_description(summary_text, sample_posts):
+    """Extract a 1-2 sentence description of the main narrative"""
+    # Try to extract from NARRATIVE THEME section
+    if 'NARRATIVE THEME:' in summary_text:
+        theme_section = summary_text.split('NARRATIVE THEME:')[1].split('\n')[0].strip()
+        if theme_section and len(theme_section) < 200:
+            return theme_section
+    
+    # Fallback: Use first sentence from EXPLICIT CLAIMS
+    if 'EXPLICIT CLAIMS:' in summary_text:
+        claims_section = summary_text.split('EXPLICIT CLAIMS:')[1].split('\n')[0].strip()
+        if claims_section:
+            # Get first sentence or first 150 chars
+            first_sentence = claims_section.split('.')[0] + '.'
+            return first_sentence if len(first_sentence) < 200 else claims_section[:150] + '...'
+    
+    # Last resort: Use first sample post
+    if sample_posts:
+        first_post = sample_posts[0]
+        # Clean and truncate
+        clean_post = re.sub(r'http\S+', '', first_post).strip()
+        return clean_post[:150] + '...' if len(clean_post) > 150 else clean_post
+    
+    return "Narrative analysis in progress..."
+    
 def analyze_ttps(coordination_groups, posts):
     """Analyze Tactics, Techniques, and Procedures from coordinated groups"""
     ttps = []
