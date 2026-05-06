@@ -383,7 +383,7 @@ class PEPsView(TemplateView):
         if peps_csv_url:
             try:
                 peps_data = load_peps_from_github(peps_csv_url)
-                for pep_data in peps_
+                for pep_data in peps_data: 
                     PEP.objects.update_or_create(
                         name=pep_data['Name (English)'],
                         defaults={
