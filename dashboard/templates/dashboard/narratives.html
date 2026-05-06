@@ -21,50 +21,32 @@
                     <div class="flex items-center gap-3 mt-1 text-sm text-gray-500">
                         <span>📊 {{ cluster.total_reach }} posts</span>
                         <span>🔗 {{ cluster.virality_tier }}</span>
-                        <span>📅 {{ cluster.first_detected|date:"M d" }}</span>
                     </div>
                 </div>
-                <span class="px-3 py-1 rounded-full text-xs font-medium
-                    {% if 'Tier 4' in cluster.virality_tier %}bg-red-100 text-red-800
-                    {% elif 'Tier 3' in cluster.virality_tier %}bg-orange-100 text-orange-800
-                    {% elif 'Tier 2' in cluster.virality_tier %}bg-yellow-100 text-yellow-800
-                    {% else %}bg-green-100 text-green-800{% endif %}">
-                    {{ cluster.virality_tier }}
-                </span>
             </div>
             
             {% if cluster.llm_summary %}
             <p class="text-gray-700 leading-relaxed mb-4">{{ cluster.llm_summary|truncatewords:50 }}</p>
             {% endif %}
-            
-            <!-- Sample Posts (if available) -->
-            {% if cluster.sample_posts %}
-            <details class="text-sm">
-                <summary class="cursor-pointer text-blue-600 hover:underline font-medium">
-                    View {{ cluster.sample_posts|length }} sample posts →
-                </summary>
-                <div class="mt-3 space-y-2 bg-gray-50 rounded-lg p-3">
-                    {% for post in cluster.sample_posts %}
-                    <div class="border-l-2 border-blue-200 pl-3 py-1">
-                        <div class="text-xs text-gray-500">{{ post.account_id }} • {{ post.platform }}</div>
-                        <div class="text-gray-800">{{ post.original_text|truncatewords:30 }}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </details>
-            {% endif %}
         </div>
         {% endfor %}
     </div>
     {% else %}
-    <!-- Empty State -->
+    <!-- Empty State with Better Message -->
     <div class="text-center py-12">
         <div class="text-6xl mb-4">📰</div>
         <h3 class="text-lg font-semibold text-gray-800 mb-2">No narratives identified yet</h3>
-        <p class="text-gray-500 mb-6">Upload social media data to detect emerging election stories and coordinated messaging.</p>
-        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            📤 Upload Data
-        </a>
+        <p class="text-gray-500 mb-2">You have <strong>{{ recent_posts_count }}</strong> posts in the database.</p>
+        <p class="text-gray-500 mb-6">Narrative clustering requires sufficient data volume. Upload more posts or wait for automated clustering to run.</p>
+        
+        <div class="flex justify-center gap-4">
+            <a href="{% url 'upload_data' %}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                📤 Upload More Data
+            </a>
+            <a href="{% url 'home' %}" class="inline-flex items-center px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">
+                🏠 View Dashboard
+            </a>
+        </div>
     </div>
     {% endif %}
 </div>
