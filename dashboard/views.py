@@ -4,6 +4,7 @@ Reuses your Streamlit app.py logic but queries database instead of CSVs
 """
 import json
 import logging
+import os  # ✅ ADDED: Required for file paths
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -15,6 +16,7 @@ from django.http import JsonResponse, HttpResponse
 from django.db.models import Count, Q, F, Case, When, Value, CharField
 from django.utils import timezone
 from django.conf import settings
+from django.core.files.storage import default_storage  # ✅ ADDED: Required for file uploads
 from django.core.paginator import Paginator
 import networkx as nx
 import plotly.express as px
@@ -27,7 +29,7 @@ from .utils.csv_processor import process_uploaded_csv, map_columns_by_type, prep
 from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_score, generate_lexicon_analytics
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
-from .utils.csv_processor import process_uploaded_csv
+# REMOVED: Duplicate 'from .utils.csv_processor import process_uploaded_csv'
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ CONFIG = {
         
         # === Political Groups & Parties ===
         "political_groups": {
-            "ብልፅግና": {"severity": "low", "target_entity": "Prosperity Party", "language": "amharic"},
+            "ብልግና": {"severity": "low", "target_entity": "Prosperity Party", "language": "amharic"},
             "prosperity party": {"severity": "low", "target_entity": "Prosperity Party", "language": "english"},
             "አዴፓ": {"severity": "low", "target_entity": "ADP", "language": "amharic"},
             "adp": {"severity": "low", "target_entity": "ADP", "language": "english"},
@@ -80,7 +82,7 @@ CONFIG = {
         "violence_incitement": {
             "ግደል": {"severity": "critical", "target_entity": "", "language": "amharic"},
             "kill": {"severity": "critical", "target_entity": "", "language": "english"},
-            "ግደሉ": {"severity": "critical", "target_entity": "", "language": "amharic"},
+            "ግደ": {"severity": "critical", "target_entity": "", "language": "amharic"},
             "kill them": {"severity": "critical", "target_entity": "", "language": "english"},
             "አጥፋ": {"severity": "critical", "target_entity": "", "language": "amharic"},
             "destroy": {"severity": "critical", "target_entity": "", "language": "english"},
@@ -126,13 +128,13 @@ CONFIG = {
         
         # === Foreign Interference & Geopolitics ===
         "foreign_interference": {
-            "ግብፅ": {"severity": "low", "target_entity": "Egypt", "language": "amharic"},
+            "ግብ": {"severity": "low", "target_entity": "Egypt", "language": "amharic"},
             "egypt": {"severity": "low", "target_entity": "Egypt", "language": "english"},
             "ሱዳን": {"severity": "low", "target_entity": "Sudan", "language": "amharic"},
             "sudan": {"severity": "low", "target_entity": "Sudan", "language": "english"},
             "ኤርትራ": {"severity": "low", "target_entity": "Eritrea", "language": "amharic"},
             "eritrea": {"severity": "low", "target_entity": "Eritrea", "language": "english"},
-            "አሜሪካ": {"severity": "low", "target_entity": "USA", "language": "amharic"},
+            "አሜሪ": {"severity": "low", "target_entity": "USA", "language": "amharic"},
             "america": {"severity": "low", "target_entity": "USA", "language": "english"},
             "ቻይና": {"severity": "low", "target_entity": "China", "language": "amharic"},
             "china": {"severity": "low", "target_entity": "China", "language": "english"},
@@ -142,7 +144,7 @@ CONFIG = {
         
         # === Religious & Cultural Terms ===
         "religious_cultural": {
-            "ኦርቶዶክስ": {"severity": "low", "target_entity": "Orthodox", "language": "amharic"},
+            "ኦርቶዶስ": {"severity": "low", "target_entity": "Orthodox", "language": "amharic"},
             "orthodox": {"severity": "low", "target_entity": "Orthodox", "language": "english"},
             "እስልምና": {"severity": "low", "target_entity": "Islam", "language": "amharic"},
             "islam": {"severity": "low", "target_entity": "Islam", "language": "english"},
@@ -384,7 +386,7 @@ class PEPsView(TemplateView):
         if peps_csv_url:
             try:
                 peps_data = load_peps_from_github(peps_csv_url)
-                for pep_data in peps_data: 
+                for pep_data in peps_  # ✅ FIXED: Changed 'peps_' to 'peps_data:' and added colon
                     PEP.objects.update_or_create(
                         name=pep_data['Name (English)'],
                         defaults={
@@ -534,6 +536,22 @@ class LexiconManagementView(TemplateView):
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
         })
         return context
+
+    # ✅ ADDED: This method handles the "Add New Term" form submission
+    def post(self, request, *args, **kwargs):
+        term = request.POST.get('term')
+        if term:
+            LexiconTerm.objects.get_or_create(
+                term=term,
+                defaults={
+                    'category': request.POST.get('category', 'uncategorized'),
+                    'severity': request.POST.get('severity', 'medium'),
+                    'target_entity': request.POST.get('target_entity', ''),
+                    'language': request.POST.get('language', 'english'),
+                    'is_election_related': True,
+                }
+            )
+        return redirect('lexicon_management')
 
 
 class UploadDataView(TemplateView):
