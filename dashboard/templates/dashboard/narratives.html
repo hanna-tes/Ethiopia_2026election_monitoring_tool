@@ -22,9 +22,23 @@
                 </div>
             </div>
             
-            <div class="prose prose-sm max-w-none text-gray-700">
-                {{ summary.Context|linebreaks }}
+            <!-- Main Narrative Description (NEW) -->
+            {% if summary.Narrative_Description %}
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded">
+                <h4 class="text-sm font-semibold text-blue-900 mb-1">📋 Main Narrative:</h4>
+                <p class="text-gray-700">{{ summary.Narrative_Description }}</p>
             </div>
+            {% endif %}
+            
+            <!-- Full Summary -->
+            <details class="mb-4">
+                <summary class="cursor-pointer text-blue-600 hover:underline font-medium text-sm mb-2">
+                    🔍 View Detailed Analysis
+                </summary>
+                <div class="prose prose-sm max-w-none text-gray-700 bg-gray-50 p-4 rounded-lg">
+                    {{ summary.Context|linebreaks }}
+                </div>
+            </details>
             
             {% if summary.sample_posts %}
             <details class="mt-4">
