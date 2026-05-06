@@ -1,26 +1,101 @@
 {% extends 'dashboard/base.html' %}
 {% block title %}Home - Ethiopia Election Monitor{% endblock %}
+
 {% block content %}
+<!-- Post-Upload Summary (Shows after recent uploads) -->
+{% if upload_summary.show %}
+<div class="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 shadow-sm">
+    <h2 class="text-lg font-bold text-green-800 mb-2">✅ Upload Complete!</h2>
+    <p class="text-green-700 mb-4">Successfully processed <strong>{{ upload_summary.total_records }}</strong> records across {{ upload_summary.files|length }} file(s).</p>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+        {% for file in upload_summary.files %}
+        <div class="bg-white p-3 rounded-lg shadow-sm">
+            <div class="font-semibold text-gray-800">{{ file.original_filename }}</div>
+            <div class="text-gray-600">{{ file.records_processed }} records • {{ file.data_type }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <a href="{% url 'lexicons' %}" class="inline-block mt-4 text-green-700 hover:underline font-medium">🔍 View Lexicon Insights →</a>
+</div>
+{% endif %}
+
+<!-- Dashboard Intro -->
+<div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100 mb-6">
+    <p class="text-gray-600 leading-relaxed">
+        This dashboard supports the early detection of information manipulation and disinformation campaigns during election periods that seek to distort public opinion by:
+        <ol class="list-decimal ml-5 mt-2 space-y-1">
+            <li><strong>Detecting Emerging Narratives</strong></li>
+            <li><strong>Tracking Virality & Risk Patterns</strong></li>
+            <li><strong>Providing Evidence for Decision Makers</strong></li>
+        </ol>
+        <span class="text-sm text-gray-500 mt-2 block">Data last updated: <strong>{{ metrics.last_update }}</strong></span>
+    </p>
+</div>
+
+<!-- Metrics Cards -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-        <div class="text-3xl font-bold text-blue-600">{{ total_posts }}</div>
-        <div class="text-sm text-gray-500">Total Posts</div>
+        <div class="text-3xl font-bold text-blue-600">{{ metrics.total_posts|default:0 }}</div>
+        <div class="text-sm text-gray-500">Posts Analyzed</div>
     </div>
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-        <div class="text-3xl font-bold text-green-600">{{ active_narratives }}</div>
-        <div class="text-sm text-gray-500">Active Narratives</div>
+        <div class="text-3xl font-bold text-purple-600">{{ metrics.unique_accounts|default:0 }}</div>
+        <div class="text-sm text-gray-500">Unique Accounts</div>
     </div>
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-        <div class="text-3xl font-bold text-purple-600">{{ peps_tracked }}</div>
-        <div class="text-sm text-gray-500">PEPs Tracked</div>
+        <div class="text-3xl font-bold text-green-600">{{ metrics.top_platform }}</div>
+        <div class="text-sm text-gray-500">Top Platform</div>
     </div>
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-        <div class="text-3xl font-bold {% if 'High' in alert_level %}text-red-600{% elif 'Medium' in alert_level %}text-yellow-600{% else %}text-green-600{% endif %}">{{ alert_level }}</div>
+        <div class="text-3xl font-bold {% if 'High' in metrics.alert_level %}text-red-600{% elif 'Medium' in metrics.alert_level %}text-yellow-600{% else %}text-green-600{% endif %}">
+            {{ metrics.alert_level }}
+        </div>
         <div class="text-sm text-gray-500">Alert Level</div>
     </div>
 </div>
-<div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">🇪🇹 Welcome to the Ethiopia Election Monitor</h2>
-    <p class="text-gray-600">Track narratives, monitor PEPs, and detect risk patterns across Ethiopian social media.</p>
+
+<!-- Charts Section -->
+{% if charts.empty %}
+<div class="bg-white rounded-xl shadow-sm p-12 text-center border border-gray-200">
+    <p class="text-gray-500 text-lg">📊 No data yet. Upload CSV files to generate insights.</p>
+    <a href="{% url 'upload_data' %}" class="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload Data</a>
 </div>
+{% else %}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <!-- Platform Distribution -->
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+        <h3 class="text-lg font-semibold mb-4">📱 Post Distribution by Platform</h3>
+        <div id="chart-platform" class="w-full h-80"></div>
+    </div>
+    
+    <!-- Daily Volume -->
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+        <h3 class="text-lg font-semibold mb-4">📈 Daily Post Volume</h3>
+        <div id="chart-daily" class="w-full h-80"></div>
+    </div>
+    
+    <!-- Top Accounts -->
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100 lg:col-span-2">
+        <h3 class="text-lg font-semibold mb-4">👤 Top 10 Accounts by Activity</h3>
+        <div id="chart-accounts" class="w-full h-80"></div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Plotly JS -->
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+    {% if charts.platform %}
+    var platformData = {{ charts.platform|safe }};
+    Plotly.newPlot('chart-platform', platformData.data, platformData.layout, {responsive: true});
+    {% endif %}
+    {% if charts.daily %}
+    var dailyData = {{ charts.daily|safe }};
+    Plotly.newPlot('chart-daily', dailyData.data, dailyData.layout, {responsive: true});
+    {% endif %}
+    {% if charts.accounts %}
+    var accountsData = {{ charts.accounts|safe }};
+    Plotly.newPlot('chart-accounts', accountsData.data, accountsData.layout, {responsive: true});
+    {% endif %}
+</script>
 {% endblock %}
