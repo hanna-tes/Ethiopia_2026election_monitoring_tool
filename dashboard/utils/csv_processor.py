@@ -432,3 +432,27 @@ def map_columns_by_type(df, data_type):
     # This function is now largely handled by combine_social_media_data
     # but kept for any direct calls
     return df
+    
+def preprocess_dataframe(df):
+    """
+    Stub for backward compatibility.
+    Use final_preprocess_and_map_columns for full preprocessing.
+    """
+    # Simple cleanup for backward compatibility
+    if df.empty:
+        return df
+    
+    # Remove completely empty rows
+    df = df.dropna(how='all')
+    
+    # Strip whitespace from string columns
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].str.strip() if hasattr(df[col], 'str') else df[col]
+    
+    # Fill NaN values with empty strings for text columns
+    text_cols = ['original_text', 'account_id', 'content_id', 'platform']
+    for col in text_cols:
+        if col in df.columns:
+            df[col] = df[col].fillna('')
+    
+    return df
