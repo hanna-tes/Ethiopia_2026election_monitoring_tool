@@ -167,3 +167,30 @@ class LexiconTerm(models.Model):
     
     def __str__(self):
         return f"{self.term} ({self.severity})"
+
+class PEP(models.Model):
+    """Political Exposed Person - election-focused"""
+    name = models.CharField(max_length=255, unique=True)
+    title = models.CharField(max_length=255, blank=True)
+    affiliation = models.CharField(max_length=255, blank=True)
+    ethnic_group = models.CharField(max_length=100, blank=True)
+    
+    # Social media
+    x_link = models.URLField(blank=True, null=True)
+    x_verified = models.BooleanField(default=False)
+    facebook_link = models.URLField(blank=True, null=True)
+    facebook_verified = models.BooleanField(default=False)
+    confidence_level = models.CharField(
+        max_length=20,
+        choices=[('high', 'High'), ('medium', 'Medium'), ('low', 'Low'), ('uncertain', 'Uncertain')],
+        blank=True,
+        default='medium'
+    )
+    
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.name} - {self.title}"
