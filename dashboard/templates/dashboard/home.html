@@ -1,48 +1,26 @@
-{% extends 'base.html' %}
+{% extends 'dashboard/base.html' %}
 {% block title %}Home - Ethiopia Election Monitor{% endblock %}
-
 {% block content %}
-<div class="mb-8">
-    <h2 class="text-3xl font-bold text-gray-900">🇪🇹 Ethiopia Election Intelligence Dashboard</h2>
-    <p class="mt-2 text-gray-600">Monitoring election-related narratives, hate speech, and coordination patterns</p>
-</div>
-
-<!-- Key Metrics -->
-<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-    <div class="metric-card">
-        <div class="metric-value">{{ total_posts|default:0 }}</div>
-        <div class="metric-label">Election Posts</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+        <div class="text-3xl font-bold text-blue-600">{{ total_posts }}</div>
+        <div class="text-sm text-gray-500">Total Posts</div>
     </div>
-    <div class="metric-card">
-        <div class="metric-value">{{ active_narratives|default:0 }}</div>
-        <div class="metric-label">Active Narratives</div>
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+        <div class="text-3xl font-bold text-green-600">{{ active_narratives }}</div>
+        <div class="text-sm text-gray-500">Active Narratives</div>
     </div>
-    <div class="metric-card">
-        <div class="metric-value">{{ peps_tracked|default:0 }}</div>
-        <div class="metric-label">PEPs Tracked</div>
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+        <div class="text-3xl font-bold text-purple-600">{{ peps_tracked }}</div>
+        <div class="text-sm text-gray-500">PEPs Tracked</div>
     </div>
-    <div class="metric-card">
-        <div class="metric-value">🔍</div>
-        <div class="metric-label">Real-time Analysis</div>
+    <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+        <div class="text-3xl font-bold {% if 'High' in alert_level %}text-red-600{% elif 'Medium' in alert_level %}text-yellow-600{% else %}text-green-600{% endif %}">{{ alert_level }}</div>
+        <div class="text-sm text-gray-500">Alert Level</div>
     </div>
 </div>
-
-<!-- Quick Access -->
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-        <h3 class="text-lg font-semibold mb-2">📰 Trending Narratives</h3>
-        <p class="text-gray-600 mb-4">View top election-related narratives and their spread</p>
-        <a href="{% url 'narratives' %}" class="text-blue-600 hover:text-blue-700 font-medium">View Narratives →</a>
-    </div>
-    <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-        <h3 class="text-lg font-semibold mb-2">🗣️ Hate Speech Monitor</h3>
-        <p class="text-gray-600 mb-4">Track hate speech terms and temporal patterns</p>
-        <a href="{% url 'lexicons' %}" class="text-blue-600 hover:text-blue-700 font-medium">View Analysis →</a>
-    </div>
-    <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-        <h3 class="text-lg font-semibold mb-2">👤 PEPs Tracker</h3>
-        <p class="text-gray-600 mb-4">Monitor political figures and targeting patterns</p>
-        <a href="{% url 'peps' %}" class="text-blue-600 hover:text-blue-700 font-medium">View PEPs →</a>
-    </div>
+<div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">🇪🇹 Welcome to the Ethiopia Election Monitor</h2>
+    <p class="text-gray-600">Track narratives, monitor PEPs, and detect risk patterns across Ethiopian social media.</p>
 </div>
 {% endblock %}
