@@ -323,12 +323,11 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
                 for post in cluster_data[:5]:
                     if post['original_text']:
                         sample_posts_with_urls.append({
-                        'username': username,
-                        'platform': ap['platform'],
-                        'url': ap['url'] if ap['url'] and str(ap['url']).startswith('http') else None, # Key MUST be 'url'
-                        'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
-                        'text_preview': text[:100] + '...'
-                    })
+                            'text': post['original_text'][:150] + '...',
+                            'url': post['url'] if post['url'] and str(post['url']).startswith('http') else None,
+                            'account': str(post['account_id'])[:30],
+                            'platform': post['platform']
+                        })
                 
                 summary_text = summarize_cluster_ethiopia(
                     cluster_texts[:50], cluster_urls[:10], cluster_data, min_ts, max_ts
@@ -651,7 +650,7 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
         platform = platforms[0] if platforms else 'Unknown'
         
         # Get first valid URL properly
-        sample_url_obj = node_posts.filter(url__startswith='http').first()
+        sample_url_obj = node_posts.exclude(url='').exclude(url__isnull=True).filter(url__icontains='http').first()
         sample_url = sample_url_obj.url if sample_url_obj else None
         
         nodes.append({
@@ -666,7 +665,7 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             'y': float(pos[node][1]),
             'size': max(15, degree * 3),
             'color': _get_platform_color(platform)
-        })    
+        })   
     
     # Build clean edges with URLs
     edges = []
