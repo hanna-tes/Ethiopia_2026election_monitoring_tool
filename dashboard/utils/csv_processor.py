@@ -22,22 +22,38 @@ def map_columns_by_type(df, platform):
     mapped = pd.DataFrame()
     
     if platform == 'meltwater':
-        mapped['account_id'] = get_col(df, ['influencer', 'author'])
-        mapped['content_id'] = get_col(df, ['tweet id', 'post id', 'id'])
-        mapped['object_id'] = get_col(df, ['hit sentence', 'text', 'content'])
-        mapped['URL'] = get_col(df, ['url'])
-        mapped['timestamp_share'] = get_col(df, ['date', 'timestamp'])
+        # Prioritize your exact column names first, then fallbacks
+        mapped['account_id'] = get_col(df, ['Influencer', 'influencer', 'author', 'username', 'account'])
+        mapped['content_id'] = get_col(df, ['tweet id', 'post id', 'id', 'ID', 'tweet_id'])
+        mapped['object_id'] = get_col(df, ['Hit Sentence', 'hit sentence', 'text', 'content', 'opening text', 'headline', 'post_text', 'message'])
+        mapped['URL'] = get_col(df, ['URL', 'url', 'link', 'Link', 'post_url', 'tweet_url', 'web_url', 'permalink', 'external_url'])  # ✅ 'URL' first!
+        mapped['timestamp_share'] = get_col(df, ['Date', 'date', 'timestamp', 'alternate date format', 'created_at', 'posted_at'])
+        
+    elif platform == 'civicsignal':
+        mapped['account_id'] = get_col(df, ['media_name', 'author', 'username'])
+        mapped['content_id'] = get_col(df, ['stories_id', 'post_id', 'id', 'ID'])
+        mapped['object_id'] = get_col(df, ['title', 'text', 'content', 'body'])
+        mapped['URL'] = get_col(df, ['url', 'URL', 'link', 'Link', 'post_url', 'web_url', 'permalink', 'external_url'])
+        mapped['timestamp_share'] = get_col(df, ['publish_date', 'timestamp', 'date', 'created_at'])
+        
     elif platform == 'tiktok':
-        mapped['account_id'] = get_col(df, ['authorMeta/name', 'author'])
-        mapped['content_id'] = get_col(df, ['id', 'video_id'])
-        mapped['object_id'] = get_col(df, ['text', 'caption'])
-        mapped['URL'] = get_col(df, ['webVideoUrl', 'url'])
-        mapped['timestamp_share'] = get_col(df, ['createTimeISO', 'timestamp'])
-    # Add other platforms as needed...
+        mapped['account_id'] = get_col(df, ['authorMeta/name', 'username', 'creator', 'author'])
+        mapped['content_id'] = get_col(df, ['id', 'video_id', 'itemId', 'videoId', 'ID'])
+        mapped['object_id'] = get_col(df, ['text', 'Transcript', 'caption', 'content', 'description'])
+        mapped['URL'] = get_col(df, ['webVideoUrl', 'TikTok Link', 'url', 'URL', 'videoUrl', 'shareUrl', 'web_url', 'link', 'external_url'])
+        mapped['timestamp_share'] = get_col(df, ['createTimeISO', 'timestamp', 'date', 'createTime', 'created_at'])
+        
+    elif platform == 'openmeasure':
+        mapped['account_id'] = get_col(df, ['context_name', 'channelusername', 'channeltitle', 'actor_username'])
+        mapped['content_id'] = get_col(df, ['id', 'url'])
+        mapped['object_id'] = get_col(df, ['text', 'message', 'body'])
+        mapped['URL'] = get_col(df, ['url', 'URL', 'link', 'Link', 'web_url', 'permalink', 'external_url'])
+        raw_dates = get_col(df, ['created_at', 'date'])
+        mapped['timestamp_share'] = raw_dates.astype(str).str.replace(' @ ', ' ', regex=False)
     
     mapped['source_dataset'] = platform
     return mapped
-
+    
 def preprocess_dataframe(df):
     """Basic cleaning: remove empty rows and format text."""
     if df.empty: return df
