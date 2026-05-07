@@ -43,16 +43,43 @@ def parse_timestamp_robust(timestamp):
 
 def load_data_robustly(file_path, original_name=None):
     """
-    Load data from local file with basic error handling.
-    Accepts original_name to prevent argument count errors in views.
+    Advanced loader that handles Meltwater's specific UTF-16 Tab-Separated format
+    as well as standard UTF-8 CSVs.
     """
+    # Attempt 1: Try Meltwater Style (UTF-16, Tab Separated)
+    # Based on your shared logic: encoding='utf-16', sep='\t'
     try:
-        df = pd.read_csv(file_path, low_memory=False, on_bad_lines='skip')
-        if original_name:
-            print(f"✅ Successfully loaded: {original_name}")
+        df = pd.read_csv(file_path, encoding='utf-16', sep='\t', low_memory=False, on_bad_lines='skip')
+        # If we successfully got more than one column, it worked!
+        if len(df.columns) > 1:
+            if original_name:
+                print(f"✅ Loaded {original_name} as Meltwater (UTF-16/Tab)")
+            return df
+    except Exception:
+        pass # Try next method
+
+    # Attempt 2: Try Standard CSV (UTF-8)
+    try:
+        df = pd.read_csv(file_path, encoding='utf-8', low_memory=False, on_bad_lines='skip')
+        if len(df.columns) > 1:
+            return df
+    except Exception:
+        pass
+
+    # Attempt 3: Try UTF-8 with Byte Order Mark (BOM)
+    try:
+        df = pd.read_csv(file_path, encoding='utf-8-sig', low_memory=False, on_bad_lines='skip')
+        if len(df.columns) > 1:
+            return df
+    except Exception:
+        pass
+
+    # Attempt 4: Last resort (Latin-1)
+    try:
+        df = pd.read_csv(file_path, encoding='latin1', low_memory=False, on_bad_lines='skip')
         return df
     except Exception as e:
-        print(f"❌ Error reading CSV {original_name or file_path}: {e}")
+        print(f"❌ All loading attempts failed for {original_name or file_path}: {e}")
         return pd.DataFrame()
 
 def load_peps_from_github(csv_url):
