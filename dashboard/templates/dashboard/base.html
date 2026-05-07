@@ -26,7 +26,7 @@
             
             <nav class="flex space-x-1 overflow-x-auto py-3 justify-center border-t border-gray-100">
                 {% for tab in tabs %}
-                <a href="{% url 'dashboard:'|add:tab.url_name %}" 
+                <a href="{% url tab.url_name %}" 
                    class="px-4 py-2 text-sm font-medium rounded-lg transition-all {% if active_tab == tab.url_name %}bg-blue-600 text-white shadow-md{% else %}text-gray-600 hover:text-gray-900 hover:bg-gray-100{% endif %}">
                     {{ tab.icon }} {{ tab.name }}
                 </a>
@@ -44,7 +44,7 @@
                         <span class="mr-2">📥</span> Upload Data
                     </h3>
                     
-                    <form method="POST" enctype="multipart/form-data" action="{% url 'dashboard:upload_data' %}" class="space-y-4">
+                    <form method="POST" enctype="multipart/form-data" action="{% url 'upload_data' %}" class="space-y-4">
                         {% csrf_token %}
                         
                         <div>
