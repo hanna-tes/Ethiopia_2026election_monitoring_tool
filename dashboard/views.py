@@ -37,8 +37,75 @@ from sklearn.cluster import KMeans
 
 logger = logging.getLogger(__name__)
 
-# === STREAMLIT-STYLE HELPER FUNCTIONS (Adapted for Django) ===
+#  HELPER FUNCTIONS
+def dashboard_view(request):
+    """Main Dashboard View with Sidebar Upload Support"""
+    
+    # 1. Handle File Uploads from Sidebar
+    if request.method == 'POST' and request.FILES.getlist('files'):
+        platform_type = request.POST.get('platform')
+        uploaded_files = request.FILES.getlist('files')
+        
+        new_posts_count = 0
+        for f in uploaded_files:
+            try:
+                # Use your robust loader
+                df = pd.read_csv(f, low_memory=False, on_bad_lines='skip')
+                
+                # Normalize based on selected platform
+                if platform_type == 'meltwater':
+                    processed_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
+                elif platform_type == 'tiktok':
+                    processed_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
+                elif platform_type == 'openmeasure':
+                    processed_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
+                else:
+                    processed_df = combine_social_media_data(meltwater_df=None, civicsignals_df=df)
 
+                # Save to Database
+                for _, row in processed_df.iterrows():
+                    # Check for duplicates using content_id or URL
+                    if not ProcessedPost.objects.filter(content_id=row.get('content_id')).exists():
+                        ProcessedPost.objects.create(
+                            account_id=row.get('account_id'),
+                            content_id=row.get('content_id'),
+                            original_text=row.get('object_id', ''),
+                            url=row.get('URL', ''),
+                            platform=row.get('Platform', 'Unknown'),
+                            timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
+                            source_dataset=row.get('source_dataset', platform_type)
+                        )
+                        new_posts_count += 1
+                
+                messages.success(request, f"Successfully processed {f.name}")
+            except Exception as e:
+                messages.error(request, f"Error processing {f.name}: {str(e)}")
+        
+        messages.info(request, f"Added {new_posts_count} new unique posts to the monitor.")
+        return redirect('dashboard') # Refresh to show new data
+
+    # 2. Fetch Data for Dashboard Charts
+    all_posts = ProcessedPost.objects.all().order_by('-timestamp_share')
+    
+    # Run your clustering/summarization on the QuerySet
+    summaries = get_ethiopia_summaries(all_posts)
+    coordination = get_coordination_groups(all_posts)
+    
+    context = {
+        'tabs': [
+            {'name': 'Overview', 'url_name': 'dashboard', 'icon': '📊'},
+            {'name': 'Narratives', 'url_name': 'narratives', 'icon': '🗣️'},
+            {'name': 'Coordination', 'url_name': 'network', 'icon': '🕸️'},
+        ],
+        'active_tab': 'dashboard',
+        'summaries': summaries,
+        'coordination': coordination,
+        'total_posts': all_posts.count(),
+        # Add your plot data here...
+    }
+    
+    return render(request, 'dashboard.html', context)
+    
 def scan_text_for_lexicon_terms(text, category_filter=None):
     """Scan text for lexicon matches using CONFIG mapping"""
     if not isinstance(text, str) or not text.strip():
