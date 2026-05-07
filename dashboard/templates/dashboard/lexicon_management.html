@@ -5,7 +5,7 @@
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
     <h2 class="text-2xl font-bold text-gray-900 mb-6">⚙️ Lexicon Management</h2>
     
-    <!-- Real-Time Trigger Scanner -->
+        <!-- Real-Time Trigger Scanner -->
     <div class="mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">🔍 Real-Time Trigger Detection</h3>
         <form method="post">
@@ -16,21 +16,23 @@
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">🔎 Scan Text</button>
         </form>
         
+        <!-- Show messages from Django messages framework -->
         {% if messages %}
             {% for message in messages %}
-            <div class="mt-3 p-3 rounded-lg {% if message.tags == 'success' %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+            <div class="mt-3 p-3 rounded-lg {% if message.tags == 'success' %}bg-green-100 text-green-800{% elif message.tags == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-red-100 text-red-800{% endif %}">
                 {{ message }}
             </div>
             {% endfor %}
         {% endif %}
         
-        {% if request.session.scan_results %}
+        <!-- Show scan results from session (only if exists) -->
+        {% if scan_results %}
         <div class="mt-4 p-4 bg-white rounded-lg border border-gray-200">
-            <h4 class="font-semibold mb-2">Scan Results for: "{{ request.session.scan_results.text|truncatechars:50 }}"</h4>
-            <p class="text-sm text-gray-600 mb-2">Risk Level: <strong class="text-red-600">{{ request.session.scan_results.risk.level|upper }}</strong> (Score: {{ request.session.scan_results.risk.score }})</p>
-            {% if request.session.scan_results.matches %}
+            <h4 class="font-semibold mb-2">Scan Results for: "{{ scan_results.text }}"</h4>
+            <p class="text-sm text-gray-600 mb-2">Risk Level: <strong class="text-red-600">{{ scan_results.risk.level|upper }}</strong> (Score: {{ scan_results.risk.score }})</p>
+            {% if scan_results.matches %}
             <div class="flex flex-wrap gap-2">
-                {% for match in request.session.scan_results.matches %}
+                {% for match in scan_results.matches %}
                 <span class="px-2 py-1 rounded text-xs font-medium
                     {% if match.severity == 'critical' %}bg-red-100 text-red-800
                     {% elif match.severity == 'high' %}bg-orange-100 text-orange-800
@@ -40,6 +42,8 @@
                 </span>
                 {% endfor %}
             </div>
+            {% else %}
+            <p class="text-sm text-green-600">✅ No trigger terms detected in this text.</p>
             {% endif %}
         </div>
         {% endif %}
