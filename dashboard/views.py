@@ -1541,17 +1541,42 @@ class LexiconManagementView(TemplateView):
         
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
-            if text and len(text) > 10:  # Only scan if meaningful text
-                matches = scan_text_for_lexicon_terms(text)
-                risk = calculate_risk_score(matches)
+            if text and len(text) > 10:
+                # 1. Lexicon-based detection
+                lexicon_matches = scan_text_for_lexicon_terms(text)
+                lexicon_risk = calculate_risk_score(lexicon_matches)
                 
-                # Store in session for display in GET request
+                # 2. LLM-based detection
+                llm_result = detect_hate_speech_llm(text)
+                
+                # 3. Combine & decide
+                is_hate_speech = (
+                    lexicon_risk['score'] > 0 or 
+                    (llm_result.get('is_hate_speech', False) and llm_result.get('confidence', 0) > 0.6)
+                )
+                
+                overall_severity = max(
+                    {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity','low'), 1),
+                    {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk['level'], 1)
+                )
+                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
+                
                 request.session['scan_results'] = {
-                    'matches': matches, 
-                    'risk': risk, 
-                    'text': text[:100] + '...' if len(text) > 100 else text
+                    'text': text[:200] + '...' if len(text) > 200 else text,
+                    'lexicon_matches': lexicon_matches,
+                    'lexicon_risk': lexicon_risk,
+                    'llm_result': llm_result,
+                    'is_hate_speech': is_hate_speech,
+                    'overall_severity': severity_map[overall_severity],
+                    'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
+                    'targeted_groups': llm_result.get('targeted_groups', []),
+                    'explanation': llm_result.get('explanation', '')
                 }
-                messages.success(request, f"🔍 Found {len(matches)} trigger terms. Risk: {risk['level'].upper()}")
+                
+                if is_hate_speech:
+                    messages.warning(request, f"⚠️ Potential hate speech detected! Severity: {severity_map[overall_severity].upper()}")
+                else:
+                    messages.success(request, "✅ No hate speech detected.")
             else:
                 messages.warning(request, "⚠️ Please enter text to scan (minimum 10 characters)")
         
