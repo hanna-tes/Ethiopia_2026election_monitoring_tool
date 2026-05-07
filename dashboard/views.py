@@ -96,7 +96,7 @@ def dashboard_view(request):
                             account_id=str(row.get('account_id', ''))[:100],
                             content_id=cid,
                             original_text=str(row.get('object_id', '')), # Fixed column name
-                            url=row.get('URL', ''),
+                            url=row.get('url') or row.get('URL') or row.get('link') or '',
                             platform=row.get('Platform', platform_type.title()),
                             timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
                             source_dataset=source_obj,  # Passing the actual object
@@ -323,13 +323,12 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
                 for post in cluster_data[:5]:
                     if post['original_text']:
                         sample_posts_with_urls.append({
-                            'text': post['original_text'][:150] + '...',
-                            # Ensure this key is 'url' and not 'sample_url' 
-                            # unless your HTML specifically asks for 'sample_url'
-                            'url': post['url'] if post['url'] and str(post['url']).startswith('http') else None,
-                            'account': str(post['account_id'])[:30],
-                            'platform': post['platform']
-                        })
+                        'username': username,
+                        'platform': ap['platform'],
+                        'url': ap['url'] if ap['url'] and str(ap['url']).startswith('http') else None, # Key MUST be 'url'
+                        'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
+                        'text_preview': text[:100] + '...'
+                    })
                 
                 summary_text = summarize_cluster_ethiopia(
                     cluster_texts[:50], cluster_urls[:10], cluster_data, min_ts, max_ts
@@ -537,23 +536,20 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
         accounts = []
         sample_posts_with_urls = []
         
-        for ap in account_posts[:20]:  # Look at more posts to find unique cleaned users
-            # === THE FIX IS HERE ===
+        for ap in account_posts[:20]:
             username = clean_username(ap['account_id'])
-            
-            # 1. Only add to the list if it's not a duplicate after cleaning
-            if username and len(username) > 2 and username.lower() not in ['twitter', 'source', 'nan', 'none']:
+            if username and len(username) > 2:
                 if username not in accounts:
                     accounts.append(username)
                 
-                # 2. Add sample post with URL (limited to 5 for the UI)
                 if len(sample_posts_with_urls) < 5:
                     sample_posts_with_urls.append({
                         'username': username,
                         'platform': ap['platform'],
-                        'url': ap['url'] if ap['url'] and ap['url'].startswith('http') else None,
+                        # FIX: Use 'url' as the key and ensure it's a string
+                        'url': ap['url'] if ap['url'] and str(ap['url']).startswith('http') else None,
                         'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
-                        'text_preview': text[:100] + '...' if len(text) > 100 else text
+                        'text_preview': text[:100] + '...'
                     })
         
         # Only include groups that still meet the threshold after cleaning
