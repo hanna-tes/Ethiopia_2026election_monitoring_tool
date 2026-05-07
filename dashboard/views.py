@@ -33,11 +33,23 @@ from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
+from .utils.data_loader import parse_timestamp_robust
+from .utils.csv_processor import combine_social_media_data
 
 
 logger = logging.getLogger(__name__)
 
 #  HELPER FUNCTIONS
+
+def clean_username(raw_name):
+    if not raw_name or pd.isna(raw_name):
+        return "Unknown"
+    # Convert to string and take the first part before any space or "Name" suffix
+    name = str(raw_name).split(' ')[0].strip()
+    # Remove common artifacts
+    name = re.sub(r'(?i)(name|source|nan|none)$', '', name).strip()
+    return name
+    
 def dashboard_view(request):
     """Main Dashboard View with Sidebar Upload Support"""
     
@@ -495,37 +507,38 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
         accounts = []
         sample_posts_with_urls = []
         
-        for ap in account_posts[:10]:  # Limit per group
-            username = str(ap['account_id'])[:50].strip()
-            # Clean usernames better
-            username = re.sub(r'(twitter|source|nan|none|-|user|author)\s*', '', username, flags=re.IGNORECASE)
-            username = re.sub(r'\s+', ' ', username).strip()
+        for ap in account_posts[:20]:  # Look at more posts to find unique cleaned users
+            # === THE FIX IS HERE ===
+            username = clean_username(ap['account_id'])
             
+            # 1. Only add to the list if it's not a duplicate after cleaning
             if username and len(username) > 2 and username.lower() not in ['twitter', 'source', 'nan', 'none']:
-                accounts.append(username)
+                if username not in accounts:
+                    accounts.append(username)
                 
-                # Add sample post with URL
-                sample_posts_with_urls.append({
-                    'username': username,
-                    'platform': ap['platform'],
-                    'url': ap['url'] if ap['url'] and ap['url'].startswith('http') else None,
-                    'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
-                    'text_preview': text[:100] + '...' if len(text) > 100 else text
-                })
+                # 2. Add sample post with URL (limited to 5 for the UI)
+                if len(sample_posts_with_urls) < 5:
+                    sample_posts_with_urls.append({
+                        'username': username,
+                        'platform': ap['platform'],
+                        'url': ap['url'] if ap['url'] and ap['url'].startswith('http') else None,
+                        'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
+                        'text_preview': text[:100] + '...' if len(text) > 100 else text
+                    })
         
+        # Only include groups that still meet the threshold after cleaning
         if len(accounts) >= min_accounts:
             coordination.append({
                 'id': len(coordination) + 1,
-                'accounts': accounts[:8],  # Show top 8 usernames
+                'accounts': accounts[:8],  # Show top 8 cleaned usernames
                 'account_count': len(accounts),
                 'post_count': group['post_count'],
                 'text_sample': text[:200] if text else '[Identical message]',
-                'sample_posts_with_urls': sample_posts_with_urls[:5],  # 5 posts with URLs
+                'sample_posts_with_urls': sample_posts_with_urls,
                 'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5]
             })
     
     return coordination[:max_groups]
-
 
 def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, layout='spring'):
     """Generate cleaner network graph - FIXED usernames and platform info"""
@@ -545,12 +558,11 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
         
         accounts = []
         for acc_data in accounts_data:
-            username = str(acc_data['account_id'])[:30].strip()
-            # Clean username
-            username = re.sub(r'(twitter|source|nan|none|-|user|author)\s*', '', username, flags=re.IGNORECASE)
-            username = re.sub(r'\s+', ' ', username).strip()
+            # --- UPDATED CLEANING LOGIC ---
+            username = clean_username(acc_data['account_id'])
             
-            if username and len(username) > 2:
+            # Filter out generic artifacts that aren't real usernames
+            if username and len(username) > 2 and username.lower() not in ['twitter', 'facebook', 'tiktok', 'source']:
                 accounts.append({
                     'id': username,
                     'platform': acc_data['platform'],
@@ -562,6 +574,11 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             for j in range(i+1, len(accounts)):
                 u_id = accounts[i]['id']
                 v_id = accounts[j]['id']
+                
+                # Ensure we don't link an account to itself
+                if u_id == v_id:
+                    continue
+
                 if G.has_edge(u_id, v_id):
                     G[u_id][v_id]['weight'] += 1
                 else:
@@ -600,13 +617,14 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
     nodes = []
     for node in G_top.nodes():
         degree = G_top.degree(node)
+        # Search specifically for this cleaned username
         node_posts = posts_queryset.filter(account_id__icontains=node)
         post_count = node_posts.count()
         
         platforms = list(node_posts.values_list('platform', flat=True).distinct())
         platform = platforms[0] if platforms else 'Unknown'
         
-        # FIXED: Get first valid URL properly
+        # Get first valid URL properly
         sample_url_obj = node_posts.filter(url__startswith='http').first()
         sample_url = sample_url_obj.url if sample_url_obj else None
         
@@ -622,11 +640,11 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             'size': max(15, degree * 3),
             'color': _get_platform_color(platform)
         })    
+    
     # Build clean edges with URLs
     edges = []
     for u, v, data in G_top.edges(data=True):
         if u in pos and v in pos:
-            # Pick a sample URL from either endpoint
             sample_url = data.get('sample_url1') or data.get('sample_url2')
             edges.append({
                 'source': u,
