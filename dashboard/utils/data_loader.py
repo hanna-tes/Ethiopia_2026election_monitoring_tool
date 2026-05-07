@@ -41,12 +41,18 @@ def parse_timestamp_robust(timestamp):
             
     return pd.NaT
 
-def load_data_robustly(file_path):
-    """Load data from local file with basic error handling."""
+def load_data_robustly(file_path, original_name=None):
+    """
+    Load data from local file with basic error handling.
+    Accepts original_name to prevent argument count errors in views.
+    """
     try:
-        return pd.read_csv(file_path, low_memory=False, on_bad_lines='skip')
+        df = pd.read_csv(file_path, low_memory=False, on_bad_lines='skip')
+        if original_name:
+            print(f"✅ Successfully loaded: {original_name}")
+        return df
     except Exception as e:
-        print(f"❌ Error reading CSV {file_path}: {e}")
+        print(f"❌ Error reading CSV {original_name or file_path}: {e}")
         return pd.DataFrame()
 
 def load_peps_from_github(csv_url):
