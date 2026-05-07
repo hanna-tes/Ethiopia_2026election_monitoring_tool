@@ -1728,7 +1728,11 @@ class ProcessUploadView(View):
                     if row.get('url') and ProcessedPost.objects.filter(url=row['url']).exists():
                         continue
                     
-                    # Create new post
+                    # Get or create DataSource instance
+                    source_name = str(row.get('source_dataset', data_type))
+                    source_obj, _ = DataSource.objects.get_or_create(name=source_name)
+                    
+                    # Create new post with the DataSource instance
                     ProcessedPost.objects.create(
                         account_id=str(row.get('account_id', ''))[:100],
                         content_id=str(row.get('content_id', ''))[:100] if row.get('content_id') else None,
@@ -1736,7 +1740,7 @@ class ProcessUploadView(View):
                         url=str(row.get('url', ''))[:500] if row.get('url') else None,
                         platform=str(row.get('Platform', 'Unknown')),
                         timestamp_share=row.get('timestamp_share'),
-                        source_dataset=str(row.get('source_dataset', data_type)),
+                        source_dataset=source_obj,  # ✅ Pass the object, not a string
                         is_election_related=is_election_related(str(row.get('original_text', '')))
                     )
                     count += 1
