@@ -1683,7 +1683,7 @@ class ProcessUploadView(View):
                 data_type = upload.data_type
                 
                 # Load the CSV using robust loader
-                df = load_data_robustly(full_path, original_name)
+                df = load_data_robustly(full_path)
                 
                 if df.empty:
                     raise ValueError(f"Failed to load data from {original_name}")
