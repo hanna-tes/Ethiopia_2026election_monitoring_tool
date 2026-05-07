@@ -34,7 +34,7 @@ class ProcessedPost(models.Model):
     original_text = models.TextField()  # Cleaned text for analysis (after extract_original_text)
     
     # Metadata
-    url = models.URLField(blank=True, null=True)
+    url = models.TextField(blank=True, null=True)
     timestamp_share = models.DateTimeField(db_index=True)
     platform = models.CharField(max_length=50, db_index=True)  # X, Telegram, TikTok, Media
     source_dataset = models.ForeignKey(DataSource, on_delete=models.SET_NULL, null=True, db_index=True)
