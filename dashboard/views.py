@@ -51,69 +51,90 @@ def clean_username(raw_name):
     return name
     
 def dashboard_view(request):
-    """Main Dashboard View with Sidebar Upload Support"""
+    """Main Dashboard View with Sidebar Upload and Stats Reporting"""
     
-    # 1. Handle File Uploads from Sidebar
+    # 1. Handle File Uploads via POST
     if request.method == 'POST' and request.FILES.getlist('files'):
         platform_type = request.POST.get('platform')
         uploaded_files = request.FILES.getlist('files')
         
-        new_posts_count = 0
+        stats = {
+            'files_count': 0,
+            'total_rows': 0,
+            'saved': 0,
+            'duplicates': 0
+        }
+        
         for f in uploaded_files:
             try:
-                # Use your robust loader
+                # Use your robust data loader logic
                 df = pd.read_csv(f, low_memory=False, on_bad_lines='skip')
+                stats['total_rows'] += len(df)
                 
-                # Normalize based on selected platform
+                # Normalize columns based on platform
                 if platform_type == 'meltwater':
-                    processed_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
+                    processed_df = combine_social_media_data(meltwater_df=df)
                 elif platform_type == 'tiktok':
-                    processed_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
+                    processed_df = combine_social_media_data(tiktok_df=df)
                 elif platform_type == 'openmeasure':
-                    processed_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
+                    processed_df = combine_social_media_data(openmeasures_df=df)
                 else:
-                    processed_df = combine_social_media_data(meltwater_df=None, civicsignals_df=df)
+                    processed_df = combine_social_media_data(civicsignals_df=df)
 
-                # Save to Database
+                # Loop and save unique posts
                 for _, row in processed_df.iterrows():
-                    # Check for duplicates using content_id or URL
-                    if not ProcessedPost.objects.filter(content_id=row.get('content_id')).exists():
+                    cid = row.get('content_id')
+                    if cid and not ProcessedPost.objects.filter(content_id=cid).exists():
                         ProcessedPost.objects.create(
                             account_id=row.get('account_id'),
-                            content_id=row.get('content_id'),
+                            content_id=cid,
                             original_text=row.get('object_id', ''),
                             url=row.get('URL', ''),
-                            platform=row.get('Platform', 'Unknown'),
+                            platform=row.get('Platform', platform_type.title()),
                             timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
                             source_dataset=row.get('source_dataset', platform_type)
                         )
-                        new_posts_count += 1
+                        stats['saved'] += 1
+                    else:
+                        stats['duplicates'] += 1
                 
-                messages.success(request, f"Successfully processed {f.name}")
+                stats['files_count'] += 1
             except Exception as e:
-                messages.error(request, f"Error processing {f.name}: {str(e)}")
-        
-        messages.info(request, f"Added {new_posts_count} new unique posts to the monitor.")
-        return redirect('dashboard') # Refresh to show new data
+                logger.error(f"Upload error: {e}")
+                messages.error(request, f"Error processing {f.name}")
 
-    # 2. Fetch Data for Dashboard Charts
+        # Create the detailed summary message for the sidebar
+        detail_msg = (
+            f"<strong>Data Upload Details:</strong><br>"
+            f"• Source: {platform_type.title()}<br>"
+            f"• Files processed: {stats['files_count']}<br>"
+            f"• Rows analyzed: {stats['total_rows']}<br>"
+            f"• <strong>New unique posts: {stats['saved']}</strong><br>"
+            f"• Duplicates ignored: {stats['duplicates']}"
+        )
+        messages.success(request, detail_msg)
+        
+        # Redirect back to stay on the same page
+        return redirect(request.POST.get('next', 'home'))
+
+    # 2. Page Load Logic (GET)
+    # Pull ALL unique data from the database
     all_posts = ProcessedPost.objects.all().order_by('-timestamp_share')
     
-    # Run your clustering/summarization on the QuerySet
+    # Run Narrative and Coordination algorithms on the database set
     summaries = get_ethiopia_summaries(all_posts)
     coordination = get_coordination_groups(all_posts)
     
     context = {
         'tabs': [
-            {'name': 'Overview', 'url_name': 'dashboard', 'icon': '📊'},
+            {'name': 'Overview', 'url_name': 'home', 'icon': '📊'},
             {'name': 'Narratives', 'url_name': 'narratives', 'icon': '🗣️'},
-            {'name': 'Coordination', 'url_name': 'network', 'icon': '🕸️'},
+            {'name': 'Coordination', 'url_name': 'networks', 'icon': '🕸️'},
         ],
-        'active_tab': 'dashboard',
+        'active_tab': 'home',
         'summaries': summaries,
         'coordination': coordination,
         'total_posts': all_posts.count(),
-        # Add your plot data here...
     }
     
     return render(request, 'dashboard.html', context)
