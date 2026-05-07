@@ -39,35 +39,17 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
             
             <aside class="md:col-span-1 space-y-4">
+                
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                     <h3 class="font-bold text-gray-800 mb-3 flex items-center text-sm">
-                        <span class="mr-2">📥</span> Upload Data
+                        <span class="mr-2">📂</span> Data Management
                     </h3>
                     
-                    <form method="POST" enctype="multipart/form-data" action="{% url 'upload_data' %}" class="space-y-4">
-                        {% csrf_token %}
-                        <input type="hidden" name="next" value="{{ request.path }}">
-                        
-                        <div>
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">Platform</label>
-                            <select name="platform" class="w-full border-gray-200 rounded-lg text-sm p-2 bg-gray-50">
-                                <option value="meltwater">Meltwater / X</option>
-                                <option value="civicsignal">CivicSignal</option>
-                                <option value="tiktok">TikTok</option>
-                                <option value="openmeasure">Telegram</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">CSV Files</label>
-                            <input type="file" name="files" multiple accept=".csv"
-                                   class="w-full text-xs text-gray-500 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-blue-50 file:text-blue-700">
-                        </div>
-
-                        <button type="submit" name="upload_data" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition text-xs shadow-sm">
-                            Process Upload
-                        </button>
-                    </form>
+                    <a href="{% url 'upload_data' %}" 
+                       class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition text-xs shadow-sm flex items-center justify-center gap-2">
+                        📤 Upload New Data
+                    </a>
+                    <p class="text-[10px] text-gray-400 mt-2 italic">Add Meltwater, TikTok, or Telegram CSVs here.</p>
                 </div>
 
                 <div class="bg-gray-800 p-4 rounded-xl text-white shadow-lg">
@@ -77,18 +59,20 @@
 
                     <form method="GET" action="{{ request.path }}">
                         <button type="submit" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white text-[11px] font-bold py-2 px-3 rounded-lg transition border border-gray-600 flex items-center justify-center gap-2">
-                            🔄 Refresh UI
+                            🔄 Refresh Dashboard
                         </button>
                     </form>
 
+                    {% if user.is_superuser %}
                     <form method="POST" action="{% url 'clear_data' %}">
                         {% csrf_token %}
                         <button type="submit" 
-                                onclick="return confirm('Permanently delete ALL archived data?')"
-                                class="w-full mt-2 text-[9px] text-red-400 hover:text-red-300 underline uppercase font-bold text-center">
-                            🗑️ Wipe Database
+                                onclick="return confirm('ADMIN WARNING: This will permanently delete ALL archived election data. This cannot be undone. Proceed?')"
+                                class="w-full mt-2 text-[9px] text-red-400 hover:text-red-300 underline uppercase font-bold text-center transition-colors">
+                            🗑️ Wipe Database (Admin)
                         </button>
                     </form>
+                    {% endif %}
                 </div>
 
                 {% if messages %}
@@ -109,17 +93,20 @@
             </aside>
 
             <section class="md:col-span-3">
-                {% block content %}{% endblock %}
+                {% block content %}
+                {% endblock %}
             </section>
+
         </div>
     </main>
 
     <footer class="bg-white border-t border-gray-200 mt-12 py-6">
-        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-gray-400">
+        <div class="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
             Ethiopia Election Monitoring Dashboard • Code for Africa 2026
         </div>
     </footer>
 
+    <script src="{% static 'js/dashboard.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>
