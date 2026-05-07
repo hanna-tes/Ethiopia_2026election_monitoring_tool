@@ -323,8 +323,10 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
                 for post in cluster_data[:5]:
                     if post['original_text']:
                         sample_posts_with_urls.append({
-                            'text': post['original_text'][:150] + '...' if len(post['original_text']) > 150 else post['original_text'],
-                            'url': post['url'] if post['url'] and post['url'].startswith('http') else None,
+                            'text': post['original_text'][:150] + '...',
+                            # Ensure this key is 'url' and not 'sample_url' 
+                            # unless your HTML specifically asks for 'sample_url'
+                            'url': post['url'] if post['url'] and str(post['url']).startswith('http') else None,
                             'account': str(post['account_id'])[:30],
                             'platform': post['platform']
                         })
@@ -662,7 +664,8 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             'degree': degree,
             'post_count': post_count,
             'platform': platform,
-            'sample_url': sample_url,
+            'url': sample_url,         
+            'sample_url': sample_url,  
             'x': float(pos[node][0]),
             'y': float(pos[node][1]),
             'size': max(15, degree * 3),
