@@ -44,7 +44,7 @@
                         <span class="mr-2">📥</span> Upload Data
                     </h3>
                     
-                    <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                    <form method="POST" enctype="multipart/form-data" action="{% url 'upload_data' %}" class="space-y-4">
                         {% csrf_token %}
                         
                         <div>
