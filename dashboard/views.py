@@ -37,6 +37,7 @@ from .utils.data_loader import parse_timestamp_robust
 from .utils.csv_processor import combine_social_media_data
 from .models import ProcessedPost, DataSource
 from django.views.decorators.cache import never_cache
+from .utils.llm_detector import detect_hate_speech_llm
 
 
 logger = logging.getLogger(__name__)
