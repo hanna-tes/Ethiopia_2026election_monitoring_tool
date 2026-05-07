@@ -996,7 +996,9 @@ def final_preprocess_and_map_columns(df, coordination_mode="Text Content"):
     
     # Filter to original posts only
     if 'object_id' in dfp.columns:
-        mask = dfp['object_id'].apply(is_original_post) & (~dfp['object_id'].str.contains('🔁', na=False)) & (~dfp['object_id'].str.startswith('RT @', na=False))
+        # ✅ Convert to string first to safely handle NaN/float values
+        obj_str = dfp['object_id'].astype(str)
+        mask = dfp['object_id'].apply(is_original_post) & (~obj_str.str.contains('🔁', na=False)) & (~obj_str.str.startswith('RT @', na=False))
         dfp = dfp[mask].copy()
     
     # Clean object_id
