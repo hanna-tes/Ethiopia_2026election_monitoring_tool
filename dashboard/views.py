@@ -1765,7 +1765,7 @@ class ProcessUploadView(View):
                     source_obj, _ = DataSource.objects.get_or_create(name=source_name)
                     
                     # DEBUG: Check URL value before saving
-                    url_value = str(row.get('url', ''))[:500] if row.get('url') else None
+                    url_value = str(row.get('URL', ''))[:500] if row.get('URL') else None
                     if url_value and url_value.startswith('http'):
                         urls_saved += 1
                     
