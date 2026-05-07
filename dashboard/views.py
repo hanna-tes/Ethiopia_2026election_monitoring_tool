@@ -175,7 +175,7 @@ Time Range: {min_ts} to {max_ts}"""
 
 
 def get_ethiopia_summaries(posts_queryset, max_clusters=10):
-    """Generates LLM-powered summaries for top narrative clusters"""
+    """Generates LLM-powered summaries - FIXED with URLs in sample posts"""
     all_summaries = []
     
     if posts_queryset.count() < 50:
@@ -195,7 +195,6 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
         vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1,2))
         X = vectorizer.fit_transform(texts)
         
-        # Ensure n_clusters is at least 2
         n_clusters = max(2, min(max_clusters, len(texts) // 20))
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         labels = kmeans.fit_predict(X)
@@ -205,35 +204,46 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
             cluster_posts[label].append(post_data[idx])
         
         for cluster_id, cluster_data in cluster_posts.items():
-            if len(cluster_data) >= 3:  # Reduced threshold
+            if len(cluster_data) >= 3:
                 cluster_texts = [p['original_text'] for p in cluster_data if p['original_text']]
                 cluster_urls = [p['url'] for p in cluster_data if p.get('url')]
                 timestamps = [p['timestamp_share'] for p in cluster_data if p.get('timestamp_share')]
                 min_ts = min(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
                 max_ts = max(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
                 
+                # FIXED: Sample posts WITH URLs
+                sample_posts_with_urls = []
+                for post in cluster_data[:5]:
+                    if post['original_text']:
+                        sample_posts_with_urls.append({
+                            'text': post['original_text'][:150] + '...' if len(post['original_text']) > 150 else post['original_text'],
+                            'url': post['url'] if post['url'] and post['url'].startswith('http') else None,
+                            'account': str(post['account_id'])[:30],
+                            'platform': post['platform']
+                        })
+                
                 summary_text = summarize_cluster_ethiopia(
                     cluster_texts[:50], cluster_urls[:10], cluster_data, min_ts, max_ts
                 )
                 
-                if not any(phrase in summary_text.lower() for phrase in ["no explicit claims", "not explicitly stated", "summary generation failed"]):
+                if not any(phrase in summary_text.lower() for phrase in ["no explicit claims", "not explicitly stated"]):
                     total_reach = len(cluster_data)
                     platforms = [p['platform'] for p in cluster_data if p.get('platform')]
                     platform_counts = Counter(platforms)
                     top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
                     
-                    # Extract 1-2 sentence narrative description from the summary
                     narrative_desc = extract_narrative_description(summary_text, cluster_texts[:5])
                     
                     all_summaries.append({
                         'cluster_id': cluster_id,
                         'Context': summary_text,
-                        'Narrative_Description': narrative_desc,  # NEW: Brief description
+                        'Narrative_Description': narrative_desc,
                         'Total_Reach': total_reach,
                         'Emerging_Virality': assign_virality_tier(total_reach),
                         'Top_Platforms': top_platforms,
-                        'sample_posts': cluster_texts[:5],
-                        'post_count': len(cluster_data)
+                        'sample_posts_with_urls': sample_posts_with_urls,  # NEW: With URLs!
+                        'post_count': len(cluster_data),
+                        'unique_urls_count': len(set([p['url'] for p in cluster_data if p['url']]))
                     })
         
         all_summaries.sort(key=lambda x: x['Total_Reach'], reverse=True)
@@ -241,6 +251,7 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
         logger.error(f"Narrative clustering failed: {e}")
     
     return all_summaries
+
     
 def extract_narrative_description(summary_text, sample_posts):
     """Generate a specific, meaningful 1-sentence narrative description from actual cluster posts"""
@@ -304,7 +315,7 @@ def extract_narrative_description(summary_text, sample_posts):
     return "Analyzing narrative content from posts..."
     
 def analyze_ttps(coordination_groups, posts):
-    """Analyze Tactics, Techniques, and Procedures from coordinated groups"""
+    """Analyze Tactics, Techniques, and Procedures from coordinated groups - FULLY FIXED"""
     ttps = []
     
     if not coordination_groups:
@@ -314,51 +325,71 @@ def analyze_ttps(coordination_groups, posts):
     cib_groups = [g for g in coordination_groups if g['account_count'] >= 5]
     if cib_groups:
         ttps.append({
-            'name': 'Coordinated Inauthentic Behavior',
+            'name': 'Coordinated Inauthentic Behavior (CIB)',
             'description': f'Detected {len(cib_groups)} groups with 5+ accounts sharing identical content.',
             'severity': 'High',
-            'evidence': f'{sum(g["post_count"] for g in cib_groups)} total posts across groups.'
+            'evidence': f'{sum(g["post_count"] for g in cib_groups)} total posts across {sum(g["account_count"] for g in cib_groups)} accounts.'
         })
     
-    # TTP 2: Cross-Platform Amplification
-    cross_platform = [g for g in coordination_groups if len(g['platforms']) > 1]
-    if cross_platform:
-        platforms = set(p for g in cross_platform for p in g['platforms'])
+    # TTP 2: Cross-Platform Amplification - FIXED for new data structure
+    cross_platform_groups = []
+    for g in coordination_groups:
+        # Extract platforms from sample_posts_with_urls
+        platforms = set(p['platform'] for p in g.get('sample_posts_with_urls', []) if p.get('platform'))
+        if len(platforms) > 1:
+            cross_platform_groups.append({
+                'group': g,
+                'platforms': list(platforms)
+            })
+    
+    if cross_platform_groups:
+        all_platforms = set(p['platforms'] for p in cross_platform_groups)
         ttps.append({
             'name': 'Cross-Platform Amplification',
-            'description': f'{len(cross_platform)} groups operating across multiple platforms ({", ".join(platforms)}).',
+            'description': f'{len(cross_platform_groups)} groups operating across {len(all_platforms)} platforms.',
             'severity': 'Medium',
-            'evidence': 'Identical messages spread across different social networks.'
+            'evidence': f"Platforms: {', '.join(sorted(all_platforms))}"
         })
     
     # TTP 3: Rapid Response / Burst Posting
     burst_groups = [g for g in coordination_groups if g['post_count'] > 10]
     if burst_groups:
+        max_posts = max(g['post_count'] for g in burst_groups)
         ttps.append({
             'name': 'Rapid Response / Burst Posting',
-            'description': f'{len(burst_groups)} groups showing high-volume posting patterns (>10 posts).',
+            'description': f'{len(burst_groups)} groups with high-volume posting (max: {max_posts} posts/group).',
             'severity': 'Medium',
-            'evidence': 'Sudden spikes in identical content.'
+            'evidence': f"Identical content bursts across {sum(g['account_count'] for g in burst_groups)} accounts."
         })
     
     # TTP 4: Hashtag Manipulation (Simplified)
     hashtag_groups = [g for g in coordination_groups if '#' in g['text_sample']]
     if hashtag_groups:
-        # Extract hashtags more safely
         hashtags = []
-        for g in hashtag_groups[:3]:  # Limit to first 3 groups
+        for g in hashtag_groups[:5]:  # Check top 5 groups
             text = g['text_sample']
-            found = re.findall(r'#\w+', text)
+            found = re.findall(r'#\w+', text, re.IGNORECASE)
             hashtags.extend(found)
         
         if hashtags:
-            unique_hashtags = list(set(hashtags))[:3]
+            unique_hashtags = list(set(hashtags))[:5]
             ttps.append({
                 'name': 'Hashtag Manipulation',
-                'description': f'Coordinated use of hashtags: {", ".join(unique_hashtags)}.',
+                'description': f'Coordinated use of {len(unique_hashtags)} hashtags: {", ".join(unique_hashtags)}.',
                 'severity': 'Low',
-                'evidence': 'Identical hashtags used across multiple accounts.'
+                'evidence': f'Found in {len(hashtag_groups)} coordination groups.'
             })
+    
+    # TTP 5: URL Amplification (NEW - uses your URL data!)
+    url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
+    if url_groups:
+        total_unique_urls = sum(len(g.get('unique_urls', [])) for g in url_groups)
+        ttps.append({
+            'name': 'URL Amplification',
+            'description': f'{len(url_groups)} groups amplifying {total_unique_urls} URLs.',
+            'severity': 'Low',
+            'evidence': 'Multiple accounts sharing same external links.'
+        })
     
     return ttps
     
@@ -375,10 +406,10 @@ def get_top_pairs(coordination_groups):
             })
     return pairs[:10]
     
+# === IMPROVED NETWORK & COORDINATION FUNCTIONS ===
+
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
-    """Find accounts posting identical messages (Streamlit-style coordination detection)"""
-    from collections import Counter
-    
+    """Find accounts posting identical messages - FIXED to show real usernames and URLs"""
     coordination = []
     
     # Group by exact text
@@ -389,106 +420,168 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     
     for group in text_groups:
         text = group['original_text']
-        accounts = list(posts_queryset.filter(original_text=text).values_list('account_id', flat=True).distinct()[:10])
-        sample_posts = posts_queryset.filter(original_text=text)[:5]
+        # Get DISTINCT accounts with their posts and URLs
+        account_posts = posts_queryset.filter(original_text=text).values(
+            'account_id', 'platform', 'url', 'timestamp_share'
+        ).distinct()
         
-        coordination.append({
-            'id': len(coordination) + 1,
-            'accounts': accounts,
-            'account_count': group['account_count'],
-            'post_count': group['post_count'],
-            'text_sample': text[:200] if text else '[Identical message]',
-            'platforms': list(posts_queryset.filter(original_text=text).values_list('platform', flat=True).distinct()),
-            'sample_posts': [
-                {
-                    'account_id': str(p.account_id)[:50],
-                    'platform': p.platform,
-                    'url': p.url,
-                    'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'N/A',
-                    'text': p.original_text[:150]
-                }
-                for p in sample_posts
-            ]
-        })
+        accounts = []
+        sample_posts_with_urls = []
+        
+        for ap in account_posts[:10]:  # Limit per group
+            username = str(ap['account_id'])[:50].strip()
+            # Clean usernames better
+            username = re.sub(r'(twitter|source|nan|none|-|user|author)\s*', '', username, flags=re.IGNORECASE)
+            username = re.sub(r'\s+', ' ', username).strip()
+            
+            if username and len(username) > 2 and username.lower() not in ['twitter', 'source', 'nan', 'none']:
+                accounts.append(username)
+                
+                # Add sample post with URL
+                sample_posts_with_urls.append({
+                    'username': username,
+                    'platform': ap['platform'],
+                    'url': ap['url'] if ap['url'] and ap['url'].startswith('http') else None,
+                    'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
+                    'text_preview': text[:100] + '...' if len(text) > 100 else text
+                })
+        
+        if len(accounts) >= min_accounts:
+            coordination.append({
+                'id': len(coordination) + 1,
+                'accounts': accounts[:8],  # Show top 8 usernames
+                'account_count': len(accounts),
+                'post_count': group['post_count'],
+                'text_sample': text[:200] if text else '[Identical message]',
+                'sample_posts_with_urls': sample_posts_with_urls[:5],  # 5 posts with URLs
+                'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5]
+            })
     
-    return coordination
+    return coordination[:max_groups]
 
 
 def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, layout='spring'):
-    """Generate network graph data for Plotly"""
+    """Generate cleaner network graph - FIXED usernames and platform info"""
     G = nx.Graph()
     
+    # Group by exact text to find coordination
     text_groups = posts_queryset.values('original_text').annotate(
         account_count=Count('account_id', distinct=True)
     ).filter(account_count__gte=min_connections)
     
     for group in text_groups:
         text = group['original_text']
-        accounts = list(posts_queryset.filter(original_text=text).values_list('account_id', flat=True).distinct())
+        # Get real account data with URLs
+        accounts_data = list(posts_queryset.filter(original_text=text).values(
+            'account_id', 'platform', 'url'
+        ).distinct())
         
+        accounts = []
+        for acc_data in accounts_data:
+            username = str(acc_data['account_id'])[:30].strip()
+            # Clean username
+            username = re.sub(r'(twitter|source|nan|none|-|user|author)\s*', '', username, flags=re.IGNORECASE)
+            username = re.sub(r'\s+', ' ', username).strip()
+            
+            if username and len(username) > 2:
+                accounts.append({
+                    'id': username,
+                    'platform': acc_data['platform'],
+                    'sample_url': acc_data['url'] if acc_data['url'] and acc_data['url'].startswith('http') else None
+                })
+        
+        # Create edges between coordinated accounts
         for i in range(len(accounts)):
             for j in range(i+1, len(accounts)):
-                if G.has_edge(accounts[i], accounts[j]):
-                    G[accounts[i]][accounts[j]]['weight'] += 1
+                u_id = accounts[i]['id']
+                v_id = accounts[j]['id']
+                if G.has_edge(u_id, v_id):
+                    G[u_id][v_id]['weight'] += 1
                 else:
-                    G.add_edge(accounts[i], accounts[j], weight=1)
+                    G.add_edge(u_id, v_id, weight=1, 
+                             platform1=accounts[i]['platform'], 
+                             platform2=accounts[j]['platform'],
+                             sample_url1=accounts[i]['sample_url'],
+                             sample_url2=accounts[j]['sample_url'])
     
     if G.number_of_edges() == 0:
-        return {'nodes': [], 'edges': []}
+        return {'nodes': [], 'edges': [], 'message': 'No coordination detected'}
     
+    # Filter low-degree nodes
     nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
     G = G.subgraph(nodes_to_keep).copy()
     
     if G.number_of_edges() == 0:
-        return {'nodes': [], 'edges': []}
+        return {'nodes': [], 'edges': [], 'message': 'No significant connections'}
     
+    # Top N nodes
     top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
     top_node_names = [n for n, _ in top_nodes]
     G_top = G.subgraph(top_node_names).copy()
     
-    # Layout
+    # Generate positions
     if layout == 'circular':
         pos = nx.circular_layout(G_top)
     elif layout == 'kamada_kawai':
         pos = nx.kamada_kawai_layout(G_top)
     elif layout == 'spring':
-        pos = nx.spring_layout(G_top, k=0.5, iterations=50, seed=42)
+        pos = nx.spring_layout(G_top, k=0.6, iterations=50, seed=42)
     else:
         pos = nx.spring_layout(G_top, seed=42)
     
+    # Build clean nodes
     nodes = []
     for node in G_top.nodes():
         degree = G_top.degree(node)
-        node_posts = posts_queryset.filter(account_id=node)
-        platforms = node_posts.values_list('platform', flat=True)
-        platform_mode = Counter(platforms).most_common(1)[0][0] if platforms else 'Unknown'
+        node_posts = posts_queryset.filter(account_id__icontains=node)
+        post_count = node_posts.count()
+        
+        platforms = list(node_posts.values_list('platform', flat=True).distinct())
+        platform = platforms[0] if platforms else 'Unknown'
+        
+        # FIXED: Get first valid URL properly
+        sample_url_obj = node_posts.filter(url__startswith='http').first()
+        sample_url = sample_url_obj.url if sample_url_obj else None
         
         nodes.append({
-            'id': str(node)[:30],
-            'label': str(node)[:30],
+            'id': node,
+            'label': node,
             'degree': degree,
-            'post_count': node_posts.count(),
-            'platform': platform_mode,
+            'post_count': post_count,
+            'platform': platform,
+            'sample_url': sample_url,
             'x': float(pos[node][0]),
             'y': float(pos[node][1]),
-            'color': _get_platform_color(platform_mode)
-        })
-    
+            'size': max(15, degree * 3),
+            'color': _get_platform_color(platform)
+        })    
+    # Build clean edges with URLs
     edges = []
     for u, v, data in G_top.edges(data=True):
         if u in pos and v in pos:
+            # Pick a sample URL from either endpoint
+            sample_url = data.get('sample_url1') or data.get('sample_url2')
             edges.append({
-                'source': str(u)[:30],
-                'target': str(v)[:30],
+                'source': u,
+                'target': v,
                 'weight': data.get('weight', 1),
                 'source_x': float(pos[u][0]),
                 'source_y': float(pos[u][1]),
                 'target_x': float(pos[v][0]),
-                'target_y': float(pos[v][1])
+                'target_y': float(pos[v][1]),
+                'sample_url': sample_url
             })
     
-    return {'nodes': nodes, 'edges': edges}
-
+    return {
+        'nodes': nodes, 
+        'edges': edges,
+        'stats': {
+            'nodes': len(nodes),
+            'edges': len(edges),
+            'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
+        }
+    }
+    
 def _get_platform_color(platform):
     """Get color hex code for platform"""
     colors = {
@@ -825,11 +918,12 @@ class NarrativesView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        posts = ProcessedPost.objects.all()
-        total_posts = posts.count()
+        # Use election posts only
+        posts_queryset, start_date, end_date = get_election_posts_queryset(self.request)
+        total_posts = posts_queryset.count()
         
-        # Generate summaries
-        summaries = get_ethiopia_summaries(posts, max_clusters=10)
+        # Generate summaries WITH URLS
+        summaries = get_ethiopia_summaries(posts_queryset, max_clusters=12)
         
         context.update({
             'active_tab': 'narratives',
@@ -843,6 +937,7 @@ class NarrativesView(TemplateView):
             ],
             'summaries': summaries,
             'total_posts': total_posts,
+            'date_range': f"{start_date.date()} to {end_date.date()}",
         })
         return context
 
@@ -1006,21 +1101,21 @@ class NetworksView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get controls from URL parameters
         request = self.request
         min_connections = int(request.GET.get('min_connections', 2))
-        top_n = int(request.GET.get('top_n', 50))
+        top_n = int(request.GET.get('top_n', 30))  # Reduced default
         layout_style = request.GET.get('layout', 'spring')
         
-        posts = ProcessedPost.objects.all()
+        # Use election-related posts only
+        posts = ProcessedPost.objects.filter(is_election_related=True)
         
-        # Generate network graph
+        # Generate CLEAN network graph
         graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
         
-        # Get coordination groups for TTP analysis
-        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=20)
+        # Get coordination groups with FIXED usernames and URLs
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
         
-        # Analyze TTPs from coordinated groups
+        # Analyze TTPs
         ttps = analyze_ttps(coordination_groups, posts)
         
         context.update({
@@ -1033,14 +1128,13 @@ class NetworksView(TemplateView):
                 {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
-            'coordination_data_json': json.dumps(graph_data),
+            'network_graph_json': json.dumps(graph_data, default=str),
             'coordination_groups': coordination_groups,
-            'total_coordinated': len(coordination_groups),
-            'total_accounts': posts.values('account_id').distinct().count(),
+            'total_coordinated_groups': len(coordination_groups),
+            'total_coordinated_accounts': sum(g['account_count'] for g in coordination_groups),
             'total_posts': posts.count(),
-            'max_connections': max([g['account_count'] for g in coordination_groups]) if coordination_groups else 0,
-            'top_coordinated_pairs': get_top_pairs(coordination_groups),
-            # Controls state
+            'max_group_size': max([g['account_count'] for g in coordination_groups]) if coordination_groups else 0,
+            # Controls
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
