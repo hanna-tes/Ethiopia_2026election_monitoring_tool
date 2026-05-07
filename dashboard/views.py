@@ -1695,6 +1695,18 @@ class ProcessUploadView(View):
                 # Load the CSV using robust loader
                 df = load_data_robustly(full_path)
                 
+                # === DEBUG: Check original CSV columns ===
+                logger.info(f"📋 ORIGINAL CSV COLUMNS: {list(df.columns)}")
+                logger.info(f"📊 CSV Shape: {df.shape}")
+                
+                # Check for URL-like columns
+                url_cols = [c for c in df.columns if 'url' in c.lower() or 'link' in c.lower()]
+                logger.info(f"🔍 URL-related columns in CSV: {url_cols}")
+                
+                # Show sample URL values
+                for col in url_cols:
+                    logger.info(f"🔗 Sample values from '{col}': {df[col].head(3).tolist()}")
+                
                 if df.empty:
                     raise ValueError(f"Failed to load data from {original_name}")
                 
@@ -1711,8 +1723,27 @@ class ProcessUploadView(View):
                     # Custom/unknown format
                     combined_df = preprocess_dataframe(df)
                 
+                # === DEBUG: Check combined data ===
+                logger.info(f"📊 COMBINED DATA COLUMNS: {list(combined_df.columns)}")
+                if 'URL' in combined_df.columns:
+                    logger.info(f"🔗 URL column exists! Sample values: {combined_df['URL'].head(3).tolist()}")
+                    logger.info(f"🔗 URL column type: {combined_df['URL'].dtype}")
+                    logger.info(f"🔗 URL null count: {combined_df['URL'].isna().sum()}")
+                else:
+                    logger.error("❌ URL COLUMN NOT FOUND after combining!")
+                
                 # Final preprocessing and column mapping
                 processed_df = final_preprocess_and_map_columns(combined_df)
+                
+                # === DEBUG: Check processed data ===
+                logger.info(f"📊 PROCESSED DATA COLUMNS: {list(processed_df.columns)}")
+                if 'URL' in processed_df.columns:
+                    logger.info(f"✅ URL in processed data!")
+                    logger.info(f"🔗 Sample URLs: {processed_df['URL'].head(3).tolist()}")
+                    logger.info(f"🔗 URL null count: {processed_df['URL'].isna().sum()}")
+                    logger.info(f"🔗 URL empty count: {(processed_df['URL'] == '').sum()}")
+                else:
+                    logger.error("❌ URL COLUMN MISSING after final processing!")
                 
                 # Parse timestamps
                 if 'timestamp_share' in processed_df.columns:
@@ -1720,6 +1751,7 @@ class ProcessUploadView(View):
                 
                 # Save to database
                 count = 0
+                urls_saved = 0
                 for _, row in processed_df.iterrows():
                     # Skip if no content
                     if not row.get('original_text') or pd.isna(row.get('original_text')):
@@ -1735,22 +1767,29 @@ class ProcessUploadView(View):
                     source_name = str(row.get('source_dataset', data_type))
                     source_obj, _ = DataSource.objects.get_or_create(name=source_name)
                     
+                    # DEBUG: Check URL value before saving
+                    url_value = str(row.get('url', ''))[:500] if row.get('url') else None
+                    if url_value and url_value.startswith('http'):
+                        urls_saved += 1
+                    
                     # Create new post with the DataSource instance
                     ProcessedPost.objects.create(
                         account_id=str(row.get('account_id', ''))[:100],
                         content_id=str(row.get('content_id', ''))[:100] if row.get('content_id') else None,
                         original_text=str(row.get('original_text', '')),
-                        url=str(row.get('url', ''))[:500] if row.get('url') else None,
+                        url=url_value,
                         platform=str(row.get('Platform', 'Unknown')),
                         timestamp_share=row.get('timestamp_share'),
-                        source_dataset=source_obj,  # ✅ Pass the object, not a string
+                        source_dataset=source_obj,
                         is_election_related=is_election_related(str(row.get('original_text', '')))
                     )
                     count += 1
                 
+                logger.info(f"✅ Saved {count} posts, {urls_saved} with URLs")
+                
                 # Update record
                 upload.status = 'completed'
-                upload.processing_log = f"Successfully processed {count} posts"
+                upload.processing_log = f"Successfully processed {count} posts ({urls_saved} with URLs)"
                 upload.records_processed = count
                 upload.save()
                 
