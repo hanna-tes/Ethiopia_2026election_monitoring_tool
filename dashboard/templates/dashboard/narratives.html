@@ -3,72 +3,157 @@
 
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-    <div class="flex justify-between items-center mb-6">
-        <h2 class="text-2xl font-bold text-gray-900">📰 Trending Narratives</h2>
-        <span class="text-sm text-gray-500">{{ summaries|length }} active narratives</span>
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-900 mb-1">📰 Trending Narratives</h2>
+            <p class="text-sm text-gray-500 mb-0">{{ summaries|length }} clusters • {{ total_posts }} election posts • {{ date_range }}</p>
+        </div>
+        <a href="{% url 'export_posts_api' %}" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-medium transition-colors">
+            📥 Export All Posts
+        </a>
     </div>
     
     {% if summaries %}
     <div class="space-y-6">
         {% for summary in summaries %}
-        <div class="border border-gray-200 rounded-xl p-5 hover:border-blue-300 transition-colors">
-            <div class="flex justify-between items-start mb-3">
+        <div class="border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-blue-300 transition-all duration-200 bg-gradient-to-r from-white to-blue-50/50">
+            <!-- Header -->
+            <div class="flex flex-col lg:flex-row lg:justify-between lg:items-start mb-4 gap-4">
                 <div>
-                    <h3 class="text-lg font-semibold text-gray-900">Cluster #{{ summary.cluster_id }} — {{ summary.Emerging_Virality }}</h3>
-                    <div class="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                        <span>📊 {{ summary.Total_Reach }} posts</span>
-                        <span>🔗 {{ summary.Top_Platforms }}</span>
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-12 h-12 bg-gradient-to-br rounded-xl flex items-center justify-center font-bold text-white text-lg shadow-lg"
+                             style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);">
+                            #{{ summary.cluster_id }}
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-900">{{ summary.Narrative_Description|default:"Election discussion cluster" }}</h3>
+                            <div class="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                                <span class="flex items-center gap-1">
+                                    📊 <strong>{{ summary.Total_Reach }}</strong> posts
+                                </span>
+                                <span class="flex items-center gap-1">
+                                    🚀 {{ summary.Emerging_Virality }}
+                                </span>
+                                <span>{{ summary.Top_Platforms }}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Main Narrative Description (NEW) -->
-            {% if summary.Narrative_Description %}
-            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded">
-                <h4 class="text-sm font-semibold text-blue-900 mb-1">📋 Main Narrative:</h4>
-                <p class="text-gray-700">{{ summary.Narrative_Description }}</p>
+            <!-- Main Narrative Summary -->
+            {% if summary.Context %}
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 p-5 rounded-xl mb-6 shadow-sm">
+                <h4 class="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                    📋 Narrative Analysis
+                </h4>
+                <div class="prose prose-sm max-w-none text-gray-800 leading-relaxed">
+                    {{ summary.Context|linebreaks|truncatewords:80 }}
+                </div>
             </div>
             {% endif %}
             
-            <!-- Full Summary -->
-            <details class="mb-4">
-                <summary class="cursor-pointer text-blue-600 hover:underline font-medium text-sm mb-2">
-                    🔍 View Detailed Analysis
-                </summary>
-                <div class="prose prose-sm max-w-none text-gray-700 bg-gray-50 p-4 rounded-lg">
-                    {{ summary.Context|linebreaks }}
-                </div>
-            </details>
-            
-            {% if summary.sample_posts %}
-            <details class="mt-4">
-                <summary class="cursor-pointer text-blue-600 hover:underline font-medium text-sm">
-                    📂 View {{ summary.sample_posts|length }} Sample Posts →
-                </summary>
-                <div class="mt-3 space-y-2 bg-gray-50 rounded-lg p-3">
-                    {% for post in summary.sample_posts %}
-                    <div class="border-l-2 border-blue-200 pl-3 py-1">
-                        <div class="text-xs text-gray-500">{{ post|truncatechars:100 }}</div>
+            <!-- FIXED: Sample Posts WITH URLS! 🎯 -->
+            {% if summary.sample_posts_with_urls %}
+            <div class="mb-6">
+                <h5 class="font-semibold text-gray-800 mb-4 flex items-center gap-2 text-lg">
+                    📂 Sample Posts ({{ summary.sample_posts_with_urls|length }})
+                    {% if summary.unique_urls_count %}
+                    <span class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                        {{ summary.unique_urls_count }} unique URLs
+                    </span>
+                    {% endif %}
+                </h5>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {% for post in summary.sample_posts_with_urls %}
+                    <div class="group bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-blue-300 transition-all duration-200 hover:-translate-y-1">
+                        <!-- Post Header -->
+                        <div class="flex justify-between items-start mb-3">
+                            <div class="flex items-center gap-3 flex-1 min-w-0">
+                                <div class="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md">
+                                    {{ post.platform|default:"?"|slice:":1"|upper }}
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="font-mono text-sm font-semibold text-gray-900 truncate" title="{{ post.account }}">
+                                        {{ post.account|truncatechars:25 }}
+                                    </div>
+                                    <div class="text-xs text-gray-500">{{ post.platform|default:"Unknown"|title }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Post Content -->
+                        <div class="mb-3 text-sm text-gray-700 leading-relaxed group-hover:text-gray-900">
+                            {{ post.text }}
+                        </div>
+                        
+                        <!-- CLICKABLE URL BUTTON 🎉 -->
+                        {% if post.url %}
+                        <a href="{{ post.url }}" target="_blank" rel="noopener noreferrer"
+                           class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 hover:shadow-lg transition-all duration-200 group-hover:scale-105 transform"
+                           title="Open original post">
+                            🔗 View Post
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                            </svg>
+                        </a>
+                        {% else %}
+                        <span class="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-600 text-sm font-medium rounded-lg">
+                            📄 No URL
+                        </span>
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
-            </details>
+            </div>
             {% endif %}
+            
+            <!-- Quick Actions -->
+            <div class="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
+                <a href="#" class="text-xs text-blue-600 hover:underline font-medium" onclick="copySummary({{ summary.cluster_id }})">
+                    📋 Copy Summary
+                </a>
+                <a href="{% url 'export_posts_api' %}?cluster={{ summary.cluster_id }}" class="text-xs text-green-600 hover:underline font-medium">
+                    📥 Export Cluster
+                </a>
+            </div>
         </div>
         {% endfor %}
     </div>
+    
     {% else %}
-    <div class="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-        <div class="text-6xl mb-4">📰</div>
-        <h3 class="text-lg font-semibold text-gray-800 mb-2">No narratives identified yet</h3>
-        <p class="text-gray-500 mb-2">You have <strong>{{ total_posts }}</strong> posts in the database.</p>
-        <p class="text-gray-500 mb-6 max-w-md mx-auto">
-            Narrative clustering requires sufficient data volume. Upload more posts or wait for automated clustering to run.
+    <div class="text-center py-16 bg-gradient-to-br from-gray-50 to-blue-50 rounded-2xl border-2 border-dashed border-gray-300 shadow-sm">
+        <div class="text-6xl mb-6 mx-auto w-24 h-24 bg-blue-100 rounded-2xl flex items-center justify-center">
+            📰
+        </div>
+        <h3 class="text-2xl font-bold text-gray-800 mb-3">No narratives detected</h3>
+        <p class="text-xl text-gray-600 mb-6 max-w-lg mx-auto">
+            Need more election-related posts ({{ total_posts }} currently loaded)
         </p>
-        <a href="{% url 'upload_data' %}" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-            📤 Upload More Data
-        </a>
+        <div class="space-y-3">
+            <a href="{% url 'upload_data' %}" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-semibold shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5">
+                📤 Upload Election Data
+            </a>
+            <a href="?start_date=&end_date=&platform=all" class="text-blue-600 hover:underline font-medium">
+                🔄 Refresh Filters
+            </a>
+        </div>
     </div>
     {% endif %}
 </div>
+
+<!-- Copy functionality -->
+<script>
+function copySummary(clusterId) {
+    const summary = document.querySelector(`[data-cluster="${clusterId}"] .narrative-text`)?.innerText || 'Narrative summary';
+    navigator.clipboard.writeText(summary).then(() => {
+        // Toast notification
+        const toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-xl shadow-lg z-50 animate-pulse';
+        toast.textContent = '✅ Summary copied!';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    });
+}
+</script>
 {% endblock %}
