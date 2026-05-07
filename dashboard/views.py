@@ -36,6 +36,7 @@ from sklearn.cluster import KMeans
 from .utils.data_loader import parse_timestamp_robust
 from .utils.csv_processor import combine_social_media_data
 from .models import ProcessedPost, DataSource
+from django.views.decorators.cache import never_cache
 
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def clean_username(raw_name):
     name = re.sub(r'(?i)(name|source|nan|none)$', '', name).strip()
     return name
     
+@never_cache  
 def dashboard_view(request):
     """Main Dashboard View with Sidebar Upload and Stats Reporting"""
     
@@ -68,8 +70,9 @@ def dashboard_view(request):
         
         for f in uploaded_files:
             try:
-                # Use your robust data loader logic
-                df = pd.read_csv(f, low_memory=False, on_bad_lines='skip')
+                # Fix 2: Use the robust loader to handle UTF-16/Tabs for Meltwater
+                df = load_data_robustly(f) 
+                
                 stats['total_rows'] += len(df)
                 
                 # Normalize columns based on platform
@@ -87,19 +90,18 @@ def dashboard_view(request):
                     cid = row.get('content_id')
                     if cid and not ProcessedPost.objects.filter(content_id=cid).exists():
                         
-                        # 1. Fetch the actual DataSource object (Fixes the ValueError)
                         source_name = row.get('source_dataset', platform_type)
                         source_obj, _ = DataSource.objects.get_or_create(name=source_name)
                 
-                        # 2. Create the post using the object instance
                         ProcessedPost.objects.create(
                             account_id=str(row.get('account_id', ''))[:100],
                             content_id=cid,
-                            original_text=str(row.get('object_id', '')), # Fixed column name
-                            url=row.get('url') or row.get('URL') or row.get('link') or '',
+                            original_text=str(row.get('object_id', '')),
+                            # Fix 3: Robust URL capture
+                            url=row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '',
                             platform=row.get('Platform', platform_type.title()),
                             timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
-                            source_dataset=source_obj,  # Passing the actual object
+                            source_dataset=source_obj,
                             is_election_related=is_election_related(str(row.get('object_id', '')))
                         )
                         stats['saved'] += 1
@@ -110,7 +112,6 @@ def dashboard_view(request):
                 logger.error(f"Upload error: {e}")
                 messages.error(request, f"Error processing {f.name}")
 
-        # Create the detailed summary message for the sidebar
         detail_msg = (
             f"<strong>Data Upload Details:</strong><br>"
             f"• Source: {platform_type.title()}<br>"
@@ -121,14 +122,15 @@ def dashboard_view(request):
         )
         messages.success(request, detail_msg)
         
-        # Redirect back to stay on the same page
         return redirect(request.POST.get('next', 'home'))
 
     # 2. Page Load Logic (GET)
-    # Pull ALL unique data from the database
+    # Check for hard refresh query param
+    if request.GET.get('refresh'):
+        logger.info("Performing hard refresh of election metrics")
+
     all_posts = ProcessedPost.objects.all().order_by('-timestamp_share')
     
-    # Run Narrative and Coordination algorithms on the database set
     summaries = get_ethiopia_summaries(all_posts)
     coordination = get_coordination_groups(all_posts)
     
