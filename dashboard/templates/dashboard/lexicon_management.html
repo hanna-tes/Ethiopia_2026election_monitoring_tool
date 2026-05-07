@@ -28,27 +28,103 @@
         <!-- Show scan results from session (only if exists) -->
         {% if scan_results %}
         <div class="mt-4 p-4 bg-white rounded-lg border border-gray-200">
-            <h4 class="font-semibold mb-2">Scan Results for: "{{ scan_results.text }}"</h4>
-            <p class="text-sm text-gray-600 mb-2">Risk Level: <strong class="text-red-600">{{ scan_results.risk.level|upper }}</strong> (Score: {{ scan_results.risk.score }})</p>
-            {% if scan_results.matches %}
-            <div class="flex flex-wrap gap-2">
-                {% for match in scan_results.matches %}
-                <span class="px-2 py-1 rounded text-xs font-medium
-                    {% if match.severity == 'critical' %}bg-red-100 text-red-800
-                    {% elif match.severity == 'high' %}bg-orange-100 text-orange-800
-                    {% elif match.severity == 'medium' %}bg-yellow-100 text-yellow-800
-                    {% else %}bg-green-100 text-green-800{% endif %}">
-                    {{ match.term }} ({{ match.category }})
-                </span>
-                {% endfor %}
+            <h4 class="font-semibold mb-3">Scan Results for: "{{ scan_results.text }}"</h4>
+            
+            <!-- Overall Assessment -->
+            <div class="mb-4 p-3 rounded-lg {% if scan_results.is_hate_speech %}bg-red-50 border border-red-200{% else %}bg-green-50 border border-green-200{% endif %}">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="font-semibold {% if scan_results.is_hate_speech %}text-red-800{% else %}text-green-800{% endif %}">
+                            {% if scan_results.is_hate_speech %}
+                                ⚠️ Potential Hate Speech Detected
+                            {% else %}
+                                ✅ No Hate Speech Detected
+                            {% endif %}
+                        </p>
+                        <p class="text-sm {% if scan_results.is_hate_speech %}text-red-600{% else %}text-green-600{% endif %}">
+                            Severity: <strong>{{ scan_results.overall_severity|upper }}</strong>
+                            {% if scan_results.llm_result.confidence %}
+                                | LLM Confidence: {{ scan_results.llm_result.confidence|floatformat:2 }}
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- LLM Explanation -->
+            {% if scan_results.explanation %}
+            <div class="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
+                <p class="text-sm text-blue-900">
+                    <strong>🤖 AI Analysis:</strong> {{ scan_results.explanation }}
+                </p>
+            </div>
+            {% endif %}
+            
+            <!-- Targeted Groups -->
+            {% if scan_results.targeted_groups %}
+            <div class="mb-4">
+                <p class="text-sm font-semibold text-gray-700 mb-2">🎯 Targeted Groups:</p>
+                <div class="flex flex-wrap gap-2">
+                    {% for group in scan_results.targeted_groups %}
+                    <span class="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                        {{ group }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Categories -->
+            {% if scan_results.all_categories %}
+            <div class="mb-4">
+                <p class="text-sm font-semibold text-gray-700 mb-2">📂 Categories:</p>
+                <div class="flex flex-wrap gap-2">
+                    {% for category in scan_results.all_categories %}
+                    <span class="px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs font-medium">
+                        {{ category }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Lexicon Matches -->
+            {% if scan_results.lexicon_matches %}
+            <div class="mb-4">
+                <p class="text-sm font-semibold text-gray-700 mb-2">📚 Lexicon Matches ({{ scan_results.lexicon_matches|length }}):</p>
+                <div class="flex flex-wrap gap-2">
+                    {% for match in scan_results.lexicon_matches %}
+                    <span class="px-2 py-1 rounded text-xs font-medium
+                        {% if match.severity == 'critical' %}bg-red-100 text-red-800
+                        {% elif match.severity == 'high' %}bg-orange-100 text-orange-800
+                        {% elif match.severity == 'medium' %}bg-yellow-100 text-yellow-800
+                        {% else %}bg-green-100 text-green-800{% endif %}">
+                        {{ match.term }} ({{ match.category }})
+                    </span>
+                    {% endfor %}
+                </div>
             </div>
             {% else %}
-            <p class="text-sm text-green-600">✅ No trigger terms detected in this text.</p>
+            <p class="text-sm text-gray-500 mb-4">📚 No lexicon matches found</p>
             {% endif %}
+            
+            <!-- LLM Details -->
+            <details class="mt-4">
+                <summary class="cursor-pointer text-blue-600 hover:underline text-sm font-medium">
+                    🔍 View LLM Detection Details
+                </summary>
+                <div class="mt-2 p-3 bg-gray-50 rounded text-sm">
+                    <p><strong>Is Hate Speech:</strong> {{ scan_results.llm_result.is_hate_speech }}</p>
+                    <p><strong>Confidence:</strong> {{ scan_results.llm_result.confidence|floatformat:2 }}</p>
+                    <p><strong>Severity:</strong> {{ scan_results.llm_result.severity }}</p>
+                    <p><strong>Categories:</strong> {{ scan_results.llm_result.categories|join:", " }}</p>
+                    {% if scan_results.llm_result.explanation %}
+                    <p class="mt-2"><strong>Explanation:</strong> {{ scan_results.llm_result.explanation }}</p>
+                    {% endif %}
+                </div>
+            </details>
         </div>
-        {% endif %}
-    </div>
-    
+        {% endif %}    
     <!-- Add New Term Form -->
     <div class="mb-8 p-6 bg-blue-50 rounded-lg border border-blue-200">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">➕ Add New Term</h3>
