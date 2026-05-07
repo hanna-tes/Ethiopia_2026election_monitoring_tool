@@ -35,6 +35,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from .utils.data_loader import parse_timestamp_robust
 from .utils.csv_processor import combine_social_media_data
+from .models import ProcessedPost, DataSource
 
 
 logger = logging.getLogger(__name__)
@@ -85,14 +86,21 @@ def dashboard_view(request):
                 for _, row in processed_df.iterrows():
                     cid = row.get('content_id')
                     if cid and not ProcessedPost.objects.filter(content_id=cid).exists():
+                        
+                        # 1. GET THE OBJECT instead of the string
+                        source_name = row.get('source_dataset', platform_type)
+                        source_obj, _ = DataSource.objects.get_or_create(name=source_name)
+                
+                        # 2. ASSIGN THE OBJECT to the field
                         ProcessedPost.objects.create(
-                            account_id=row.get('account_id'),
+                            account_id=str(row.get('account_id', ''))[:100],
                             content_id=cid,
                             original_text=row.get('object_id', ''),
                             url=row.get('URL', ''),
                             platform=row.get('Platform', platform_type.title()),
                             timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
-                            source_dataset=row.get('source_dataset', platform_type)
+                            source_dataset=source_obj,  # <--- PASS THE OBJECT HERE
+                            is_election_related=is_election_related(str(row.get('object_id', '')))
                         )
                         stats['saved'] += 1
                     else:
