@@ -243,42 +243,65 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
     return all_summaries
     
 def extract_narrative_description(summary_text, sample_posts):
-    """Extract a meaningful 1-2 sentence description of the main narrative from actual posts"""
+    """Generate a specific, meaningful 1-sentence narrative description from actual cluster posts"""
     
-    # Priority 1: Extract from EXPLICIT CLAIMS section (most important)
-    if 'EXPLICIT CLAIMS:' in summary_text:
-        claims_section = summary_text.split('EXPLICIT CLAIMS:')[1]
-        # Get the first claim (usually the most important)
-        if '- ' in claims_section:
-            first_claim = claims_section.split('- ')[1].split('\n')[0].strip()
-            # Clean and truncate to 300 chars
-            clean_claim = re.sub(r'^[-•]\s*', '', first_claim).strip()
-            if clean_claim and len(clean_claim) > 20:
-                return clean_claim[:300] + ('...' if len(clean_claim) > 200 else '')
+    if not sample_posts:
+        return "Analyzing narrative content..."
     
-    # Priority 2: Extract from NARRATIVE THEME
-    if 'NARRATIVE THEME:' in summary_text:
-        theme_line = summary_text.split('NARRATIVE THEME:')[1].split('\n')[0].strip()
-        if theme_line and len(theme_line) > 10 and theme_line.lower() not in ['cluster of posts discussing election-related topics']:
-            return theme_line[:200]
+    # Combine all posts in this cluster for analysis
+    all_text = ' '.join([p for p in sample_posts if p and isinstance(p, str)]).lower()
     
-    # Priority 3: Use the most common/representative post from the cluster
-    if sample_posts:
-        # Get the first non-empty post
-        for post in sample_posts:
-            if post and len(post.strip()) > 50:
-                # Clean the post (remove URLs, mentions)
-                clean_post = re.sub(r'http\S+', '', post).strip()
-                clean_post = re.sub(r'@\w+', '', clean_post).strip()
-                # Truncate to first sentence or 200 chars
-                if '.' in clean_post:
-                    first_sentence = clean_post.split('.')[0].strip() + '.'
-                    if len(first_sentence) > 30:
-                        return first_sentence[:200]
-                return clean_post[:200] + ('...' if len(clean_post) > 200 else '')
+    # Define topic keywords for Ethiopia election context
+    topic_keywords = {
+        'election fraud': ['rigged', 'fraud', 'stolen', 'manipulated', 'fake results', 'cheating', 'ballot', 'nebe'],
+        'voter intimidation': ['intimidation', 'threat', 'forced', 'coerced', 'violence', 'fear', 'suppress', 'arrest'],
+        'ethnic tension': ['amhara', 'oromo', 'tigray', 'somali', 'afar', 'sidama', 'ethnic', 'tribal', 'discrimination'],
+        'political violence': ['kill', 'attack', 'war', 'conflict', 'militia', 'armed', 'bloodshed', 'massacre'],
+        'international observation': ['observer', 'international', 'AU', 'UN', 'monitor', 'transparency', 'legitimate', 'credible'],
+        'government criticism': ['government', 'authorities', 'regime', 'corrupt', 'failed', 'oppression', 'tyranny'],
+        'opposition support': ['opposition', 'protest', 'resistance', 'freedom', 'democracy', 'rights', 'liberation'],
+        'media manipulation': ['propaganda', 'fake news', 'disinformation', 'censorship', 'biased media', 'state media'],
+        'humanitarian crisis': ['displaced', 'refugee', 'hunger', 'famine', 'aid', 'crisis', 'suffering'],
+        'youth engagement': ['youth', 'young', 'students', 'next generation', 'future', 'university']
+    }
     
-    # Fallback: Show what we have
-    return "Analyzing narrative content..."
+    # Count topic matches in THIS cluster's posts
+    topic_scores = {}
+    for topic, keywords in topic_keywords.items():
+        score = sum(1 for kw in keywords if kw in all_text)
+        if score > 0:
+            topic_scores[topic] = score
+    
+    # If we found topics, generate a specific description for THIS cluster
+    if topic_scores:
+        # Get top 3 topics by score for this cluster
+        top_topics = sorted(topic_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+        topic_list = [t[0] for t in top_topics]
+        
+        # Format the description
+        if len(topic_list) == 1:
+            return f"Posts discussing {topic_list[0]}."
+        elif len(topic_list) == 2:
+            return f"Posts discussing {topic_list[0]} and {topic_list[1]}."
+        else:
+            return f"Posts discussing {topic_list[0]}, {topic_list[1]}, and {topic_list[2]}."
+    
+    # Fallback: Extract key phrase from the most representative post in THIS cluster
+    best_post = None
+    for post in sample_posts:
+        if post and isinstance(post, str) and len(post.strip()) > 50:
+            best_post = post
+            break
+    
+    if best_post:
+        # Clean and extract first meaningful sentence
+        clean = re.sub(r'http\S+|@\w+|#\w+', '', best_post).strip()
+        sentences = [s.strip() for s in clean.split('.') if len(s.strip()) > 30]
+        if sentences:
+            return sentences[0][:200] + ('...' if len(sentences[0]) > 200 else '')
+        return clean[:200] + ('...' if len(clean) > 200 else '')
+    
+    return "Analyzing narrative content from posts..."
     
 def analyze_ttps(coordination_groups, posts):
     """Analyze Tactics, Techniques, and Procedures from coordinated groups"""
@@ -1047,6 +1070,9 @@ class LexiconManagementView(TemplateView):
         
         categories = lexicon_terms.values_list('category', flat=True).distinct()
         
+        # Get scan results from session (if any) and clear immediately
+        scan_results = self.request.session.pop('scan_results', None)
+        
         context.update({
             'active_tab': 'lexicon_management',
             'tabs': [
@@ -1062,6 +1088,7 @@ class LexiconManagementView(TemplateView):
             'total_terms': lexicon_terms.count(),
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
+            'scan_results': scan_results,  # Only pass if exists
         })
         return context
 
@@ -1078,19 +1105,26 @@ class LexiconManagementView(TemplateView):
                     'language': request.POST.get('language', 'english'),
                     'is_election_related': True,
                 })
+                messages.success(request, "✅ Term added successfully!")
         
         elif action == 'scan_text':
-            text = request.POST.get('scan_text', '')
-            if text:
+            text = request.POST.get('scan_text', '').strip()
+            if text and len(text) > 10:  # Only scan if meaningful text
                 matches = scan_text_for_lexicon_terms(text)
                 risk = calculate_risk_score(matches)
-                messages.success(request, f"Found {len(matches)} trigger terms. Risk: {risk['level'].upper()} (Score: {risk['score']})")
+                
+                # Store in session for display in GET request
                 request.session['scan_results'] = {
-                    'matches': matches, 'risk': risk, 'text': text
+                    'matches': matches, 
+                    'risk': risk, 
+                    'text': text[:100] + '...' if len(text) > 100 else text
                 }
+                messages.success(request, f"🔍 Found {len(matches)} trigger terms. Risk: {risk['level'].upper()}")
+            else:
+                messages.warning(request, "⚠️ Please enter text to scan (minimum 10 characters)")
         
         return redirect('lexicon_management')
-
+        
 class UploadDataView(TemplateView):
     """UI for uploading CSV files"""
     template_name = 'dashboard/upload_data.html'
