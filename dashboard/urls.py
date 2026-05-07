@@ -2,7 +2,7 @@ from django.urls import path
 from . import views
 
 # This creates the 'dashboard:' namespace for all URLs below
-app_name = 'dashboard'
+#app_name = 'dashboard'
 
 urlpatterns = [
     # === MAIN DASHBOARD VIEWS ===
