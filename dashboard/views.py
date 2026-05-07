@@ -1287,7 +1287,7 @@ class LexiconManagementView(TemplateView):
         return redirect('lexicon_management')
         
 class UploadDataView(TemplateView):
-    """UI for uploading CSV files"""
+    """UI for uploading CSV files - handles both GET and POST"""
     template_name = 'dashboard/upload_data.html'
     
     def get_context_data(self, **kwargs):
@@ -1295,14 +1295,87 @@ class UploadDataView(TemplateView):
         context['active_tab'] = 'upload'
         context['tabs'] = [
             {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
+            {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
+            {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
+            {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
         ]
         context['recent_uploads'] = DataUpload.objects.order_by('-uploaded_at')[:10]
         return context
+    
+    def post(self, request, *args, **kwargs):
+        """Handle file upload via POST"""
+        import os
+        import uuid
+        from django.utils import timezone
+        
+        logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
+        logger.info(f"📁 FILES: {list(request.FILES.keys())}")
+        
+        uploaded_files = request.FILES.getlist('csv_files')
+        if not uploaded_files:
+            messages.error(request, "No files received.")
+            return redirect('upload_data')
+        
+        results = []
+        for uploaded_file in uploaded_files:
+            try:
+                # Generate unique filename to avoid conflicts
+                unique_id = uuid.uuid4().hex[:8]
+                timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+                original_name = uploaded_file.name
+                name_without_ext = os.path.splitext(original_name)[0]
+                ext = os.path.splitext(original_name)[1]
+                
+                # Create unique filename: originalname_timestamp_uniqueid.ext
+                unique_filename = f"{name_without_ext}_{timestamp}_{unique_id}{ext}"
+                
+                # Save file with unique name
+                file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
+                full_path = os.path.join(settings.MEDIA_ROOT, file_path)
+                
+                logger.info(f"🔄 Processing: {original_name} -> {unique_filename}")
+                
+                # Create upload record
+                upload = DataUpload.objects.create(
+                    uploaded_file=file_path,
+                    original_filename=original_name,
+                    uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
+                    data_type=request.POST.get('data_type', 'custom'),
+                    status='processing'
+                )
+                
+                # Process the file
+                success, message, count = process_uploaded_csv(
+                    full_path, 
+                    upload.data_type, 
+                    request.POST.get('source_name', 'User Upload')
+                )
+                
+                # Update record
+                upload.status = 'completed' if success else 'failed'
+                upload.processing_log = message
+                upload.records_processed = count if success else 0
+                upload.save()
+                
+                results.append((original_name, success, message, count))
+                logger.info(f"{'✅' if success else '❌'} {original_name}: {message}")
+                
+            except Exception as e:
+                logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
+                results.append((uploaded_file.name, False, str(e), 0))
+        
+        # Show summary in UI
+        success_count = sum(1 for _, s, _, _ in results if s)
+        if success_count == len(uploaded_files):
+            messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully!")
+        elif success_count > 0:
+            messages.warning(request, f"⚠️ {success_count}/{len(uploaded_files)} succeeded. Check logs for errors.")
+        else:
+            messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
+        
+        return redirect('upload_data')
 
 
 class ProcessUploadView(View):
@@ -1381,9 +1454,12 @@ class ProcessUploadView(View):
 class ClearDataView(View):
     """Clear all uploaded data from database"""
     def post(self, request):
+        # Only clear ProcessedPost, keep other data if needed
         ProcessedPost.objects.all().delete()
-        DataUpload.objects.all().delete()
-        messages.success(request, "✅ All data cleared successfully. You can now upload fresh data.")
+        # Optional: Also clear upload history
+        # DataUpload.objects.all().delete()
+        
+        messages.success(request, "✅ All post data cleared successfully. You can now upload fresh data.")
         return redirect('upload_data')
 
 
