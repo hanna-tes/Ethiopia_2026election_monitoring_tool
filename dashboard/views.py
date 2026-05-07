@@ -796,7 +796,229 @@ CONFIG = {
     "display": {"max_terms_per_category": 20, "show_amharic_first": True, "highlight_critical": True}
 }
 
+# === STREAMLIT-STYLE DATA PROCESSING FUNCTIONS ===
 
+def infer_platform_from_url(url):
+    """Infer platform from URL (Streamlit logic)"""
+    if pd.isna(url) or not isinstance(url, str) or not url.startswith("http"):
+        return "Unknown"
+    url = url.lower()
+    platforms = {
+        "tiktok.com": "TikTok", "vt.tiktok.com": "TikTok",
+        "facebook.com": "Facebook", "fb.watch": "Facebook",
+        "twitter.com": "X", "x.com": "X",
+        "youtube.com": "YouTube", "youtu.be": "YouTube",
+        "instagram.com": "Instagram",
+        "telegram.me": "Telegram", "t.me": "Telegram", "telegram.org": "Telegram"
+    }
+    for key, val in platforms.items():
+        if key in url:
+            return val
+    if any(d in url for d in ["nytimes.com", "bbc.com", "cnn.com", "reuters.com", "aljazeera.com"]):
+        return "News/Media"
+    return "Media"
+
+
+def extract_original_text(text):
+    """Extract clean original text from post content"""
+    if pd.isna(text) or not isinstance(text, str):
+        return ""
+    cleaned = re.sub(r'^(RT|rt|QT|qt|repost|shared|via|credit)\s*[:@]\s*', '', text, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r'@\w+|http\S+|www\S+|https\S+', '', cleaned).strip()
+    cleaned = re.sub(r'\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{4}\b', '', cleaned)
+    return re.sub(r'\s+', ' ', cleaned).strip().lower()
+
+
+def is_original_post(text):
+    """Check if post is original (not a repost/retweet)"""
+    if pd.isna(text) or not isinstance(text, str):
+        return False
+    lower = text.strip().lower()
+    if not lower:
+        return False
+    patterns = [
+        r'^🔁.*reposted', r'\b(reposted|reshared|retweeted)\b',
+        r'^(rt|qt|repost)\s*[:@\s]', r'^\s*[🔁↪️➡️]\s*@?\w*'
+    ]
+    if any(re.search(p, lower, flags=re.IGNORECASE) for p in patterns):
+        return False
+    if len(re.sub(r'http\S+|\@\w+', '', text).strip()) < 15:
+        return False
+    return len(lower) >= 20 and not re.search(r'^\s*["\u201c]|\s*@\w+\s*[":]', lower)
+
+
+def parse_timestamp_robust(timestamp):
+    """Parse timestamp with multiple format support"""
+    if pd.isna(timestamp):
+        return pd.NaT
+    ts_str = re.sub(r'\s+GMT$', '', str(timestamp).strip(), flags=re.IGNORECASE)
+    try:
+        parsed = pd.to_datetime(ts_str, errors='coerce', utc=True)
+        if pd.notna(parsed):
+            return parsed
+    except:
+        pass
+    for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%d/%m/%Y %H:%M', '%b %d, %Y %H:%M', '%Y-%m-%d']:
+        try:
+            parsed = pd.to_datetime(ts_str, format=fmt, errors='coerce', utc=True)
+            if pd.notna(parsed):
+                return parsed
+        except:
+            continue
+    return pd.NaT
+
+
+def combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=None, openmeasures_df=None):
+    """Combine different platform datasets into unified format (Streamlit logic)"""
+    combined = []
+    
+    def get_col(df, cols):
+        """Get column with fallback to normalized names"""
+        for col in cols:
+            if col in df.columns:
+                return df[col]
+        df_cols = [c.lower().strip() for c in df.columns]
+        for col in cols:
+            norm = col.lower().strip()
+            if norm in df_cols:
+                return df[df.columns[df_cols.index(norm)]]
+        return pd.Series([np.nan]*len(df), index=df.index)
+    
+    if meltwater_df is not None and not meltwater_df.empty:
+        mw = pd.DataFrame()
+        mw['account_id'] = get_col(meltwater_df, ['influencer'])
+        mw['content_id'] = get_col(meltwater_df, ['tweet id', 'post id', 'id'])
+        mw['object_id'] = get_col(meltwater_df, ['hit sentence', 'opening text', 'headline', 'text', 'content'])
+        mw['URL'] = get_col(meltwater_df, ['url'])
+        mw['timestamp_share'] = get_col(meltwater_df, ['date', 'timestamp', 'alternate date format'])
+        mw['source_dataset'] = 'Meltwater'
+        combined.append(mw)
+    
+    if civicsignals_df is not None and not civicsignals_df.empty:
+        cs = pd.DataFrame()
+        cs['account_id'] = get_col(civicsignals_df, ['media_name', 'author', 'username'])
+        cs['content_id'] = get_col(civicsignals_df, ['stories_id', 'post_id', 'id'])
+        cs['object_id'] = get_col(civicsignals_df, ['title', 'text', 'content', 'body'])
+        cs['URL'] = get_col(civicsignals_df, ['url', 'link'])
+        cs['timestamp_share'] = get_col(civicsignals_df, ['publish_date', 'timestamp', 'date'])
+        cs['source_dataset'] = 'Civicsignal'
+        combined.append(cs)
+    
+    if tiktok_df is not None and not tiktok_df.empty:
+        tt = pd.DataFrame()
+        tt['object_id'] = get_col(tiktok_df, ['text', 'Transcript', 'caption', 'content'])
+        tt['account_id'] = get_col(tiktok_df, ['authorMeta/name', 'username', 'creator'])
+        tt['content_id'] = get_col(tiktok_df, ['id', 'video_id', 'itemId'])
+        tt['URL'] = get_col(tiktok_df, ['webVideoUrl', 'TikTok Link', 'url'])
+        tt['timestamp_share'] = get_col(tiktok_df, ['createTimeISO', 'timestamp', 'date', 'createTime'])
+        tt['source_dataset'] = 'TikTok'
+        # Preserve engagement metrics
+        for col in ['playCount', 'diggCount', 'commentCount', 'shareCount', 'repostCount', 'textLanguage']:
+            if col in tiktok_df.columns:
+                tt[col] = tiktok_df[col]
+        # Preserve hashtags
+        for i in range(5):
+            hashtag_col = f'hashtags/{i}/name'
+            if hashtag_col in tiktok_df.columns:
+                tt[f'hashtag_{i}'] = tiktok_df[hashtag_col]
+        combined.append(tt)
+    
+    if openmeasures_df is not None and not openmeasures_df.empty:
+        om = pd.DataFrame()
+        om['account_id'] = get_col(openmeasures_df, ['context_name', 'channelusername', 'channeltitle'])
+        om['content_id'] = get_col(openmeasures_df, ['id', 'url'])
+        om['object_id'] = get_col(openmeasures_df, ['text', 'message', 'body'])
+        om['URL'] = get_col(openmeasures_df, ['url'])
+        raw_dates = get_col(openmeasures_df, ['created_at', 'date'])
+        om['timestamp_share'] = raw_dates.astype(str).str.replace(' @ ', ' ', regex=False)
+        om['source_dataset'] = 'OpenMeasure_Telegram'
+        combined.append(om)
+    
+    return pd.concat(combined, ignore_index=True) if combined else pd.DataFrame()
+
+
+def final_preprocess_and_map_columns(df, coordination_mode="Text Content"):
+    """Final preprocessing and column mapping (Streamlit logic)"""
+    if df.empty:
+        return pd.DataFrame(columns=['account_id','content_id','object_id','URL','timestamp_share','Platform','original_text','Outlet','Channel','cluster','source_dataset','Sentiment'])
+    
+    dfp = df.copy()
+    
+    # Filter by sentiment if present
+    if 'Sentiment' in dfp.columns:
+        dfp = dfp[dfp['Sentiment'].isin(['Negative', 'Neutral'])]
+    
+    # Filter to original posts only
+    if 'object_id' in dfp.columns:
+        mask = dfp['object_id'].apply(is_original_post) & (~dfp['object_id'].str.contains('🔁', na=False)) & (~dfp['object_id'].str.startswith('RT @', na=False))
+        dfp = dfp[mask].copy()
+    
+    # Clean object_id
+    dfp['object_id'] = dfp['object_id'].astype(str).replace('nan','').fillna('')
+    dfp = dfp[dfp['object_id'].str.strip() != ""]
+    
+    # Extract original text
+    dfp['original_text'] = dfp['object_id'].apply(extract_original_text) if coordination_mode=="Text Content" else dfp['URL'].astype(str).replace('nan','')
+    dfp = dfp[dfp['original_text'].str.strip() != ""].reset_index(drop=True)
+    
+    # Infer platform from URL
+    dfp['Platform'] = dfp['URL'].apply(infer_platform_from_url)
+    
+    # Map source_dataset to Platform
+    if 'source_dataset' in dfp.columns:
+        dfp['source_dataset'] = dfp['source_dataset'].fillna('')
+        # TikTok
+        tiktok_mask = dfp['source_dataset'].str.contains('TikTok|tiktok|vt.tiktok', case=False, na=False)
+        dfp.loc[tiktok_mask, 'Platform'] = 'TikTok'
+        # Telegram
+        telegram_mask = dfp['source_dataset'].str.contains('Telegram|telegram|t.me|OpenMeasure', case=False, na=False)
+        dfp.loc[telegram_mask, 'Platform'] = 'Telegram'
+        # Media/News
+        media_mask = dfp['source_dataset'].str.contains('Media|News|Civicsignal', case=False, na=False)
+        dfp.loc[media_mask, 'Platform'] = 'Media'
+    
+    # Fill unknown platforms
+    dfp['Platform'] = dfp['Platform'].replace('', 'Unknown').fillna('Unknown')
+    
+    # Initialize remaining columns
+    dfp['Outlet'], dfp['Channel'], dfp['cluster'] = np.nan, np.nan, -1
+    if 'Sentiment' not in dfp.columns:
+        dfp['Sentiment'] = np.nan
+    
+    # Return only needed columns
+    cols = ['account_id','content_id','object_id','URL','timestamp_share','Platform','original_text','Outlet','Channel','cluster','source_dataset','Sentiment']
+    return dfp[[c for c in cols if c in dfp.columns]].copy()
+
+
+def preprocess_dataframe(df):
+    """Generic preprocessing for unknown/custom formats"""
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Basic cleaning
+    df = df.copy()
+    
+    # Standardize column names (lowercase, strip)
+    df.columns = [c.lower().strip() if isinstance(c, str) else c for c in df.columns]
+    
+    # Try to map common column names
+    column_mapping = {
+        'account_id': ['account', 'username', 'user', 'author', 'handle'],
+        'content_id': ['id', 'post_id', 'tweet_id', 'video_id'],
+        'object_id': ['text', 'content', 'body', 'message', 'post'],
+        'url': ['link', 'post_url', 'permalink'],
+        'timestamp_share': ['date', 'created_at', 'posted_at', 'time']
+    }
+    
+    for target, sources in column_mapping.items():
+        if target not in df.columns:
+            for source in sources:
+                if source in df.columns:
+                    df[target] = df[source]
+                    break
+    
+    return df
+    
 def get_election_posts_queryset(request):
     """
     Get election-filtered posts with date range filtering
@@ -1395,17 +1617,15 @@ class ProcessUploadView(View):
         results = []
         for uploaded_file in uploaded_files:
             try:
-                # Generate unique filename to avoid conflicts
+                # Generate unique filename
                 unique_id = uuid.uuid4().hex[:8]
                 timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
                 original_name = uploaded_file.name
                 name_without_ext = os.path.splitext(original_name)[0]
                 ext = os.path.splitext(original_name)[1]
-                
-                # Create unique filename: originalname_timestamp_uniqueid.ext
                 unique_filename = f"{name_without_ext}_{timestamp}_{unique_id}{ext}"
                 
-                # Save file with unique name
+                # Save file
                 file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
                 full_path = os.path.join(settings.MEDIA_ROOT, file_path)
                 
@@ -1414,33 +1634,87 @@ class ProcessUploadView(View):
                 # Create upload record
                 upload = DataUpload.objects.create(
                     uploaded_file=file_path,
-                    original_filename=original_name,  # Keep original name for display
+                    original_filename=original_name,
                     uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
                     data_type=request.POST.get('data_type', 'custom'),
                     status='processing'
                 )
                 
-                # Process the file
-                success, message, count = process_uploaded_csv(
-                    full_path, 
-                    upload.data_type, 
-                    request.POST.get('source_name', 'User Upload')
-                )
+                # === STREAMLIT-STYLE DATA PROCESSING ===
+                data_type = upload.data_type
+                
+                # Load the CSV using robust loader
+                df = load_data_robustly(full_path, original_name)
+                
+                if df.empty:
+                    raise ValueError(f"Failed to load data from {original_name}")
+                
+                # Combine data based on source type
+                if data_type == 'meltwater':
+                    combined_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
+                elif data_type == 'civicsignal':
+                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=df)
+                elif data_type == 'tiktok':
+                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
+                elif data_type == 'openmeasure':
+                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
+                else:
+                    # Custom/unknown format
+                    combined_df = preprocess_dataframe(df)
+                
+                # Final preprocessing and column mapping
+                processed_df = final_preprocess_and_map_columns(combined_df)
+                
+                # Parse timestamps
+                if 'timestamp_share' in processed_df.columns:
+                    processed_df['timestamp_share'] = processed_df['timestamp_share'].apply(parse_timestamp_robust)
+                
+                # Save to database
+                count = 0
+                for _, row in processed_df.iterrows():
+                    # Skip if no content
+                    if not row.get('original_text') or pd.isna(row.get('original_text')):
+                        continue
+                    
+                    # Check for duplicates
+                    if row.get('content_id') and ProcessedPost.objects.filter(content_id=row['content_id']).exists():
+                        continue
+                    if row.get('url') and ProcessedPost.objects.filter(url=row['url']).exists():
+                        continue
+                    
+                    # Create new post
+                    ProcessedPost.objects.create(
+                        account_id=str(row.get('account_id', ''))[:100],
+                        content_id=str(row.get('content_id', ''))[:100] if row.get('content_id') else None,
+                        original_text=str(row.get('original_text', '')),
+                        url=str(row.get('url', ''))[:500] if row.get('url') else None,
+                        platform=str(row.get('Platform', 'Unknown')),
+                        timestamp_share=row.get('timestamp_share'),
+                        source_dataset=str(row.get('source_dataset', data_type)),
+                        is_election_related=is_election_related(str(row.get('original_text', '')))
+                    )
+                    count += 1
                 
                 # Update record
-                upload.status = 'completed' if success else 'failed'
-                upload.processing_log = message
-                upload.records_processed = count if success else 0
+                upload.status = 'completed'
+                upload.processing_log = f"Successfully processed {count} posts"
+                upload.records_processed = count
                 upload.save()
                 
-                results.append((original_name, success, message, count))
-                logger.info(f"{'✅' if success else '❌'} {original_name}: {message}")
+                results.append((original_name, True, f"Processed {count} posts", count))
+                logger.info(f"✅ {original_name}: Processed {count} posts")
                 
             except Exception as e:
                 logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
+                
+                if 'upload' in locals():
+                    upload.status = 'failed'
+                    upload.processing_log = str(e)
+                    upload.save()
+                
                 results.append((uploaded_file.name, False, str(e), 0))
         
-        # Show summary in UI
+        # Show summary
         success_count = sum(1 for _, s, _, _ in results if s)
         if success_count == len(uploaded_files):
             messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully!")
