@@ -82,30 +82,29 @@ def dashboard_view(request):
                 else:
                     processed_df = combine_social_media_data(civicsignals_df=df)
 
-                # Loop and save unique posts
+                # ONE CLEAN LOOP
                 for _, row in processed_df.iterrows():
                     cid = row.get('content_id')
                     if cid and not ProcessedPost.objects.filter(content_id=cid).exists():
                         
-                        # 1. GET THE OBJECT instead of the string
+                        # 1. Fetch the actual DataSource object (Fixes the ValueError)
                         source_name = row.get('source_dataset', platform_type)
                         source_obj, _ = DataSource.objects.get_or_create(name=source_name)
                 
-                        # 2. ASSIGN THE OBJECT to the field
+                        # 2. Create the post using the object instance
                         ProcessedPost.objects.create(
                             account_id=str(row.get('account_id', ''))[:100],
                             content_id=cid,
-                            original_text=row.get('object_id', ''),
+                            original_text=str(row.get('object_id', '')), # Fixed column name
                             url=row.get('URL', ''),
                             platform=row.get('Platform', platform_type.title()),
                             timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
-                            source_dataset=source_obj,  # <--- PASS THE OBJECT HERE
+                            source_dataset=source_obj,  # Passing the actual object
                             is_election_related=is_election_related(str(row.get('object_id', '')))
                         )
                         stats['saved'] += 1
                     else:
-                        stats['duplicates'] += 1
-                
+                        stats['duplicates'] += 1                
                 stats['files_count'] += 1
             except Exception as e:
                 logger.error(f"Upload error: {e}")
