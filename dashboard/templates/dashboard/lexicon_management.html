@@ -52,10 +52,10 @@
             </div>
             
             <!-- LLM Explanation -->
-            {% if scan_results.explanation %}
+            {% if scan_results.llm_result.llm_detected %}
             <div class="mb-4 p-3 bg-blue-50 rounded border border-blue-200">
                 <p class="text-sm text-blue-900">
-                    <strong>🤖 AI Analysis:</strong> {{ scan_results.explanation }}
+                    <strong>🤖 Analysis:</strong> {{ scan_results.explanation }}
                 </p>
             </div>
             {% endif %}
