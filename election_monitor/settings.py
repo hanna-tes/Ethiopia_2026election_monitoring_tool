@@ -75,11 +75,11 @@ WSGI_APPLICATION = 'election_monitor.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env('DB_NAME', default='election_monitor_dev'),
-        'USER': env('DB_USER', default='ethiopia_monitor_user'),
-        'PASSWORD': env('DB_PASSWORD', default=''),
-        'HOST': env('DB_HOST', default='localhost'),
-        'PORT': env('DB_PORT', default='5432'),
+        'NAME': 'ethiopia_election_db',
+        'USER': 'ethiopia_user',
+        'PASSWORD': 'ElectionDbSecure2026!',  
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
 }
 
