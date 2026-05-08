@@ -42,7 +42,7 @@ Analyze the following text for:
 Be strict but fair. Consider context and cultural nuances. Output ONLY valid JSON."""
 
     try:
-        response = safe_llm_call(prompt, temperature=0.1)
+        response = safe_llm_call(prompt)
         
         # Extract JSON from response (handles LLMs that add extra text)
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
