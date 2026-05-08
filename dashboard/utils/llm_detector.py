@@ -7,44 +7,57 @@ logger = logging.getLogger(__name__)
 
 def detect_hate_speech_llm(text):
     """
-    Use LLM to detect hate speech, ethnic targeting, and derogatory content.
-    Returns dict with detection results.
+    Use LLM to detect hate speech. Falls back gracefully if LLM unavailable.
     """
     if not text or len(text.strip()) < 10:
         return {
             'is_hate_speech': False,
             'confidence': 0.0,
             'categories': [],
-            'explanation': 'Text too short for analysis'
+            'explanation': 'Text too short for analysis',
+            'llm_detected': False
         }
     
-    prompt = f"""You are an expert content moderator analyzing text for hate speech and harmful content.
+    # Check if API key exists
+    import os
+    if not os.getenv('GROQ_API_KEY'):
+        # LLM not available - return gracefully without error
+        return {
+            'is_hate_speech': False,
+            'confidence': 0.0,
+            'categories': [],
+            'explanation': 'LLM service not configured (lexicon detection only)',
+            'llm_detected': False
+        }
+    
+    prompt = f"""You are an expert content moderator analyzing text for hate speech.
 
-Analyze the following text for:
-1. **Hate Speech**: Content that attacks, demeans, or dehumanizes groups based on ethnicity, religion, nationality, etc.
-2. **Derogatory Language**: Insults, slurs, or dehumanizing terms
-3. **Ethnic/Religious Targeting**: Content that targets specific ethnic or religious groups negatively
-4. **Incitement**: Content that encourages harm or discrimination
+Analyze: "{text}"
 
-**Text to analyze:**
-"{text}"
-
-**Respond in JSON format ONLY:**
+Respond in JSON:
 {{
     "is_hate_speech": true/false,
     "confidence": 0.0-1.0,
-    "categories": ["ethnic_hate", "religious_hate", "derogatory", "incitement"],
-    "targeted_groups": ["list targeted groups"],
+    "categories": ["ethnic_hate", "religious_hate", "derogatory"],
+    "targeted_groups": ["groups"],
     "severity": "low/medium/high/critical",
     "explanation": "Brief explanation"
-}}
-
-Be strict but fair. Consider context and cultural nuances. Output ONLY valid JSON."""
+}}"""
 
     try:
         response = safe_llm_call(prompt)
         
-        # Extract JSON from response (handles LLMs that add extra text)
+        if not response:  # Handle None response
+            return {
+                'is_hate_speech': False,
+                'confidence': 0.0,
+                'categories': [],
+                'explanation': 'LLM returned empty response',
+                'llm_detected': False
+            }
+        
+        import json
+        import re
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group())
@@ -57,21 +70,19 @@ Be strict but fair. Consider context and cultural nuances. Output ONLY valid JSO
                 'explanation': result.get('explanation', ''),
                 'llm_detected': True
             }
-        else:
-            return {
-                'is_hate_speech': False,
-                'confidence': 0.0,
-                'categories': [],
-                'explanation': 'Failed to parse LLM response',
-                'llm_detected': False
-            }
-            
-    except Exception as e:
-        logger.error(f"LLM hate speech detection failed: {e}")
         return {
             'is_hate_speech': False,
             'confidence': 0.0,
             'categories': [],
-            'explanation': f'LLM error: {str(e)}',
+            'explanation': 'Failed to parse LLM response',
+            'llm_detected': False
+        }
+    except Exception as e:
+        # Don't log to user, just return gracefully
+        return {
+            'is_hate_speech': False,
+            'confidence': 0.0,
+            'categories': [],
+            'explanation': 'LLM unavailable',
             'llm_detected': False
         }
