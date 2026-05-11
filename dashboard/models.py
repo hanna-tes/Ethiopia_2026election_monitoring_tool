@@ -38,13 +38,16 @@ class ProcessedPost(models.Model):
     timestamp_share = models.DateTimeField(db_index=True)
     platform = models.CharField(max_length=50, db_index=True)  # X, Telegram, TikTok, Media
     source_dataset = models.ForeignKey(DataSource, on_delete=models.SET_NULL, null=True, db_index=True)
+
+
+    ingested_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    batch_id = models.CharField(max_length=100, blank=True, null=True, db_index=True)
+    
     
     # Preprocessing flags
     is_original_post = models.BooleanField(default=True)  # After is_original_post() filter
     sentiment = models.CharField(max_length=20, blank=True, null=True)  # Negative, Neutral
     cluster = models.IntegerField(default=-1, db_index=True)  # After DBSCAN clustering
-    ingested_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    batch_id = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     
     # Election-specific
     is_election_related = models.BooleanField(default=False)
