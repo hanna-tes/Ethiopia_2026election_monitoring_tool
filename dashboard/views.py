@@ -53,6 +53,18 @@ def clean_username(raw_name):
     name = re.sub(r'(?i)(name|source|nan|none)$', '', name).strip()
     return name
     
+def get_queryset(self):
+    qs = ProcessedPost.objects.all()
+    start = self.request.GET.get('start_date')
+    end = self.request.GET.get('end_date')
+    if start and end:
+        qs = qs.filter(timestamp_share__range=[start, end])
+    else:
+        # Default: last 30 days
+        from django.utils import timezone
+        qs = qs.filter(timestamp_share__gte=timezone.now() - timezone.timedelta(days=30))
+    return qs.order_by('-timestamp_share')
+    
 @never_cache  
 def dashboard_view(request):
     """Main Dashboard View with Sidebar Upload and Stats Reporting"""
