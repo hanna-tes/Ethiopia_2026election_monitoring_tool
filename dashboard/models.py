@@ -26,7 +26,7 @@ class ProcessedPost(models.Model):
     This is what your dashboard queries - NOT raw CSV data
     """
     # Core identifiers
-    content_id = models.CharField(max_length=255, unique=True, db_index=True)
+    content_id = models.CharField(max_length=255, db_index=True)
     account_id = models.CharField(max_length=255, db_index=True)
     
     # Content
