@@ -43,6 +43,8 @@ class ProcessedPost(models.Model):
     is_original_post = models.BooleanField(default=True)  # After is_original_post() filter
     sentiment = models.CharField(max_length=20, blank=True, null=True)  # Negative, Neutral
     cluster = models.IntegerField(default=-1, db_index=True)  # After DBSCAN clustering
+    ingested_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    batch_id = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     
     # Election-specific
     is_election_related = models.BooleanField(default=False)
