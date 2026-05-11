@@ -17,6 +17,47 @@ def get_col(df, cols):
             return df[df.columns[df_cols.index(norm)]]
     return pd.Series([np.nan] * len(df), index=df.index)
 
+def load_brandwatch_data(file_path):
+    """
+    Load and standardize Brandwatch X/Twitter CSV exports.
+    Keeps Meltwater completely untouched.
+    """
+    # Brandwatch exports usually have 6 metadata rows at the top
+    df = pd.read_csv(file_path, skiprows=6, low_memory=False)
+    
+    # Combine available account fields into one
+    df['Account'] = (
+        df.get('Weblog Title', pd.Series(dtype='object'))
+          .combine_first(df.get('Author', pd.Series(dtype='object')))
+          .combine_first(df.get('Full Name', pd.Series(dtype='object')))
+    )
+    
+    # Select & rename to match your pipeline's expected columns
+    df_std = df[['Account', 'Url', 'Date', 'Full Text', 'Page Type']].copy()
+    df_std.rename(columns={
+        'Account': 'account_id',
+        'Url': 'URL',
+        'Date': 'timestamp_share',
+        'Full Text': 'original_text',
+        'Page Type': 'Platform'
+    }, inplace=True)
+    
+    # Standardize platform & source tags
+    df_std['Platform'] = df_std['Platform'].fillna('X').str.strip()
+    df_std['source_dataset'] = 'brandwatch'
+    
+    # Generate content_id from URL (fallback to hash if URL missing)
+    df_std['content_id'] = df_std['URL'].astype(str).where(
+        df_std['URL'].notna() & (df_std['URL'] != ''),
+        df_std['original_text'].apply(lambda x: hashlib.md5(str(x).encode()).hexdigest()[:16])
+    )
+    
+    # Clean & drop rows without text
+    df_std['original_text'] = df_std['original_text'].astype(str).str.strip()
+    df_std = df_std[df_std['original_text'] != 'nan'].dropna(subset=['original_text'])
+    
+    return df_std.reset_index(drop=True)
+
 def map_columns_by_type(df, platform):
     """Maps platform-specific CSV headers to a standard format."""
     mapped = pd.DataFrame()
@@ -28,6 +69,10 @@ def map_columns_by_type(df, platform):
         mapped['object_id'] = get_col(df, ['Hit Sentence', 'hit sentence', 'text', 'content', 'opening text', 'headline', 'post_text', 'message'])
         mapped['URL'] = get_col(df, ['URL', 'url', 'link', 'Link', 'post_url', 'tweet_url', 'web_url', 'permalink', 'external_url'])  # ✅ 'URL' first!
         mapped['timestamp_share'] = get_col(df, ['Date', 'date', 'timestamp', 'alternate date format', 'created_at', 'posted_at'])
+        
+    elif data_type == 'brandwatch':
+    df = load_brandwatch_data(brandwatch_df)
+    combined_dfs.append(df)
         
     elif platform == 'civicsignal':
         mapped['account_id'] = get_col(df, ['media_name', 'author', 'username'])
