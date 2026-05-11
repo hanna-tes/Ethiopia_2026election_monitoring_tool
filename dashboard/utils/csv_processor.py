@@ -2,129 +2,119 @@ import pandas as pd
 import numpy as np
 import re
 import logging
+import hashlib
 
 logger = logging.getLogger(__name__)
 
 def get_col(df, cols):
-    """Helper to find the first matching column name."""
-    for col in cols:
-        if col in df.columns:
-            return df[col]
-    df_cols = [c.lower().strip() for c in df.columns]
+    """Helper to find the first matching column name safely."""
+    df_cols_lower = {c.lower().strip(): c for c in df.columns}
     for col in cols:
         norm = col.lower().strip()
-        if norm in df_cols:
-            return df[df.columns[df_cols.index(norm)]]
+        if norm in df_cols_lower:
+            return df[df_cols_lower[norm]]
     return pd.Series([np.nan] * len(df), index=df.index)
 
-def load_brandwatch_data(file_path):
-    """
-    Load and standardize Brandwatch X/Twitter CSV exports.
-    Keeps Meltwater completely untouched.
-    """
-    # Brandwatch exports usually have 6 metadata rows at the top
-    df = pd.read_csv(file_path, skiprows=6, low_memory=False)
+def load_brandwatch_data(df):
+    """Pre-process Brandwatch DataFrames (handles account merging safely)."""
+    # Safely combine account fields without AttributeError
+    web = df['Weblog Title'] if 'Weblog Title' in df.columns else pd.Series(dtype='object')
+    author = df['Author'] if 'Author' in df.columns else pd.Series(dtype='object')
+    full = df['Full Name'] if 'Full Name' in df.columns else pd.Series(dtype='object')
     
-    # Combine available account fields into one
-    df['Account'] = (
-        df.get('Weblog Title', pd.Series(dtype='object'))
-          .combine_first(df.get('Author', pd.Series(dtype='object')))
-          .combine_first(df.get('Full Name', pd.Series(dtype='object')))
-    )
-    
-    # Select & rename to match your pipeline's expected columns
-    df_std = df[['Account', 'Url', 'Date', 'Full Text', 'Page Type']].copy()
-    df_std.rename(columns={
-        'Account': 'account_id',
-        'Url': 'URL',
-        'Date': 'timestamp_share',
-        'Full Text': 'original_text',
-        'Page Type': 'Platform'
-    }, inplace=True)
-    
-    # Standardize platform & source tags
-    df_std['Platform'] = df_std['Platform'].fillna('X').str.strip()
-    df_std['source_dataset'] = 'brandwatch'
-    
-    # Generate content_id from URL (fallback to hash if URL missing)
-    df_std['content_id'] = df_std['URL'].astype(str).where(
-        df_std['URL'].notna() & (df_std['URL'] != ''),
-        df_std['original_text'].apply(lambda x: hashlib.md5(str(x).encode()).hexdigest()[:16])
-    )
-    
-    # Clean & drop rows without text
-    df_std['original_text'] = df_std['original_text'].astype(str).str.strip()
-    df_std = df_std[df_std['original_text'] != 'nan'].dropna(subset=['original_text'])
-    
-    return df_std.reset_index(drop=True)
+    df['Account'] = web.combine_first(author).combine_first(full)
+    return df
 
 def map_columns_by_type(df, platform):
     """Maps platform-specific CSV headers to a standard format."""
     mapped = pd.DataFrame()
-    
-    if platform == 'meltwater':
-        # Prioritize your exact column names first, then fallbacks
-        mapped['account_id'] = get_col(df, ['Influencer', 'influencer', 'author', 'username', 'account'])
-        mapped['content_id'] = get_col(df, ['tweet id', 'post id', 'id', 'ID', 'tweet_id'])
-        mapped['object_id'] = get_col(df, ['Hit Sentence', 'hit sentence', 'text', 'content', 'opening text', 'headline', 'post_text', 'message'])
-        mapped['URL'] = get_col(df, ['URL', 'url', 'link', 'Link', 'post_url', 'tweet_url', 'web_url', 'permalink', 'external_url'])  # ✅ 'URL' first!
-        mapped['timestamp_share'] = get_col(df, ['Date', 'date', 'timestamp', 'alternate date format', 'created_at', 'posted_at'])
-        
-    elif data_type == 'brandwatch':
-    df = load_brandwatch_data(brandwatch_df)
-    combined_dfs.append(df)
-        
+
+    if platform == 'brandwatch':
+        df = load_brandwatch_data(df)
+        mapped['account_id'] = df['Account']
+        mapped['content_id'] = get_col(df, ['URL', 'Url', 'url'])
+        mapped['object_id'] = get_col(df, ['Full Text', 'Text', 'content', 'message'])
+        mapped['URL'] = get_col(df, ['Url', 'URL', 'url', 'link'])
+        mapped['timestamp_share'] = get_col(df, ['Date', 'date', 'timestamp'])
+
+    elif platform == 'meltwater':
+        mapped['account_id'] = get_col(df, ['Influencer', 'author', 'username', 'account'])
+        mapped['content_id'] = get_col(df, ['tweet id', 'post id', 'id', 'ID'])
+        mapped['object_id'] = get_col(df, ['Hit Sentence', 'text', 'content', 'opening text'])
+        mapped['URL'] = get_col(df, ['URL', 'url', 'link', 'permalink'])
+        mapped['timestamp_share'] = get_col(df, ['Date', 'timestamp', 'alternate date format'])
+
     elif platform == 'civicsignal':
         mapped['account_id'] = get_col(df, ['media_name', 'author', 'username'])
         mapped['content_id'] = get_col(df, ['stories_id', 'post_id', 'id', 'ID'])
         mapped['object_id'] = get_col(df, ['title', 'text', 'content', 'body'])
-        mapped['URL'] = get_col(df, ['url', 'URL', 'link', 'Link', 'post_url', 'web_url', 'permalink', 'external_url'])
-        mapped['timestamp_share'] = get_col(df, ['publish_date', 'timestamp', 'date', 'created_at'])
-        
+        mapped['URL'] = get_col(df, ['url', 'URL', 'link', 'permalink'])
+        mapped['timestamp_share'] = get_col(df, ['publish_date', 'timestamp', 'date'])
+
     elif platform == 'tiktok':
         mapped['account_id'] = get_col(df, ['authorMeta/name', 'username', 'creator', 'author'])
-        mapped['content_id'] = get_col(df, ['id', 'video_id', 'itemId', 'videoId', 'ID'])
-        mapped['object_id'] = get_col(df, ['text', 'Transcript', 'caption', 'content', 'description'])
-        mapped['URL'] = get_col(df, ['webVideoUrl', 'TikTok Link', 'url', 'URL', 'videoUrl', 'shareUrl', 'web_url', 'link', 'external_url'])
-        mapped['timestamp_share'] = get_col(df, ['createTimeISO', 'timestamp', 'date', 'createTime', 'created_at'])
-        
+        mapped['content_id'] = get_col(df, ['id', 'video_id', 'itemId', 'ID'])
+        mapped['object_id'] = get_col(df, ['text', 'Transcript', 'caption', 'content'])
+        mapped['URL'] = get_col(df, ['webVideoUrl', 'TikTok Link', 'url', 'URL', 'shareUrl'])
+        mapped['timestamp_share'] = get_col(df, ['createTimeISO', 'timestamp', 'createTime'])
+
     elif platform == 'openmeasure':
         mapped['account_id'] = get_col(df, ['context_name', 'channelusername', 'channeltitle', 'actor_username'])
         mapped['content_id'] = get_col(df, ['id', 'url'])
         mapped['object_id'] = get_col(df, ['text', 'message', 'body'])
-        mapped['URL'] = get_col(df, ['url', 'URL', 'link', 'Link', 'web_url', 'permalink', 'external_url'])
+        mapped['URL'] = get_col(df, ['url', 'URL', 'link', 'permalink'])
         raw_dates = get_col(df, ['created_at', 'date'])
         mapped['timestamp_share'] = raw_dates.astype(str).str.replace(' @ ', ' ', regex=False)
-    
+    else:
+        mapped = df.copy()
+
+    # Standardize fields
+    mapped['Platform'] = platform.upper() if platform not in ['openmeasure'] else 'Telegram'
     mapped['source_dataset'] = platform
+
+    # Generate content_id from URL if missing/empty
+    if 'content_id' in mapped.columns:
+        mask = mapped['content_id'].isna() | (mapped['content_id'] == '')
+        if mask.any():
+            mapped.loc[mask, 'content_id'] = mapped.loc[mask, 'URL'].apply(
+                lambda x: hashlib.md5(str(x).encode()).hexdigest()[:16] 
+                if pd.notna(x) and str(x).strip() != '' 
+                else hashlib.md5(str(np.random.random())).hexdigest()[:16]
+            )
+
     return mapped
-    
+
 def preprocess_dataframe(df):
     """Basic cleaning: remove empty rows and format text."""
-    if df.empty: return df
-    # Remove rows where the main text is missing
-    df = df.dropna(subset=['object_id'])
-    df['object_id'] = df['object_id'].astype(str).str.strip()
-    return df[df['object_id'] != ""]
+    if df.empty:
+        return df
+    if 'object_id' in df.columns:
+        df = df.dropna(subset=['object_id'])
+        df['object_id'] = df['object_id'].astype(str).str.strip()
+        df = df[df['object_id'] != "nan"]
+    return df
 
 def process_uploaded_csv(file, platform):
     """Main entry point for processing a single uploaded file."""
     try:
-        df = pd.read_csv(file, low_memory=False, on_bad_lines='skip')
+        # Brandwatch exports have 6 metadata rows at the top
+        skip = 6 if platform == 'brandwatch' else 0
+        df = pd.read_csv(file, skiprows=skip, low_memory=False, on_bad_lines='skip')
+        
         mapped_df = map_columns_by_type(df, platform)
         clean_df = preprocess_dataframe(mapped_df)
         return clean_df
     except Exception as e:
-        logger.error(f"Failed to process CSV: {e}")
+        logger.error(f"Failed to process CSV for {platform}: {e}")
         return pd.DataFrame()
 
-def combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=None, openmeasures_df=None):
-    """Kept for backward compatibility with your views logic."""
+def combine_social_media_data(meltwater_df=None, brandwatch_df=None, civicsignals_df=None, tiktok_df=None, openmeasures_df=None):
+    """Merges standardized DataFrames from any combination of sources."""
     combined = []
-    if meltwater_df is not None: combined.append(map_columns_by_type(meltwater_df, 'meltwater'))
-    if civicsignals_df is not None: combined.append(map_columns_by_type(civicsignals_df, 'civicsignal'))
-    if tiktok_df is not None: combined.append(map_columns_by_type(tiktok_df, 'tiktok'))
-    if openmeasures_df is not None: combined.append(map_columns_by_type(openmeasures_df, 'openmeasure'))
-    
-    if not combined: return pd.DataFrame()
-    return pd.concat(combined, ignore_index=True)
+    if meltwater_df is not None: combined.append(meltwater_df)
+    if brandwatch_df is not None: combined.append(brandwatch_df)  
+    if civicsignals_df is not None: combined.append(civicsignals_df)
+    if tiktok_df is not None: combined.append(tiktok_df)
+    if openmeasures_df is not None: combined.append(openmeasures_df)
+
+    return pd.concat(combined, ignore_index=True) if combined else pd.DataFrame()
