@@ -199,3 +199,32 @@ class PEP(models.Model):
     
     def __str__(self):
         return f"{self.name} - {self.title}"
+
+class SyncSource(models.Model):
+    """Central registry for backend data sync sources"""
+    FILE_TYPE_CHOICES = [
+        ('csv_posts', 'Election Posts CSV'),
+        ('csv_peps', 'PEPs/Candidates CSV'),
+        ('pdf_report', 'Monthly Insight Report (PDF)'),
+        ('json_narratives', 'Narratives/Clusters JSON'),
+    ]
+    
+    FREQUENCY_CHOICES = [
+        ('daily', 'Daily'),
+        ('weekly', 'Weekly'),
+        ('monthly', 'Monthly'),
+    ]
+    
+    name = models.CharField(max_length=100, unique=True, help_text="e.g., 'Brandwatch Weekly Export'")
+    file_type = models.CharField(max_length=50, choices=FILE_TYPE_CHOICES)
+    url = models.URLField(help_text="Raw/public URL to the file")
+    is_active = models.BooleanField(default=True)
+    sync_frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default='weekly')
+    last_synced = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        
+    def __str__(self):
+        return f"{self.name} ({self.get_file_type_display()})"
