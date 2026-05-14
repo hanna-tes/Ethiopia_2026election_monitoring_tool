@@ -1272,26 +1272,26 @@ class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
     
     def get_context_data(self, **kwargs):
-    context = super().get_context_data(**kwargs)
-    
-    # Reuse your date-filtering helper
-    queryset, start_date, end_date = get_election_posts_queryset(self.request)
-    
-    # Generate narratives from FILTERED data
-    context['summaries'] = generate_narrative_summaries(queryset)
-    context['total_posts'] = queryset.count()
-    
-    # Format date range for display
-    if start_date and end_date:
-        context['date_range'] = f"{start_date.date()} to {end_date.date()}"
-    else:
-        context['date_range'] = "Last 30 days (default)"
-    
-    # Pass dates for form pre-fill
-    context['start_date'] = start_date.date().isoformat() if start_date else ''
-    context['end_date'] = end_date.date().isoformat() if end_date else ''
-    
-    return context
+        context = super().get_context_data(**kwargs)
+        
+        # Reuse your date-filtering helper
+        queryset, start_date, end_date = get_election_posts_queryset(self.request)
+        
+        # Generate narratives from FILTERED data
+        context['summaries'] = generate_narrative_summaries(queryset)
+        context['total_posts'] = queryset.count()
+        
+        # Format date range for display
+        if start_date and end_date:
+            context['date_range'] = f"{start_date.date()} to {end_date.date()}"
+        else:
+            context['date_range'] = "Last 30 days (default)"
+        
+        # Pass dates for form pre-fill
+        context['start_date'] = start_date.date().isoformat() if start_date else ''
+        context['end_date'] = end_date.date().isoformat() if end_date else ''
+        
+        return context
 
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
