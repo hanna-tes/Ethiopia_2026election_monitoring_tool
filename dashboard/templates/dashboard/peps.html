@@ -2,7 +2,14 @@
 {% block title %}PEPs/PIPs Tracker{% endblock %}
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-    <h2 class="text-xl font-bold mb-4"> Ethiopian PEPs/PIPs Tracker</h2>
+    <div class="flex items-center gap-2 mb-4">
+    <h2 class="text-2xl font-bold">👥 PEPs & Candidates Tracker</h2>
+    {% if last_pep_sync %}
+    <span class="text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-200">
+         Synced: {{ last_pep_sync|timesince }} ago
+    </span>
+    {% endif %}
+</div>
     <p class="text-gray-600 mb-4">Total tracked: <span class="font-bold">{{ total_peps }}</span></p>
     {% if peps %}
     <div class="overflow-x-auto">
