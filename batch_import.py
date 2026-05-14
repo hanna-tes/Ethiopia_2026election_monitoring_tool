@@ -10,11 +10,18 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'election_monitor.settings')
 django.setup()
 
 from dashboard.models import ProcessedPost, DataSource
-from dashboard.utils.csv_processor import combine_social_media_data, final_preprocess_and_map_columns, preprocess_dataframe, parse_timestamp_robust
+
+# ✅ FIXED: Import from views.py where these functions actually live
+from dashboard.views import (
+    combine_social_media_data,
+    final_preprocess_and_map_columns,
+    preprocess_dataframe,
+    parse_timestamp_robust
+)
 from dashboard.utils.election_filter import is_election_related
 
 folder = 'media/uploads/social_media'
-print(' Starting direct batch import...')
+print('🚀 Starting direct batch import...')
 
 for filename in sorted(os.listdir(folder)):
     if not filename.endswith('.csv'): 
@@ -107,4 +114,4 @@ for filename in sorted(os.listdir(folder)):
     except Exception as e:
         print(f"  ❌ Pipeline error: {e}")
 
-print('\n Import complete.')
+print('\n🏁 Import complete.')
