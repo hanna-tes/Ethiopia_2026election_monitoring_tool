@@ -1272,30 +1272,26 @@ class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
     
     def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        
-        # Use election posts only
-        posts_queryset, start_date, end_date = get_election_posts_queryset(self.request)
-        total_posts = posts_queryset.count()
-        
-        # Generate summaries WITH URLS
-        summaries = get_ethiopia_summaries(posts_queryset, max_clusters=12)
-        
-        context.update({
-            'active_tab': 'narratives',
-            'tabs': [
-                {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            ],
-            'summaries': summaries,
-            'total_posts': total_posts,
-            'date_range': f"{start_date.date()} to {end_date.date()}",
-        })
-        return context
+    context = super().get_context_data(**kwargs)
+    
+    # Reuse your date-filtering helper
+    queryset, start_date, end_date = get_election_posts_queryset(self.request)
+    
+    # Generate narratives from FILTERED data
+    context['summaries'] = generate_narrative_summaries(queryset)
+    context['total_posts'] = queryset.count()
+    
+    # Format date range for display
+    if start_date and end_date:
+        context['date_range'] = f"{start_date.date()} to {end_date.date()}"
+    else:
+        context['date_range'] = "Last 30 days (default)"
+    
+    # Pass dates for form pre-fill
+    context['start_date'] = start_date.date().isoformat() if start_date else ''
+    context['end_date'] = end_date.date().isoformat() if end_date else ''
+    
+    return context
 
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
