@@ -1127,8 +1127,11 @@ class HomeView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Fetch data and calculate metrics
-        posts = ProcessedPost.objects.all()
+        #  1. GET FILTERED QUERYSET (with date, platform, risk filters)
+        queryset, start_date, end_date = get_election_posts_queryset(self.request)
+        
+        # 2. Fetch data and calculate metrics (using filtered queryset)
+        posts = queryset  # ← Use filtered data everywhere below
         total_posts = posts.count()
         
         # Platform breakdown
@@ -1143,7 +1146,7 @@ class HomeView(TemplateView):
         peps_tracked = PEP.objects.filter(is_active=True).count()
         last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
         
-        # 2. Prepare Charts
+        # 3. Prepare Charts (all using filtered posts)
         charts = {}
         if posts.exists():
             # A. Platform Distribution
@@ -1154,7 +1157,7 @@ class HomeView(TemplateView):
             )
             charts['platform'] = fig_platform.to_json()
             
-            # B. Top Accounts
+            # B. Top Accounts (cleaning logic unchanged)
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             
             cleaned_accounts = []
@@ -1205,7 +1208,7 @@ class HomeView(TemplateView):
                 )
                 charts['risk'] = fig_risk.to_json()
             
-            # D. Daily Volume Chart
+            # D. Daily Volume Chart (using filtered data)
             daily_posts = posts.annotate(
                 day=TruncDay('timestamp_share')
             ).values('day').annotate(
@@ -1230,7 +1233,7 @@ class HomeView(TemplateView):
                     )
                     charts['daily'] = fig_daily.to_json()
         
-        # 3. Recent Upload Summary
+        # 4. Recent Upload Summary (unchanged)
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
         upload_summary = {
             'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
@@ -1238,7 +1241,7 @@ class HomeView(TemplateView):
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         
-        # 4. Build Context
+        # 5. Build Context (add dates for template pre-fill)
         context.update({
             'active_tab': 'home',
             'tabs': [
@@ -1259,9 +1262,12 @@ class HomeView(TemplateView):
             },
             'charts': charts,
             'upload_summary': upload_summary,
+            # ✅ Add these for date filter pre-fill
+            'start_date': start_date.date().isoformat() if start_date else '',
+            'end_date': end_date.date().isoformat() if end_date else '',
         })
         return context
-
+        
 class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
     
