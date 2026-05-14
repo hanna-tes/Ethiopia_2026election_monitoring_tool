@@ -46,6 +46,11 @@
             🚀 Upload & Process
         </button>
     </form>
+
+    <!-- Backend Sync Info Box -->
+    <div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200 text-sm text-blue-800">
+        💡 <strong>Backend Sync:</strong> New data is automatically ingested weekly. Upload CSVs here for immediate processing.
+    </div>
 </div>
 
 <!-- Recent Uploads -->
@@ -91,12 +96,12 @@
 
 <!-- Clear Data Section (Added Here) -->
 <div class="bg-red-50 border border-red-200 rounded-xl p-6">
-    <h3 class="text-lg font-semibold text-red-800 mb-2">⚠️ Danger Zone</h3>
+    <h3 class="text-lg font-semibold text-red-800 mb-2">️ Danger Zone</h3>
     <p class="text-sm text-red-600 mb-4">Clear all uploaded posts and reset your dashboard data. This action cannot be undone.</p>
     <form method="post" action="{% url 'clear_data' %}" onsubmit="return confirm('⚠️ Are you SURE you want to delete ALL data? This will empty your database!');">
         {% csrf_token %}
         <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium shadow-sm">
-            🗑️ Clear All Data & Reset Dashboard
+            ️ Clear All Data & Reset Dashboard
         </button>
     </form>
 </div>
