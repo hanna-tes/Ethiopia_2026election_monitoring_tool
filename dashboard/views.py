@@ -1392,42 +1392,42 @@ class PEPsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Load PEPs from GitHub CSV (dynamic, not hardcoded)
-        peps_csv_url = getattr(settings, 'PEPS_CSV_URL', None)
-        if peps_csv_url:
-            try:
-                peps_data = load_peps_from_github(peps_csv_url)
-                for pep_data in peps_data: 
-                    PEP.objects.update_or_create(
-                        name=pep_data['Name (English)'],
-                        defaults={
-                            'title': pep_data.get('Position', ''),
-                            'x_link': pep_data.get('X (Twitter) Link') if pep_data.get('X (Twitter) Link') != 'No verified personal account found' else None,
-                            'x_verified': pep_data.get('Verified X (Twitter) Account (Yes/No)', '').lower() == 'yes',
-                            'facebook_link': pep_data.get('Facebook Link') if pep_data.get('Facebook Link') not in ['No verified personal account found', 'None found (no official page identified)'] else None,
-                            'facebook_verified': pep_data.get('Verified Facebook Account (Yes/No)', '').lower() == 'yes',
-                            'confidence_level': pep_data.get('Confidence', 'medium').lower(),
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Failed to load PEPs from GitHub: {e}")
+        # 1. CHECK LAST SYNC TIME (Optimization)
+        last_sync = PEP.objects.aggregate(last=Max('last_updated'))['last']
+        threshold = timezone.now() - timedelta(hours=24)
         
-        # Get all active PEPs from database
+        # Only sync if DB is empty OR data is older than 24 hours
+        if not PEP.objects.exists() or (last_sync and last_sync < threshold):
+            peps_csv_url = getattr(settings, 'PEPS_CSV_URL', None)
+            if peps_csv_url:
+                try:
+                    peps_data = load_peps_from_github(peps_csv_url)
+                    for pep_data in peps_data:
+                        # Note: Ensure 'Name (English)' matches your actual CSV header
+                        name = pep_data.get('Name (English)', pep_data.get('full_name_en', 'Unknown'))
+                        
+                        PEP.objects.update_or_create(
+                            name=name,
+                            defaults={
+                                'title': pep_data.get('Position', pep_data.get('role', '')),
+                                'x_link': pep_data.get('X (Twitter) Link') if pep_data.get('X (Twitter) Link') != 'No verified personal account found' else None,
+                                'x_verified': pep_data.get('Verified X (Twitter) Account (Yes/No)', '').lower() == 'yes',
+                                'facebook_link': pep_data.get('Facebook Link') if pep_data.get('Facebook Link') not in ['No verified personal account found', 'None found'] else None,
+                                'facebook_verified': pep_data.get('Verified Facebook Account (Yes/No)', '').lower() == 'yes',
+                                'confidence_level': pep_data.get('Confidence', 'medium').lower(),
+                                'last_updated': timezone.now()  # ✅ REQUIRED FOR BADGE
+                            }
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to load PEPs from GitHub: {e}")
+        
+        # Refresh last_sync variable after potential DB update
+        last_sync = PEP.objects.aggregate(last=Max('last_updated'))['last']
+
+        # 2. QUERYSET
         peps = PEP.objects.filter(is_active=True).order_by('name')
         
-        # Track PEP mentions over time (JSON-safe)
-        pep_timeline = {}
-        for pep in peps[:10]:
-            mentions = ProcessedPost.objects.filter(
-                is_election_related=True,
-                original_text__icontains=pep.name
-            ).values('timestamp_share__date').annotate(count=Count('id'))
-            
-            pep_timeline[pep.name] = [
-                {'date': str(m['timestamp_share__date']), 'count': m['count']} 
-                for m in mentions if m['timestamp_share__date'] is not None
-            ]
-        
+        # 3. CONTEXT DATA
         context.update({
             'active_tab': 'peps',
             'tabs': [
@@ -1439,13 +1439,12 @@ class PEPsView(TemplateView):
                 {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             ],
             'peps': peps,
-            'pep_timeline': json.dumps(pep_timeline),
             'total_peps': peps.count(),
             'verified_x_count': peps.filter(x_verified=True).count(),
             'verified_fb_count': peps.filter(facebook_verified=True).count(),
+            'last_pep_sync': last_sync,  # ✅ REQUIRED FOR SYNC BADGE
         })
         return context
-
 
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
