@@ -106,6 +106,13 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# paths to your PEP Excel files (local or absolute)
+PEP_FILES = {
+    'hopr': os.getenv('HOPR_FILE_PATH', str(BASE_DIR / 'media' / 'peps' / 'HoPR_Candidates.xlsx')),
+    'regional': os.getenv('REGIONAL_FILE_PATH', str(BASE_DIR / 'media' / 'peps' / 'Regional_Candidates.xlsx')),
+    'executive': os.getenv('EXECUTIVE_FILE_PATH', str(BASE_DIR / 'media' / 'peps' / 'Executive_Members.xlsx')),
+}
+
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
