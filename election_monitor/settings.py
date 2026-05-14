@@ -8,6 +8,11 @@ import environ
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+#LOAD .ENV FILE HERE
+from dotenv import load_dotenv
+load_dotenv(BASE_DIR / '.env')
+
+
 # Initialize environment variables
 env = environ.Env(
     DEBUG=(bool, True),
