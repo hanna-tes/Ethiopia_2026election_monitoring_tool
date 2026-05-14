@@ -40,7 +40,7 @@ class ProcessedPost(models.Model):
     source_dataset = models.ForeignKey(DataSource, on_delete=models.SET_NULL, null=True, db_index=True)
 
 
-    ingested_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    ingested_at = models.DateTimeField(auto_now_add=True, db_index=True, null=True)
     batch_id = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     
     
