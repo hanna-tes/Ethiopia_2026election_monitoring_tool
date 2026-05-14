@@ -12,6 +12,8 @@ class DataSource(models.Model):
     source_url = models.URLField(blank=True, null=True)  # if from GitHub
     record_count = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    last_updated = models.DateTimeField(auto_now=True)
+
     
     class Meta:
         ordering = ['-uploaded_at']
