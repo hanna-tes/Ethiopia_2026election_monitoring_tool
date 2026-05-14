@@ -31,6 +31,25 @@
         <span class="text-sm text-gray-500 mt-2 block">Data last updated: <strong>{{ metrics.last_update }}</strong></span>
     </p>
 </div>
+<!-- DATE FILTER  -->
+<form method="get" class="flex flex-wrap gap-3 items-end bg-gray-50 p-3 rounded-lg mb-6 border">
+    <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">From</label>
+        <input type="date" name="start_date" value="{{ request.GET.start_date }}" class="rounded border-gray-300 text-sm px-3 py-2">
+    </div>
+    <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">To</label>
+        <input type="date" name="end_date" value="{{ request.GET.end_date }}" class="rounded border-gray-300 text-sm px-3 py-2">
+    </div>
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">🔍 Apply</button>
+    <a href="{{ request.path }}" class="text-gray-500 hover:text-gray-700 text-sm px-3 py-2 hover:underline">Clear Filter</a>
+    
+    {% if request.GET.start_date or request.GET.end_date %}
+    <span class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded ml-auto">
+        Showing: {{ request.GET.start_date|default:"..." }} → {{ request.GET.end_date|default:"..." }}
+    </span>
+    {% endif %}
+</form>
 
 <!-- Metrics Cards -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
