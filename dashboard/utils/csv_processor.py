@@ -16,74 +16,77 @@ def get_col(df, cols):
     return pd.Series([np.nan] * len(df), index=df.index)
 
 def load_brandwatch_data(filepath):
-    """Load and standardize Brandwatch exports (6 rows metadata + UTF-8)"""
+    """
+    Loads Brandwatch 'Bulk Mentions' exports.
+    Handles: 
+    - 5 metadata rows at the top
+    - Mapping 'Full Text', 'Author', 'Date', 'Url', 'Page Type'
+    - Standardizing platform names
+    """
     try:
-        # Brandwatch exports have 6 rows of metadata before column headers
-        df = pd.read_csv(filepath, encoding='utf-8', sep=',', low_memory=False,
-                         skiprows=6, on_bad_lines='skip')
+        # Skip the 5 metadata rows before the actual header
+        df = pd.read_csv(
+            filepath, 
+            encoding='utf-8', 
+            sep=',', 
+            low_memory=False, 
+            skiprows=5, 
+            on_bad_lines='skip'
+        )
     except Exception as e:
         logger.error(f"Brandwatch load failed: {e}")
         return pd.DataFrame()
 
     if df.empty:
+        logger.warning("Brandwatch file loaded but is empty.")
         return df
 
-    # 1. Create unified Account column safely
-    # Combine Weblog Title, Author, and Full Name into 'Account'
-    cols_to_combine = ['Weblog Title', 'Author', 'Full Name']
-    available_cols = [c for c in cols_to_combine if c in df.columns]
-    
-    if available_cols:
-        # Start with the first available column
-        df['Account'] = df[available_cols[0]].astype(str)
-        # Combine with others if they exist
-        for col in available_cols[1:]:
-            df['Account'] = df['Account'].combine_first(df[col].astype(str))
-    else:
-        df['Account'] = 'Unknown'
-
-    # 2. Map to standard schema (Using your logic)
+    # 1. Normalize required columns
     brandwatch_df = pd.DataFrame()
     
-    # Account ID
-    brandwatch_df['account_id'] = df['Account'].str.strip().replace('nan', '').fillna('Unknown')
-    
-    # URL
-    brandwatch_df['URL'] = df.get('Url', pd.Series(dtype='object'))
-    
+    # Account ID: Prefer Author, fallback to Full Name
+    author_col = df.get('Author', pd.Series(dtype='object'))
+    fullname_col = df.get('Full Name', pd.Series(dtype='object'))
+    brandwatch_df['account_id'] = author_col.combine_first(fullname_col).str.strip().fillna('Unknown')
+
+    # Content Text: Prefer Full Text, fallback to Title
+    text_col = df.get('Full Text', pd.Series(dtype='object'))
+    title_col = df.get('Title', pd.Series(dtype='object'))
+    brandwatch_df['original_text'] = text_col.combine_first(title_col).fillna('')
+
     # Timestamp
     brandwatch_df['timestamp_share'] = df.get('Date', pd.Series(dtype='object'))
-    
-    # Object ID (Text Content) - Critical for filtering
-    # Ensure we get 'Full Text' or fallback to 'Title' if text is missing
-    text_col = 'Full Text' if 'Full Text' in df.columns else 'Title'
-    brandwatch_df['object_id'] = df.get(text_col, pd.Series(dtype='object')).fillna('')
-    
-    # Platform
-    brandwatch_df['Platform'] = df.get('Page Type', pd.Series(dtype='object')).str.strip().str.title()
-    
-    # Content ID (Fallback to URL if missing)
-    brandwatch_df['content_id'] = df.get('Content Id', pd.Series(dtype='object'))
-    mask = brandwatch_df['content_id'].isna() | (brandwatch_df['content_id'] == '')
-    if mask.any():
-        brandwatch_df.loc[mask, 'content_id'] = brandwatch_df.loc[mask, 'URL']
 
-    # 3. Clean and Normalize
-    # Normalize Platform names
-    platform_map = {'Twitter': 'X', 'Facebook': 'Facebook', 'Instagram': 'Instagram', 
-                    'Tiktok': 'TikTok', 'Telegram': 'Telegram', 'Media': 'Media', 'Blog': 'Media'}
-    brandwatch_df['Platform'] = brandwatch_df['Platform'].replace(platform_map)
+    # URL & Content ID
+    brandwatch_df['URL'] = df.get('Url', pd.Series(dtype='object'))
+    brandwatch_df['content_id'] = df.get('Resource Id', pd.Series(dtype='object')).fillna(brandwatch_df['URL'])
+
+    # Platform Mapping
+    page_type = df.get('Page Type', pd.Series(dtype='object')).str.lower()
+    platform_map = {
+        'twitter': 'X',
+        'x': 'X',
+        'facebook': 'Facebook',
+        'instagram': 'Instagram',
+        'reddit': 'Reddit',
+        'youtube': 'YouTube',
+        'linkedin': 'LinkedIn',
+        'tiktok': 'TikTok',
+        'threads': 'Threads',
+        'bluesky': 'Bluesky',
+        'weibo': 'Weibo',
+        'tumblr': 'Tumblr'
+    }
+    brandwatch_df['platform'] = page_type.map(platform_map).fillna(page_type.str.title())
+
+    # Clean empty text rows
+    brandwatch_df = brandwatch_df[brandwatch_df['original_text'].str.strip() != '']
     
-    # Clean text: remove 'nan' strings, strip whitespace
-    brandwatch_df['object_id'] = brandwatch_df['object_id'].astype(str).replace('nan', '').str.strip()
-    brandwatch_df['Platform'] = brandwatch_df['Platform'].replace('', 'Unknown')
+    # Standardize missing values
+    brandwatch_df['platform'] = brandwatch_df['platform'].replace('', 'Unknown').fillna('Unknown')
     brandwatch_df['source_dataset'] = 'Brandwatch'
     
-    # 4. Filter out rows with empty text BEFORE returning
-    # This prevents downstream functions from choking on empty rows
-    brandwatch_df = brandwatch_df[brandwatch_df['object_id'] != '']
-    
-    logger.info(f"Brandwatch loaded: {len(brandwatch_df)} valid rows from {len(df)} total.")
+    logger.info(f"✅ Brandwatch processed: {len(brandwatch_df)} valid posts")
     return brandwatch_df
 
 def map_columns_by_type(df, platform):
