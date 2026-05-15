@@ -28,34 +28,63 @@ def load_brandwatch_data(filepath):
     if df.empty:
         return df
 
-    # 1. Create unified Account column
-    df['Account'] = df.get('Weblog Title', pd.Series(dtype='object')).combine_first(
-        df.get('Author', pd.Series(dtype='object'))
-    ).combine_first(df.get('Full Name', pd.Series(dtype='object')))
+    # 1. Create unified Account column safely
+    # Combine Weblog Title, Author, and Full Name into 'Account'
+    cols_to_combine = ['Weblog Title', 'Author', 'Full Name']
+    available_cols = [c for c in cols_to_combine if c in df.columns]
+    
+    if available_cols:
+        # Start with the first available column
+        df['Account'] = df[available_cols[0]].astype(str)
+        # Combine with others if they exist
+        for col in available_cols[1:]:
+            df['Account'] = df['Account'].combine_first(df[col].astype(str))
+    else:
+        df['Account'] = 'Unknown'
 
-    # 2. Map to standard schema (Matches other platforms)
+    # 2. Map to standard schema (Using your logic)
     brandwatch_df = pd.DataFrame()
-    brandwatch_df['account_id'] = df['Account'].str.strip().fillna('Unknown')
-    brandwatch_df['URL'] = df.get('Url', pd.Series(dtype='object'))  # Uppercase URL
+    
+    # Account ID
+    brandwatch_df['account_id'] = df['Account'].str.strip().replace('nan', '').fillna('Unknown')
+    
+    # URL
+    brandwatch_df['URL'] = df.get('Url', pd.Series(dtype='object'))
+    
+    # Timestamp
     brandwatch_df['timestamp_share'] = df.get('Date', pd.Series(dtype='object'))
-    brandwatch_df['object_id'] = df.get('Full Text', pd.Series(dtype='object')).fillna('')  # object_id
+    
+    # Object ID (Text Content) - Critical for filtering
+    # Ensure we get 'Full Text' or fallback to 'Title' if text is missing
+    text_col = 'Full Text' if 'Full Text' in df.columns else 'Title'
+    brandwatch_df['object_id'] = df.get(text_col, pd.Series(dtype='object')).fillna('')
+    
+    # Platform
     brandwatch_df['Platform'] = df.get('Page Type', pd.Series(dtype='object')).str.strip().str.title()
     
-    # Content ID: Brandwatch doesn't always provide it; fallback to URL
-    brandwatch_df['content_id'] = df.get('Content Id', pd.Series(dtype='object')).fillna(brandwatch_df['URL'])
+    # Content ID (Fallback to URL if missing)
+    brandwatch_df['content_id'] = df.get('Content Id', pd.Series(dtype='object'))
+    mask = brandwatch_df['content_id'].isna() | (brandwatch_df['content_id'] == '')
+    if mask.any():
+        brandwatch_df.loc[mask, 'content_id'] = brandwatch_df.loc[mask, 'URL']
 
-    # 3. Normalize platform names
+    # 3. Clean and Normalize
+    # Normalize Platform names
     platform_map = {'Twitter': 'X', 'Facebook': 'Facebook', 'Instagram': 'Instagram', 
-                    'Tiktok': 'TikTok', 'Telegram': 'Telegram', 'Media': 'Media'}
+                    'Tiktok': 'TikTok', 'Telegram': 'Telegram', 'Media': 'Media', 'Blog': 'Media'}
     brandwatch_df['Platform'] = brandwatch_df['Platform'].replace(platform_map)
-
-    # 4. Clean text & handle NaNs
-    brandwatch_df['object_id'] = brandwatch_df['object_id'].astype(str).replace('nan', '')
+    
+    # Clean text: remove 'nan' strings, strip whitespace
+    brandwatch_df['object_id'] = brandwatch_df['object_id'].astype(str).replace('nan', '').str.strip()
     brandwatch_df['Platform'] = brandwatch_df['Platform'].replace('', 'Unknown')
     brandwatch_df['source_dataset'] = 'Brandwatch'
-
+    
+    # 4. Filter out rows with empty text BEFORE returning
+    # This prevents downstream functions from choking on empty rows
+    brandwatch_df = brandwatch_df[brandwatch_df['object_id'] != '']
+    
+    logger.info(f"Brandwatch loaded: {len(brandwatch_df)} valid rows from {len(df)} total.")
     return brandwatch_df
-
 
 def map_columns_by_type(df, platform):
     """Maps platform-specific CSV headers to a standard format."""
