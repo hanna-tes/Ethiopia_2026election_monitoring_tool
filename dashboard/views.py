@@ -1430,20 +1430,39 @@ class PEPsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        #  KEEP YOUR EXISTING GITHUB SYNC LOGIC HERE
+        # 1. GitHub Sync (runs only if DB is empty or data is >24h old)
         last_sync = PEP.objects.aggregate(last=Max('last_updated'))['last']
         threshold = timezone.now() - timedelta(hours=24)
+        
         if not PEP.objects.exists() or (last_sync and last_sync < threshold):
-            # ... [Your existing GitHub fetch & update code] ...
-            pass 
+            peps_csv_url = getattr(settings, 'PEPS_CSV_URL', None)
+            if peps_csv_url:
+                try:
+                    from dashboard.utils.data_loader import load_peps_from_github
+                    peps_data = load_peps_from_github(peps_csv_url)
+                    for pep_data in peps_data:
+                        name = pep_data.get('Name (English)', pep_data.get('full_name_en', 'Unknown'))
+                        PEP.objects.update_or_create(
+                            name=name,
+                            defaults={
+                                'title': pep_data.get('Position', pep_data.get('role', '')),
+                                'x_link': pep_data.get('X (Twitter) Link') if pep_data.get('X (Twitter) Link') != 'No verified personal account found' else None,
+                                'facebook_link': pep_data.get('Facebook Link') if pep_data.get('Facebook Link') not in ['No verified personal account found', 'None found'] else None,
+                                'confidence_level': pep_data.get('Confidence', 'medium').lower(),
+                                'last_updated': timezone.now()
+                            }
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to sync PEPs from GitHub: {e}")
+        
+        # 2. Query local data
         context['last_pep_sync'] = PEP.objects.aggregate(last=Max('last_updated'))['last']
         context['peps'] = PEP.objects.filter(is_active=True).order_by('name')
-
-        #  ADD LOCAL CANDIDATE COUNT
+        
+        # 3. Local election candidates count
         from .models import ElectionOfficeholder
         context['total_candidates'] = ElectionOfficeholder.objects.count()
         
-        #  STANDARD NAV TABS
         context['active_tab'] = 'peps'
         context['tabs'] = [
             {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
