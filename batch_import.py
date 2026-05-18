@@ -33,13 +33,24 @@ def map_brandwatch_columns(df):
     mapped['URL'] = df.get('Url', pd.Series(dtype='object'))
     mapped['timestamp_share'] = df.get('Date', pd.Series(dtype='object'))
     
-    # Platform Mapping
+    # Platform Mapping - EXPANDED FOR FACEBOOK
     page_type = df.get('Page Type', pd.Series(dtype='object')).astype(str).str.lower()
     platform_map = {
-        'twitter': 'X', 'x': 'X', 'facebook': 'Facebook', 'instagram': 'Instagram',
-        'tiktok': 'TikTok', 'youtube': 'YouTube', 'linkedin': 'LinkedIn', 'reddit': 'Reddit'
+        'twitter': 'X', 'x': 'X', 'x.com': 'X', 't.co': 'X',
+        'facebook': 'Facebook', 'fb': 'Facebook', 'fb.watch': 'Facebook', 'facebook.com': 'Facebook',
+        'instagram': 'Instagram', 'insta': 'Instagram', 'ig': 'Instagram',
+        'tiktok': 'TikTok', 'tik tok': 'TikTok',
+        'youtube': 'YouTube', 'youtu.be': 'YouTube',
+        'linkedin': 'LinkedIn', 'reddit': 'Reddit', 'telegram': 'Telegram', 't.me': 'Telegram'
     }
-    mapped['Platform'] = page_type.map(platform_map).fillna('X')  # Default to X for unclear types
+    mapped['Platform'] = page_type.map(platform_map)
+    
+    # Fallback: If URL contains facebook.com but Page Type didn't map, force Facebook
+    mask = mapped['Platform'].isna() & mapped['URL'].astype(str).str.contains('facebook.com', case=False, na=False)
+    mapped.loc[mask, 'Platform'] = 'Facebook'
+    
+    # Final fallback: default to 'Media' instead of 'X' for unmapped
+    mapped['Platform'] = mapped['Platform'].fillna('Media')
     
     # Content ID fallback chain
     mapped['content_id'] = df.get('Resource Id', df.get('Mention Id', mapped['URL']))
@@ -51,7 +62,7 @@ def map_brandwatch_columns(df):
         )
         
     return mapped
-
+    
 folder = 'media/uploads/social_media'
 print('🚀 Starting High-Yield Adaptive Batch Import (v9)...')
 
