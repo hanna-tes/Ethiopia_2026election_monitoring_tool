@@ -1278,7 +1278,7 @@ class NarrativesView(TemplateView):
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         
         # Generate narratives from FILTERED data
-        context['summaries'] = generate_narrative_summaries(queryset)
+        context['summaries'] = get_ethiopia_summaries(queryset)
         context['total_posts'] = queryset.count()
         
         # Format date range for display
