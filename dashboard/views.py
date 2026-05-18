@@ -1401,29 +1401,47 @@ class PEPsHubView(TemplateView):
         return context
 
 class PEPsDataView(TemplateView):
-    """Spreadsheet-style viewer for a selected file/sheet"""
     template_name = 'dashboard/peps_data.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         filename = self.request.GET.get('file')
-        sheet = self.request.GET.get('sheet', 'All')
+        sheet = self.request.GET.get('sheet', '').strip()  # Get sheet, strip whitespace
+        
+        print(f"🔍 PEPsDataView - File: {filename}, Sheet: '{sheet}'")  # Debug
         
         qs = ElectionOfficeholder.objects.all()
         if filename:
             qs = qs.filter(source_file=filename)
-        if sheet != 'All':
+            print(f"🔍 Found {qs.count()} records for {filename}")  # Debug
+            
+        # Only filter by sheet if it's not empty
+        if sheet and sheet.lower() != 'all':
             qs = qs.filter(source_sheet=sheet)
+            print(f"🔍 After sheet filter: {qs.count()} records")  # Debug
+            
+        # Get available sheets for this file
+        if filename:
+            sheets_qs = ElectionOfficeholder.objects.filter(
+                source_file=filename
+            ).values_list('source_sheet', flat=True).distinct()
+            
+            # Filter out empty/null sheets
+            sheets_list = [s for s in sheets_qs if s and s.strip()]
+            context['sheets'] = ['All'] + sorted(sheets_list)
+            print(f"🔍 Available sheets: {context['sheets']}")  # Debug
+        else:
+            context['sheets'] = []
             
         # Pagination (50 rows/page)
         paginator = Paginator(qs, 50)
         page_number = self.request.GET.get('page')
-        context['page_obj'] = paginator.get_page(page_number)
+        page_obj = paginator.get_page(page_number)
+        
+        context['page_obj'] = page_obj
         context['selected_file'] = filename
-        context['sheets'] = ['All'] + list(
-            ElectionOfficeholder.objects.filter(source_file=filename)
-            .values_list('source_sheet', flat=True).distinct()
-        ) if filename else []
+        context['selected_sheet'] = sheet if sheet and sheet.lower() != 'all' else 'All'
+        context['total_records'] = qs.count()
         
         return context
         
