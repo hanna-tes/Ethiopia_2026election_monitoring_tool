@@ -181,6 +181,7 @@ class PEP(models.Model):
     title = models.CharField(max_length=255, blank=True)
     affiliation = models.CharField(max_length=255, blank=True)
     ethnic_group = models.CharField(max_length=100, blank=True)
+    last_updated = models.DateTimeField(auto_now=True, null=True, blank=True)
     
     # Social media
     x_link = models.URLField(blank=True, null=True)
