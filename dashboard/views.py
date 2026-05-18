@@ -1583,7 +1583,9 @@ class LexiconManagementView(TemplateView):
             if term_id:
                 try:
                     obj = LexiconTerm.objects.get(id=term_id)
-                    obj.term = request.POST.get('term', obj.term)
+                    new_term = request.POST.get('term', '').strip()
+                    if new_term:
+                        obj.term = new_term
                     obj.category = request.POST.get('category', obj.category)
                     obj.severity = request.POST.get('severity', obj.severity)
                     obj.target_entity = request.POST.get('target_entity', '')
