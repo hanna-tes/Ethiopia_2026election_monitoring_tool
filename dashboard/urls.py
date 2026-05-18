@@ -13,6 +13,8 @@ urlpatterns = [
     path('peps/', views.PEPsView.as_view(), name='peps'),
     path('networks/', views.NetworksView.as_view(), name='networks'),
     path('lexicon-management/', views.LexiconManagementView.as_view(), name='lexicon_management'),
+    path('peps/', views.PEPsHubView.as_view(), name='peps_hub'),
+    path('peps/data/', views.PEPsDataView.as_view(), name='peps_data'),
     
     # === UPLOAD & DATA MANAGEMENT ===
     # These handle the sidebar form actions
