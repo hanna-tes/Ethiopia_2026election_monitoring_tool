@@ -233,24 +233,50 @@ class SyncSource(models.Model):
         return f"{self.name} ({self.get_file_type_display()})"
 
 class ElectionOfficeholder(models.Model):
-    """Stores ID-based membership data from HoPR, RC, Executive Excel files."""
-    membership_id = models.CharField(max_length=100, unique=True, db_index=True)
-    role_id = models.CharField(max_length=255)
-    person_id = models.CharField(max_length=100)
-    party_id = models.CharField(max_length=100)
-    membership_type = models.CharField(max_length=50, default='officeholder')
-    start_date = models.DateField(null=True, blank=True)
-    end_date = models.DateField(null=True, blank=True)
-    is_partisan = models.BooleanField(default=True)
-    has_end_date = models.BooleanField(default=True)
-    contest_id = models.CharField(max_length=255)
-    source_file = models.CharField(max_length=255, db_index=True)  # e.g., "HoPR_Candidates.xlsx"
-    source_sheet = models.CharField(max_length=255, db_index=True, default='All')
-    created_at = models.DateTimeField(auto_now_add=True)
-    
+    # === CORE IDENTIFIERS ===
+    membership_id = models.CharField(max_length=255, blank=True, null=True)
+    person_id = models.CharField(max_length=255, blank=True, null=True)
+    role_id = models.CharField(max_length=255, blank=True, null=True)
+    party_id = models.CharField(max_length=255, blank=True, null=True)
+    contest_id = models.CharField(max_length=255, blank=True, null=True)
+
+    # === PERSON FIELDS ===
+    person_full_name = models.CharField(max_length=255, blank=True, null=True)
+    person_first_name = models.CharField(max_length=100, blank=True, null=True)
+    person_last_name = models.CharField(max_length=100, blank=True, null=True)
+    person_name_amharic = models.CharField(max_length=255, blank=True, null=True)
+    person_region = models.CharField(max_length=100, blank=True, null=True)
+    person_gender = models.CharField(max_length=20, blank=True, null=True)
+    person_fb_url = models.URLField(blank=True, null=True)
+    person_twitter_url = models.URLField(blank=True, null=True)
+    person_telegram = models.CharField(max_length=100, blank=True, null=True)
+
+    # === PARTY FIELDS ===
+    party_name_english = models.CharField(max_length=255, blank=True, null=True)
+    party_abbrv = models.CharField(max_length=50, blank=True, null=True)
+    party_name_amharic = models.CharField(max_length=255, blank=True, null=True)
+
+    # === ROLE & CHAMBER FIELDS ===
+    role_title = models.CharField(max_length=255, blank=True, null=True)
+    role_title_amharic = models.CharField(max_length=255, blank=True, null=True)
+    chamber_name_english = models.CharField(max_length=255, blank=True, null=True)
+    area_name = models.CharField(max_length=255, blank=True, null=True)
+
+    # === MEMBERSHIP/CONTEST FIELDS ===
+    membership_type = models.CharField(max_length=100, blank=True, null=True)
+    start_date = models.DateField(blank=True, null=True)
+    end_date = models.DateField(blank=True, null=True)
+    is_partisan = models.BooleanField(default=False)
+    has_end_date = models.BooleanField(default=False)
+
+    # === FLEXIBLE STORAGE FOR ALL OTHER COLUMNS ===
+    raw_data = models.JSONField(default=dict, blank=True)
+    source_file = models.CharField(max_length=255)
+    source_sheet = models.CharField(max_length=100, blank=True, null=True)
+
     class Meta:
-        ordering = ['role_id', 'party_id']
-        indexes = [models.Index(fields=['source_file', 'source_sheet'])]
+        ordering = ['person_last_name', 'person_first_name']
+        indexes = [models.Index(fields=['source_file', 'person_id'])]
 
     def __str__(self):
-        return f"{self.person_id} | {self.role_id} | {self.party_id}"
+        return f"{self.person_full_name or self.person_id} ({self.party_name_english or 'No Party'})"
