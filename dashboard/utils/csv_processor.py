@@ -16,21 +16,13 @@ def get_col(df, cols):
     return pd.Series([np.nan] * len(df), index=df.index)
 
 def load_brandwatch_data(filepath):
-    """
-    Loads Brandwatch 'Bulk Mentions' exports.
-    Handles: 
-    - 5 metadata rows at the top
-    - Mapping 'Full Text', 'Author', 'Date', 'Url', 'Page Type'
-    - Standardizing platform names
-    """
     try:
-        # Skip the 5 metadata rows before the actual header
         df = pd.read_csv(
             filepath, 
             encoding='utf-8', 
             sep=',', 
             low_memory=False, 
-            skiprows=5, 
+            skiprows=6,  # Skip metadata rows
             on_bad_lines='skip'
         )
     except Exception as e:
@@ -41,54 +33,32 @@ def load_brandwatch_data(filepath):
         logger.warning("Brandwatch file loaded but is empty.")
         return df
 
-    # 1. Normalize required columns
     brandwatch_df = pd.DataFrame()
     
-    # Account ID: Prefer Author, fallback to Full Name
-    author_col = df.get('Author', pd.Series(dtype='object'))
-    fullname_col = df.get('Full Name', pd.Series(dtype='object'))
-    brandwatch_df['account_id'] = author_col.combine_first(fullname_col).str.strip().fillna('Unknown')
+    # Use get_col for robust column matching
+    brandwatch_df['account_id'] = get_col(df, ['Author', 'Full Name', 'author', 'full name']).str.strip().fillna('Unknown')
+    brandwatch_df['original_text'] = get_col(df, ['Full Text', 'Title', 'full text', 'title']).fillna('')
+    brandwatch_df['timestamp_share'] = get_col(df, ['Date', 'date', 'Timestamp'])
+    brandwatch_df['URL'] = get_col(df, ['Url', 'URL', 'url', 'Link'])
+    brandwatch_df['content_id'] = get_col(df, ['Resource Id', 'resource id', 'ID']).fillna(brandwatch_df['URL'])
 
-    # Content Text: Prefer Full Text, fallback to Title
-    text_col = df.get('Full Text', pd.Series(dtype='object'))
-    title_col = df.get('Title', pd.Series(dtype='object'))
-    brandwatch_df['original_text'] = text_col.combine_first(title_col).fillna('')
-
-    # Timestamp
-    brandwatch_df['timestamp_share'] = df.get('Date', pd.Series(dtype='object'))
-
-    # URL & Content ID
-    brandwatch_df['URL'] = df.get('Url', pd.Series(dtype='object'))
-    brandwatch_df['content_id'] = df.get('Resource Id', pd.Series(dtype='object')).fillna(brandwatch_df['URL'])
-
-    # Platform Mapping
-    page_type = df.get('Page Type', pd.Series(dtype='object')).str.lower()
+    # Platform mapping with NaN safety
+    page_type = get_col(df, ['Page Type', 'page type', 'Platform']).astype(str).str.lower()
     platform_map = {
-        'twitter': 'X',
-        'x': 'X',
-        'facebook': 'Facebook',
-        'instagram': 'Instagram',
-        'reddit': 'Reddit',
-        'youtube': 'YouTube',
-        'linkedin': 'LinkedIn',
-        'tiktok': 'TikTok',
-        'threads': 'Threads',
-        'bluesky': 'Bluesky',
-        'weibo': 'Weibo',
-        'tumblr': 'Tumblr'
+        'twitter': 'X', 'x': 'X', 'facebook': 'Facebook', 'instagram': 'Instagram',
+        'reddit': 'Reddit', 'youtube': 'YouTube', 'linkedin': 'LinkedIn',
+        'tiktok': 'TikTok', 'threads': 'Threads', 'bluesky': 'Bluesky'
     }
-    brandwatch_df['platform'] = page_type.map(platform_map).fillna(page_type.str.title())
+    brandwatch_df['platform'] = page_type.map(platform_map).fillna('Unknown')
+    brandwatch_df['platform'] = brandwatch_df['platform'].replace(['', 'nan'], 'Unknown')
 
-    # Clean empty text rows
+    # Clean empty text
     brandwatch_df = brandwatch_df[brandwatch_df['original_text'].str.strip() != '']
-    
-    # Standardize missing values
-    brandwatch_df['platform'] = brandwatch_df['platform'].replace('', 'Unknown').fillna('Unknown')
     brandwatch_df['source_dataset'] = 'Brandwatch'
     
     logger.info(f"✅ Brandwatch processed: {len(brandwatch_df)} valid posts")
     return brandwatch_df
-
+    
 def map_columns_by_type(df, platform):
     """Maps platform-specific CSV headers to a standard format."""
     mapped = pd.DataFrame()
@@ -171,14 +141,27 @@ def process_uploaded_csv(file, platform):
         logger.error(f"Failed to process CSV for {platform}: {e}")
         return pd.DataFrame()
 
-def combine_social_media_data(meltwater_df=None, brandwatch_df=None, civicsignals_df=None, tiktok_df=None, openmeasures_df=None):
-    """Merges standardized DataFrames from any combination of sources."""
+def combine_social_media_data(
+    meltwater_df=None, brandwatch_df=None, civicsignals_df=None, 
+    tiktok_df=None, openmeasures_df=None
+):
+    """Accepts single DF or list of DFs per source."""
     combined = []
-    if meltwater_df is not None: combined.append(meltwater_df)
-    if brandwatch_df is not None and not brandwatch_df.empty:
-        combined.append(brandwatch_df)  
-    if civicsignals_df is not None: combined.append(civicsignals_df)
-    if tiktok_df is not None: combined.append(tiktok_df)
-    if openmeasures_df is not None: combined.append(openmeasures_df)
+    
+    def add_source(df_source):
+        if df_source is None:
+            return
+        if isinstance(df_source, list):
+            for df in df_source:
+                if df is not None and not df.empty:
+                    combined.append(df)
+        elif not df_source.empty:
+            combined.append(df_source)
+    
+    add_source(meltwater_df)
+    add_source(brandwatch_df)  # Now accepts list or single DF
+    add_source(civicsignals_df)
+    add_source(tiktok_df)
+    add_source(openmeasures_df)
 
     return pd.concat(combined, ignore_index=True) if combined else pd.DataFrame()
