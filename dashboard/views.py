@@ -1464,7 +1464,7 @@ class PEPsView(TemplateView):
                 except Exception as e:
                     logger.error(f"PEP GitHub sync failed: {e}")
 
-        # 2. Query & Context - ADD THIS LINE 👇
+        # 2. Query & Context 
         context['total_candidates'] = ElectionOfficeholder.objects.count()
         
         context['peps'] = PEP.objects.filter(is_active=True).order_by('name')
