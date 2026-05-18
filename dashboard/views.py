@@ -1430,48 +1430,37 @@ class PEPsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. GitHub Sync (runs only if DB is empty or data is >24h old)
-        last_sync = PEP.objects.aggregate(last=Max('last_updated'))['last']
-        threshold = timezone.now() - timedelta(hours=24)
-        
-        if not PEP.objects.exists() or (last_sync and last_sync < threshold):
-            peps_csv_url = getattr(settings, 'PEPS_CSV_URL', None)
-            if peps_csv_url:
+        # 1. Force sync if DB is empty
+        if not PEP.objects.exists():
+            github_url = getattr(settings, 'PEPS_CSV_URL', '')
+            if github_url:
                 try:
-                    from dashboard.utils.data_loader import load_peps_from_github
-                    peps_data = load_peps_from_github(peps_csv_url)
-                    for pep_data in peps_data:
-                        name = pep_data.get('Name (English)', pep_data.get('full_name_en', 'Unknown'))
+                    resp = requests.get(github_url, timeout=15)
+                    resp.raise_for_status()
+                    reader = csv.DictReader(StringIO(resp.text))
+                    for row in reader:
+                        name = row.get('Name (English)', row.get('full_name_en', '')).strip()
+                        if not name: continue
                         PEP.objects.update_or_create(
                             name=name,
                             defaults={
-                                'title': pep_data.get('Position', pep_data.get('role', '')),
-                                'x_link': pep_data.get('X (Twitter) Link') if pep_data.get('X (Twitter) Link') != 'No verified personal account found' else None,
-                                'facebook_link': pep_data.get('Facebook Link') if pep_data.get('Facebook Link') not in ['No verified personal account found', 'None found'] else None,
-                                'confidence_level': pep_data.get('Confidence', 'medium').lower(),
+                                'title': row.get('Position', row.get('role', '')),
+                                'x_link': row.get('X (Twitter) Link') if row.get('X (Twitter) Link') not in ['No verified personal account found', 'None', ''] else None,
+                                'facebook_link': row.get('Facebook Link') if row.get('Facebook Link') not in ['No verified personal account found', 'None', ''] else None,
+                                'confidence_level': row.get('Confidence', 'medium').lower(),
                                 'last_updated': timezone.now()
                             }
                         )
                 except Exception as e:
-                    logger.error(f"Failed to sync PEPs from GitHub: {e}")
-        
-        # 2. Query local data
-        context['last_pep_sync'] = PEP.objects.aggregate(last=Max('last_updated'))['last']
+                    logger.error(f"PEP GitHub sync failed: {e}")
+
+        # 2. Query & Context
         context['peps'] = PEP.objects.filter(is_active=True).order_by('name')
-        
-        # 3. Local election candidates count
-        from .models import ElectionOfficeholder
-        context['total_candidates'] = ElectionOfficeholder.objects.count()
-        
+        context['total_peps'] = context['peps'].count()
+        context['verified_x_count'] = context['peps'].filter(x_verified=True).count()
+        context['verified_fb_count'] = context['peps'].filter(facebook_verified=True).count()
+        context['last_pep_sync'] = PEP.objects.aggregate(last=Max('last_updated'))['last']
         context['active_tab'] = 'peps'
-        context['tabs'] = [
-            {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-            {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-            {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-            {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-        ]
         return context
         
 class NetworksView(TemplateView):
