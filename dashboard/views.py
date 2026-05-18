@@ -1433,38 +1433,47 @@ class PEPsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Force sync if DB is empty
+        # 1. Force sync if DB is empty (your existing GitHub sync logic)
         if not PEP.objects.exists():
             github_url = getattr(settings, 'PEPS_CSV_URL', '')
             if github_url:
                 try:
                     resp = requests.get(github_url, timeout=15)
                     resp.raise_for_status()
-                    reader = csv.DictReader(StringIO(resp.text))
+                    lines = resp.text.split('\n')
+                    data_lines = '\n'.join([line for line in lines[1:] if line.strip()])
+                    reader = csv.DictReader(StringIO(data_lines))
                     for row in reader:
-                        name = row.get('Name (English)', row.get('full_name_en', '')).strip()
+                        name = row.get('full_name_en', '').strip()
                         if not name: continue
+                        def clean_link(val):
+                            v = str(val).strip() if val else ''
+                            return None if v.lower() in ['n/a', 'none', '', 'no verified personal account found'] else v
                         PEP.objects.update_or_create(
                             name=name,
                             defaults={
-                                'title': row.get('Position', row.get('role', '')),
-                                'x_link': row.get('X (Twitter) Link') if row.get('X (Twitter) Link') not in ['No verified personal account found', 'None', ''] else None,
-                                'facebook_link': row.get('Facebook Link') if row.get('Facebook Link') not in ['No verified personal account found', 'None', ''] else None,
-                                'confidence_level': row.get('Confidence', 'medium').lower(),
+                                'title': row.get('role', ''),
+                                'affiliation': row.get('party_name_en', ''),
+                                'ethnic_group': row.get('region', ''),
+                                'x_link': clean_link(row.get('twitter_url')),
+                                'facebook_link': clean_link(row.get('fb_url')),
+                                'confidence_level': 'medium',
                                 'last_updated': timezone.now()
                             }
                         )
                 except Exception as e:
                     logger.error(f"PEP GitHub sync failed: {e}")
 
-        # 2. Query & Context
+        # 2. Query & Context - ADD THIS LINE 👇
+        context['total_candidates'] = ElectionOfficeholder.objects.count()
+        
         context['peps'] = PEP.objects.filter(is_active=True).order_by('name')
         context['total_peps'] = context['peps'].count()
         context['verified_x_count'] = context['peps'].filter(x_verified=True).count()
         context['verified_fb_count'] = context['peps'].filter(facebook_verified=True).count()
         context['last_pep_sync'] = PEP.objects.aggregate(last=Max('last_updated'))['last']
         context['active_tab'] = 'peps'
-        return context
+        return context        
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
