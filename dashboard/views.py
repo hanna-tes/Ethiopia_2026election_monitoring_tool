@@ -1577,8 +1577,34 @@ class LexiconManagementView(TemplateView):
     def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
         
-        if action == 'add_term':
-            # ✅ User-added term: save to DB
+        #  Handle Edit Term
+        if action == 'edit_term':
+            term_id = request.POST.get('term_id')
+            if term_id:
+                try:
+                    obj = LexiconTerm.objects.get(id=term_id)
+                    obj.term = request.POST.get('term', obj.term)
+                    obj.category = request.POST.get('category', obj.category)
+                    obj.severity = request.POST.get('severity', obj.severity)
+                    obj.target_entity = request.POST.get('target_entity', '')
+                    obj.language = request.POST.get('language', 'english')
+                    obj.save()
+                    messages.success(request, "✅ Term updated successfully!")
+                except LexiconTerm.DoesNotExist:
+                    messages.error(request, "❌ Term not found.")
+        
+        # Handle Delete Term
+        elif action == 'delete_term':
+            term_id = request.POST.get('term_id')
+            if term_id:
+                try:
+                    LexiconTerm.objects.filter(id=term_id).delete()
+                    messages.success(request, "✅ Term deleted successfully.")
+                except Exception as e:
+                    messages.error(request, f"❌ Error: {e}")
+
+        # Handle Add Term 
+        elif action == 'add_term':
             term = request.POST.get('term')
             if term:
                 LexiconTerm.objects.get_or_create(
@@ -1593,15 +1619,15 @@ class LexiconManagementView(TemplateView):
                 )
                 messages.success(request, "✅ Term added successfully!")
         
+        #  Handle Scan Text 
         elif action == 'scan_text':
-            # ✅ Hybrid detection: lexicon + LLM
             text = request.POST.get('scan_text', '').strip()
             if text and len(text) > 10:
                 # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
                 
-                # 2. LLM-based detection (single word/phrase focus)
+                # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm(text)
                 
                 # 3. Combine results
