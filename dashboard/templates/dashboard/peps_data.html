@@ -7,67 +7,84 @@
         <a href="{% url 'peps' %}" class="text-blue-600 hover:underline text-sm">← Back to PEPs</a>
     </div>
 
-    {% if page_obj %}
+    <!-- Sheet Filter -->
+    {% if sheets and sheets|length > 1 %}
+    <div class="mb-4 flex items-center gap-3">
+        <label class="block text-sm font-medium text-gray-700">Filter by Sheet:</label>
+        <select class="border border-gray-300 rounded px-3 py-2 text-sm" 
+                onchange="window.location.href='?file={{ selected_file }}&sheet='+this.value">
+            {% for s in sheets %}
+            <option value="{{ s }}" {% if selected_sheet == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+        <span class="text-sm text-gray-600">({{ total_records }} records)</span>
+    </div>
+    {% endif %}
+
+    {% if page_obj and page_obj.paginator.count > 0 %}
     <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50">
                 <tr>
-                    <!-- Core Fields -->
                     <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">Full Name</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">Party</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">Region</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">Role</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">Start</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">End</th>
-                    <!-- Dynamic JSON Fields -->
-                    {% if page_obj.0.raw_data %}
-                    {% for key in page_obj.0.raw_data.keys %}
-                    {% if key not in 'id|full_name|first_name|last_name|name_amharic|region|gender|party_id|Party Name|Abbrv|role|start_date|end_date|is_partisan|membership_type|has_end_date|contest_id|role_id|person_id|name_english|abbrv|title|title_amharic|name|membership_id' %}
-                    <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">{{ key }}</th>
-                    {% endif %}
-                    {% endfor %}
-                    {% endif %}
+                    <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">Sheet</th>
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
                 {% for row in page_obj %}
                 <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 font-medium text-gray-900">{{ row.person_full_name|default:"—" }}</td>
-                    <td class="px-4 py-3">{{ row.party_name_english|default:"—" }}</td>
+                    <td class="px-4 py-3 font-medium text-gray-900">{{ row.person_full_name|default:row.person_id|default:"—" }}</td>
+                    <td class="px-4 py-3">{{ row.party_name_english|default:row.party_id|default:"—" }}</td>
                     <td class="px-4 py-3">{{ row.person_region|default:"—" }}</td>
-                    <td class="px-4 py-3">{{ row.role_title|default:"—" }}</td>
+                    <td class="px-4 py-3">{{ row.role_title|default:row.role_id|default:"—" }}</td>
                     <td class="px-4 py-3">{{ row.start_date|default:"—" }}</td>
                     <td class="px-4 py-3">{{ row.end_date|default:"—" }}</td>
-                    
-                    {% if row.raw_data %}
-                    {% for key, value in row.raw_data.items %}
-                    {% if key not in 'id|full_name|first_name|last_name|name_amharic|region|gender|party_id|Party Name|Abbrv|role|start_date|end_date|is_partisan|membership_type|has_end_date|contest_id|role_id|person_id|name_english|abbrv|title|title_amharic|name|membership_id' %}
-                    <td class="px-4 py-3 text-gray-600">{{ value|default:"—" }}</td>
-                    {% endif %}
-                    {% endfor %}
-                    {% endif %}
+                    <td class="px-4 py-3 text-xs text-gray-500">{{ row.source_sheet|default:"—" }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
+    <!-- Pagination -->
     {% if page_obj.paginator.num_pages > 1 %}
     <div class="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
-        <div class="text-sm text-gray-700">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+        <div class="text-sm text-gray-700">
+            Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }} records
+        </div>
         <div class="flex gap-1">
             {% if page_obj.has_previous %}
-            <a href="?file={{ selected_file }}&sheet={{ request.GET.sheet }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Prev</a>
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.previous_page_number }}" 
+               class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Prev</a>
             {% endif %}
+            <span class="px-3 py-1 text-sm text-gray-600">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
             {% if page_obj.has_next %}
-            <a href="?file={{ selected_file }}&sheet={{ request.GET.sheet }}&page={{ page_obj.next_page_number }}" class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next</a>
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.next_page_number }}" 
+               class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next</a>
             {% endif %}
         </div>
     </div>
     {% endif %}
 
     {% else %}
-    <p class="text-gray-500 italic">No records found. Run <code>python manage.py load_election_data media/peps</code> first.</p>
+    <div class="text-center py-12">
+        <p class="text-gray-500 text-lg mb-2">No records found</p>
+        <p class="text-gray-400 text-sm">
+            {% if total_records == 0 %}
+                Run <code class="bg-gray-100 px-2 py-1 rounded">python manage.py load_election_data media/peps</code> to import data
+            {% else %}
+                Try selecting a different sheet or check your filters
+            {% endif %}
+        </p>
+        {% if total_records > 0 %}
+        <p class="text-sm text-gray-500 mt-2">Total records in database: {{ total_records }}</p>
+        {% endif %}
+    </div>
     {% endif %}
 </div>
 {% endblock %}
