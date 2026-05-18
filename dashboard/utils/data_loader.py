@@ -2,27 +2,34 @@ import pandas as pd
 import requests
 import re
 from io import StringIO
+from datetime import datetime
+from django.utils import timezone
 
 def parse_timestamp_robust(timestamp):
     """
     Standardizes various timestamp formats found in Meltwater, 
-    TikTok, and OpenMeasure exports.
+    TikTok, and OpenMeasure exports. Ensures timezone-aware output 
+    to prevent Django USE_TZ warnings.
     """
-    if pd.isna(timestamp) or str(timestamp).strip() == "":
-        return pd.NaT
+    if pd.isna(timestamp) or timestamp is None or str(timestamp).strip() == "":
+        return None
     
-    # Remove 'GMT' artifacts common in social media exports
+    # If already a datetime object, ensure it's timezone-aware
+    if isinstance(timestamp, datetime):
+        return timestamp if timezone.is_aware(timestamp) else timezone.make_aware(timestamp)
+    
     ts_str = re.sub(r'\s+GMT$', '', str(timestamp).strip(), flags=re.IGNORECASE)
     
     # Try standard pandas parsing first
     try:
         parsed = pd.to_datetime(ts_str, errors='coerce', utc=True)
-        if pd.notna(parsed): 
-            return parsed
+        if pd.notna(parsed):
+            dt = parsed.to_pydatetime()
+            return dt if timezone.is_aware(dt) else timezone.make_aware(dt)
     except: 
         pass
     
-    # Fallback to specific formats if standard parsing fails
+    # Fallback to specific formats
     formats = [
         '%Y-%m-%d %H:%M:%S', 
         '%Y-%m-%d %H:%M', 
@@ -34,12 +41,13 @@ def parse_timestamp_robust(timestamp):
     for fmt in formats:
         try:
             parsed = pd.to_datetime(ts_str, format=fmt, errors='coerce', utc=True)
-            if pd.notna(parsed): 
-                return parsed
+            if pd.notna(parsed):
+                dt = parsed.to_pydatetime()
+                return dt if timezone.is_aware(dt) else timezone.make_aware(dt)
         except: 
             continue
             
-    return pd.NaT
+    return None
 
 def load_data_robustly(file_path, original_name=None):
     """
@@ -47,16 +55,14 @@ def load_data_robustly(file_path, original_name=None):
     as well as standard UTF-8 CSVs.
     """
     # Attempt 1: Try Meltwater Style (UTF-16, Tab Separated)
-    # Based on your shared logic: encoding='utf-16', sep='\t'
     try:
         df = pd.read_csv(file_path, encoding='utf-16', sep='\t', low_memory=False, on_bad_lines='skip')
-        # If we successfully got more than one column, it worked!
         if len(df.columns) > 1:
             if original_name:
                 print(f"✅ Loaded {original_name} as Meltwater (UTF-16/Tab)")
             return df
     except Exception:
-        pass # Try next method
+        pass 
 
     # Attempt 2: Try Standard CSV (UTF-8)
     try:
@@ -83,12 +89,12 @@ def load_data_robustly(file_path, original_name=None):
         return pd.DataFrame()
 
 def load_peps_from_github(csv_url):
-    """Load PEPs from GitHub CSV (skips title row)."""
+    """Load PEPs from GitHub CSV (skips title row to avoid header mismatch)."""
     try:
         resp = requests.get(csv_url, timeout=30)
         resp.raise_for_status()
         lines = resp.text.split('\n')
-        # Standard cleaning: remove empty lines and join
+        # Skip row 0 (title/metadata), keep headers + data
         content = '\n'.join([line for line in lines[1:] if line.strip()])
         df = pd.read_csv(StringIO(content))
         return df.to_dict('records')
