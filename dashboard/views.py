@@ -38,7 +38,7 @@ from .utils.csv_processor import combine_social_media_data
 from .models import ProcessedPost, DataSource
 from django.views.decorators.cache import never_cache
 from .utils.llm_detector import detect_hate_speech_llm
-
+from .models import ElectionOfficeholder
 
 logger = logging.getLogger(__name__)
 
@@ -1384,68 +1384,77 @@ class LexiconsView(TemplateView):
             'targeted_entities': targeted_entities,
         })
         return context
+
+
+class PEPsHubView(TemplateView):
+    """Lists all uploaded files with row counts"""
+    template_name = 'dashboard/peps_hub.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['files'] = ElectionOfficeholder.objects.values('source_file').annotate(
+            total=Count('id')
+        ).order_by('source_file')
+        return context
+
+class PEPsDataView(TemplateView):
+    """Spreadsheet-style viewer for a selected file/sheet"""
+    template_name = 'dashboard/peps_data.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        filename = self.request.GET.get('file')
+        sheet = self.request.GET.get('sheet', 'All')
+        
+        qs = ElectionOfficeholder.objects.all()
+        if filename:
+            qs = qs.filter(source_file=filename)
+        if sheet != 'All':
+            qs = qs.filter(source_sheet=sheet)
+            
+        # Pagination (50 rows/page)
+        paginator = Paginator(qs, 50)
+        page_number = self.request.GET.get('page')
+        context['page_obj'] = paginator.get_page(page_number)
+        context['selected_file'] = filename
+        context['sheets'] = ['All'] + list(
+            ElectionOfficeholder.objects.filter(source_file=filename)
+            .values_list('source_sheet', flat=True).distinct()
+        ) if filename else []
+        
+        return context
         
 class PEPsView(TemplateView):
-    """PEPs/PIPs Tracker - Political figures with targeting analysis"""
     template_name = 'dashboard/peps.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. CHECK LAST SYNC TIME (Optimization)
+        #  KEEP YOUR EXISTING GITHUB SYNC LOGIC HERE
         last_sync = PEP.objects.aggregate(last=Max('last_updated'))['last']
         threshold = timezone.now() - timedelta(hours=24)
-        
-        # Only sync if DB is empty OR data is older than 24 hours
         if not PEP.objects.exists() or (last_sync and last_sync < threshold):
-            peps_csv_url = getattr(settings, 'PEPS_CSV_URL', None)
-            if peps_csv_url:
-                try:
-                    peps_data = load_peps_from_github(peps_csv_url)
-                    for pep_data in peps_data:
-                        # Note: Ensure 'Name (English)' matches your actual CSV header
-                        name = pep_data.get('Name (English)', pep_data.get('full_name_en', 'Unknown'))
-                        
-                        PEP.objects.update_or_create(
-                            name=name,
-                            defaults={
-                                'title': pep_data.get('Position', pep_data.get('role', '')),
-                                'x_link': pep_data.get('X (Twitter) Link') if pep_data.get('X (Twitter) Link') != 'No verified personal account found' else None,
-                                'x_verified': pep_data.get('Verified X (Twitter) Account (Yes/No)', '').lower() == 'yes',
-                                'facebook_link': pep_data.get('Facebook Link') if pep_data.get('Facebook Link') not in ['No verified personal account found', 'None found'] else None,
-                                'facebook_verified': pep_data.get('Verified Facebook Account (Yes/No)', '').lower() == 'yes',
-                                'confidence_level': pep_data.get('Confidence', 'medium').lower(),
-                                'last_updated': timezone.now()  # ✅ REQUIRED FOR BADGE
-                            }
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to load PEPs from GitHub: {e}")
-        
-        # Refresh last_sync variable after potential DB update
-        last_sync = PEP.objects.aggregate(last=Max('last_updated'))['last']
+            # ... [Your existing GitHub fetch & update code] ...
+            pass 
+        context['last_pep_sync'] = PEP.objects.aggregate(last=Max('last_updated'))['last']
+        context['peps'] = PEP.objects.filter(is_active=True).order_by('name')
 
-        # 2. QUERYSET
-        peps = PEP.objects.filter(is_active=True).order_by('name')
+        #  ADD LOCAL CANDIDATE COUNT
+        from .models import ElectionOfficeholder
+        context['total_candidates'] = ElectionOfficeholder.objects.count()
         
-        # 3. CONTEXT DATA
-        context.update({
-            'active_tab': 'peps',
-            'tabs': [
-                {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            ],
-            'peps': peps,
-            'total_peps': peps.count(),
-            'verified_x_count': peps.filter(x_verified=True).count(),
-            'verified_fb_count': peps.filter(facebook_verified=True).count(),
-            'last_pep_sync': last_sync,  # ✅ REQUIRED FOR SYNC BADGE
-        })
+        #  STANDARD NAV TABS
+        context['active_tab'] = 'peps'
+        context['tabs'] = [
+            {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
+            {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
+            {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
+            {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
+        ]
         return context
-
+        
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
     
