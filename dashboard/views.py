@@ -1390,12 +1390,12 @@ class LexiconsView(TemplateView):
 
 
 class PEPsHubView(TemplateView):
-    """Lists all uploaded files with row counts"""
     template_name = 'dashboard/peps_hub.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['files'] = ElectionOfficeholder.objects.values('source_file').annotate(
+        #  Clear default ordering before distinct() to prevent duplicates
+        context['files'] = ElectionOfficeholder.objects.order_by().values('source_file').annotate(
             total=Count('id')
         ).order_by('source_file')
         return context
