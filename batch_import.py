@@ -19,7 +19,7 @@ def safe_str(val):
     return str(val).strip()
 
 folder = 'media/uploads/social_media'
-print('🚀 Starting High-Yield Batch Import (v7)...')
+print('🚀 Starting High-Yield Adaptive Batch Import (v8)...')
 
 for filename in sorted(os.listdir(folder)):
     if not filename.endswith('.csv'): 
@@ -44,10 +44,29 @@ for filename in sorted(os.listdir(folder)):
         dtype = 'tiktok'
 
     try:
-        # --- EXPLICIT FORMAT HANDLING FOR MELTWATER ---
+        # --- SMART EXPLICIT FORMAT HANDLING FOR MELTWATER ---
         if dtype == 'meltwater':
-            print("  📥 Loading via Meltwater Specifics (utf-16, tab-separated)...")
-            df = pd.read_csv(filepath, encoding='utf-16', sep='\t', low_memory=False, on_bad_lines='skip')
+            df = None
+            # Attempt 1: Try UTF-16 Tab-Separated (Meltwater Excel style)
+            try:
+                df = pd.read_csv(filepath, encoding='utf-16', sep='\t', low_memory=False, on_bad_lines='skip')
+                if len(df.columns) <= 1:
+                    # If it loaded but only found 1 giant column, it's not actually tab-separated
+                    df = None
+                else:
+                    print("  📥 Loaded via Meltwater UTF-16 Tab-Separated settings.")
+            except Exception:
+                df = None
+
+            # Attempt 2: Fallback to standard UTF-8/CSV settings
+            if df is None:
+                try:
+                    df = pd.read_csv(filepath, encoding='utf-8-sig', low_memory=False, on_bad_lines='skip')
+                    print("  📥 Fallback loaded via standard UTF-8 settings.")
+                except Exception:
+                    df = pd.read_csv(filepath, encoding='latin-1', low_memory=False, on_bad_lines='skip')
+                    print("  📥 Fallback loaded via Latin-1 settings.")
+
             mapped_df = map_columns_by_type(df, 'meltwater')
             processed_df = preprocess_dataframe(mapped_df)
         else:
@@ -73,8 +92,6 @@ for filename in sorted(os.listdir(folder)):
             if not text or text.lower() in ['nan', 'none', '']: 
                 dropped_empty += 1
                 continue
-
-            # NOTE: Election Related Relevance Filter Removed Natively 
 
             cid = safe_str(row.get('content_id') or '')
             url = safe_str(row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '')
@@ -102,7 +119,7 @@ for filename in sorted(os.listdir(folder)):
                 platform=str(platform_name).upper() if str(platform_name).lower() == 'x' else str(platform_name).title(),
                 timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
                 source_dataset=source_obj,
-                is_election_related=True, # Hardcoded default verification flag since filter layer removed
+                is_election_related=True, 
                 ingested_at=timezone.now()
             )
             count += 1
