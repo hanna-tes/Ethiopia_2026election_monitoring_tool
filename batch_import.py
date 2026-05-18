@@ -4,28 +4,23 @@ import django
 import pandas as pd
 from django.utils import timezone
 
-# Setup Django
+# 1. Setup Django Context Environment
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'election_monitor.settings')
 django.setup()
 
 from dashboard.models import ProcessedPost, DataSource
-from dashboard.views import (
-    combine_social_media_data,
-    final_preprocess_and_map_columns,
-    preprocess_dataframe,
-    parse_timestamp_robust
-)
+from dashboard.utils.csv_processor import process_uploaded_csv  # Official, unified parser
+from dashboard.utils.data_loader import parse_timestamp_robust
 from dashboard.utils.election_filter import is_election_related
 
-# Helper to safely convert NaN/Floats to empty strings
 def safe_str(val):
     if pd.isna(val) or val is None:
         return ""
     return str(val).strip()
 
 folder = 'media/uploads/social_media'
-print('🚀 Starting Batch Import (v3)...')
+print('🚀 Starting Fully Aligned Batch Import (v5)...')
 
 for filename in sorted(os.listdir(folder)):
     if not filename.endswith('.csv'): 
@@ -35,107 +30,78 @@ for filename in sorted(os.listdir(folder)):
     print(f'\n📂 Processing: {filename}')
 
     name = filename.lower()
-    df = None
+    dtype = 'custom'
 
-    # --- SPECIAL HANDLING FOR BRANDWATCH ---
+    # Set appropriate dtype parameters matching your csv_processor.py rules
     if 'brandwatch' in name or 'hatespeech' in name or 'polarization' in name:
         dtype = 'brandwatch'
-        try:
-            # User's specific loading command
-            df = pd.read_csv(filepath, encoding='utf-8', sep=',', low_memory=False, skiprows=6, on_bad_lines='skip')
-            print(f"  ✅ Loaded Brandwatch (skiprows=6). Shape: {df.shape}")
-        except Exception as e:
-            print(f"  ❌ Brandwatch Load Error: {e}")
-            continue
-
-    # --- STANDARD HANDLING FOR OTHERS ---
-    else:
-        if 'meltwater' in name or 'x.csv' in name: dtype = 'meltwater'
-        elif 'civicsignal' in name or 'media' in name: dtype = 'civicsignal'
-        elif 'openmeasure' in name: dtype = 'openmeasure'
-        elif 'tiktok' in name: dtype = 'tiktok'
-        else: dtype = 'custom'
-
-        # Load with encoding fallback
-        for enc in ['utf-8-sig', 'utf-16', 'latin-1']:
-            try:
-                df = pd.read_csv(filepath, encoding=enc, on_bad_lines='skip', low_memory=False)
-                print(f"  ✅ Loaded with {enc} encoding. Shape: {df.shape}")
-                break
-            except Exception:
-                continue
-        
-        if df is None:
-            print("  ❌ Failed to load any encoding. Skipping.")
-            continue
+    elif 'meltwater' in name or 'x.csv' in name or 'apri2026x' in name: 
+        dtype = 'meltwater'
+    elif 'civicsignal' in name or 'media' in name: 
+        dtype = 'civicsignal'
+    elif 'openmeasure' in name: 
+        dtype = 'openmeasure'
+    elif 'tiktok' in name: 
+        dtype = 'tiktok'
 
     try:
-        # 1. Run Pipeline
-        if dtype in ['meltwater', 'brandwatch']:
-            combined = combine_social_media_data(meltwater_df=df)
-        elif dtype == 'civicsignal':
-            combined = combine_social_media_data(civicsignals_df=df)
-        elif dtype == 'tiktok':
-            combined = combine_social_media_data(tiktok_df=df)
-        elif dtype == 'openmeasure':
-            combined = combine_social_media_data(openmeasures_df=df)
-        else:
-            combined = preprocess_dataframe(df)
-
-        processed = final_preprocess_and_map_columns(combined)
-        print(f"  🔄 Cleaned rows: {len(processed)}")
-
-        if processed.empty:
-            print("  ⚠️ No valid rows after preprocessing.")
+        # 2. Call your official unified entry point
+        # This automatically applies load_brandwatch_data, skip_rows, or encoding rules safely
+        processed_df = process_uploaded_csv(filepath, dtype)
+        
+        if processed_df is None or processed_df.empty:
+            print("  ⚠️ No data parsed by the CSV Processor. Skipping.")
             continue
+            
+        print(f"  🔄 CSV Processor output verified. Clean rows: {len(processed_df)}")
 
-        # 2. FIX FLOAT ERROR: Force all text columns to safe strings
-        for col in ['original_text', 'account_id', 'content_id', 'URL']:
-            if col in processed.columns:
-                processed[col] = processed[col].apply(safe_str)
-
-        if 'timestamp_share' in processed.columns:
-            processed['timestamp_share'] = processed['timestamp_share'].apply(parse_timestamp_robust)
-
-        # 3. Save to DB
+        # 3. Store entries to the data model layer securely
         count = 0
         source_obj, _ = DataSource.objects.get_or_create(name=f"Import_{dtype}_{filename}")
         
-        for _, row in processed.iterrows():
-            text = row.get('original_text', '')
+        for _, row in processed_df.iterrows():
+            # ROBUST FALLBACK: Grab whichever text column label your engine outputted
+            text = safe_str(row.get('object_id') or row.get('original_text') or '')
+            
             if not text or text.lower() in ['nan', 'none', '']: 
                 continue
 
-            # Election Filter
+            # Run Election-Related Verification
             if not is_election_related(text):
                 continue 
 
-            cid = row.get('content_id', '')
-            url = row.get('URL', '')
+            cid = safe_str(row.get('content_id') or '')
+            url = safe_str(row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '')
             
-            # Duplicate Check
+            # Anomaly safety checkpoint
+            if not cid and not url:
+                continue
+
+            # Check for existing records to prevent unique-constraint crashes
             if cid and cid.lower() not in ['nan', 'none', ''] and ProcessedPost.objects.filter(content_id=cid).exists(): 
                 continue
             if url.startswith('http') and ProcessedPost.objects.filter(url=url).exists(): 
                 continue
 
+            platform_name = row.get('platform') or row.get('Platform') or dtype.title()
+
             ProcessedPost.objects.create(
-                account_id=row.get('account_id', '')[:100],
+                account_id=safe_str(row.get('account_id', 'Unknown'))[:100],
                 content_id=cid[:100] if cid else None,
                 original_text=text,
                 url=url[:500] if url.startswith('http') else None,
-                platform=row.get('Platform', dtype.title()),
-                timestamp_share=row.get('timestamp_share'),
+                platform=str(platform_name).upper() if str(platform_name).lower() == 'x' else str(platform_name).title(),
+                timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
                 source_dataset=source_obj,
                 is_election_related=True, 
                 ingested_at=timezone.now()
             )
             count += 1
 
-        print(f"  ✅ Saved {count} posts to DB.")
+        print(f"  ✅ Saved {count} verified posts to your database.")
         
     except Exception as e:
-        print(f"  ❌ Pipeline error: {e}")
+        print(f"  ❌ Import operation pipeline execution failure: {e}")
         import traceback
         traceback.print_exc()
 
