@@ -231,3 +231,26 @@ class SyncSource(models.Model):
         
     def __str__(self):
         return f"{self.name} ({self.get_file_type_display()})"
+
+class ElectionOfficeholder(models.Model):
+    """Stores ID-based membership data from HoPR, RC, Executive Excel files."""
+    membership_id = models.CharField(max_length=100, unique=True, db_index=True)
+    role_id = models.CharField(max_length=255)
+    person_id = models.CharField(max_length=100)
+    party_id = models.CharField(max_length=100)
+    membership_type = models.CharField(max_length=50, default='officeholder')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    is_partisan = models.BooleanField(default=True)
+    has_end_date = models.BooleanField(default=True)
+    contest_id = models.CharField(max_length=255)
+    source_file = models.CharField(max_length=255, db_index=True)  # e.g., "HoPR_Candidates.xlsx"
+    source_sheet = models.CharField(max_length=255, db_index=True, default='All')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['role_id', 'party_id']
+        indexes = [models.Index(fields=['source_file', 'source_sheet'])]
+
+    def __str__(self):
+        return f"{self.person_id} | {self.role_id} | {self.party_id}"
