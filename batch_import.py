@@ -150,11 +150,18 @@ for filename in sorted(os.listdir(folder)):
             # Platform normalization
             plat = row.get('platform') or row.get('Platform') or dtype.title()
             plat_lower = str(plat).lower()
-            if plat_lower in ['twitter', 'x', 'x.com']: plat = 'X'
-            elif plat_lower == 'tiktok': plat = 'TikTok'
-            elif plat_lower == 'facebook': plat = 'Facebook'
-            elif plat_lower == 'instagram': plat = 'Instagram'
-            elif plat_lower == 'telegram': plat = 'Telegram'
+            if plat_lower in ['twitter', 'x', 'x.com', 't.co']: 
+                plat = 'X'
+            elif plat_lower in ['tiktok', 'tik tok', 'tik-tok']: 
+                plat = 'TikTok'
+            elif plat_lower in ['facebook', 'fb', 'fb.watch', 'facebook.com']: 
+                plat = 'Facebook'
+            elif plat_lower in ['instagram', 'insta', 'ig']: 
+                plat = 'Instagram'
+            elif plat_lower in ['telegram', 'tg', 't.me']: 
+                plat = 'Telegram'
+            elif plat_lower in ['youtube', 'yt', 'youtu.be']: 
+                plat = 'YouTube'
 
             ProcessedPost.objects.create(
                 account_id=safe_str(row.get('account_id', 'Unknown'))[:100],
