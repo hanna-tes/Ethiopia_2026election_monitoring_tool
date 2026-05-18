@@ -2,6 +2,7 @@ import os
 import sys
 import django
 import pandas as pd
+import hashlib
 from django.utils import timezone
 
 # 1. Setup Django Context Environment
@@ -18,8 +19,41 @@ def safe_str(val):
         return ""
     return str(val).strip()
 
+def map_brandwatch_columns(df):
+    """Explicitly map Brandwatch export columns to our standard schema."""
+    mapped = pd.DataFrame()
+    
+    # Account ID: Prefer Author, fallback to Full Name
+    mapped['account_id'] = df.get('Author', df.get('Full Name', pd.Series(dtype='object'))).astype(str).str.strip().replace('nan', '')
+    
+    # Original Text: Prefer Full Text, fallback to Title
+    mapped['original_text'] = df.get('Full Text', df.get('Title', pd.Series(dtype='object'))).astype(str).str.strip().replace('nan', '')
+    
+    # URL & Timestamp
+    mapped['URL'] = df.get('Url', pd.Series(dtype='object'))
+    mapped['timestamp_share'] = df.get('Date', pd.Series(dtype='object'))
+    
+    # Platform Mapping
+    page_type = df.get('Page Type', pd.Series(dtype='object')).astype(str).str.lower()
+    platform_map = {
+        'twitter': 'X', 'x': 'X', 'facebook': 'Facebook', 'instagram': 'Instagram',
+        'tiktok': 'TikTok', 'youtube': 'YouTube', 'linkedin': 'LinkedIn', 'reddit': 'Reddit'
+    }
+    mapped['Platform'] = page_type.map(platform_map).fillna('X')  # Default to X for unclear types
+    
+    # Content ID fallback chain
+    mapped['content_id'] = df.get('Resource Id', df.get('Mention Id', mapped['URL']))
+    # Hash fallback for missing IDs
+    mask = mapped['content_id'].isna() | (mapped['content_id'] == '') | (mapped['content_id'] == 'nan')
+    if mask.any():
+        mapped.loc[mask, 'content_id'] = mapped.loc[mask, 'URL'].apply(
+            lambda x: hashlib.md5(str(x).encode()).hexdigest()[:16] if pd.notna(x) and str(x).strip() != '' else None
+        )
+        
+    return mapped
+
 folder = 'media/uploads/social_media'
-print('🚀 Starting High-Yield Adaptive Batch Import (v8)...')
+print('🚀 Starting High-Yield Adaptive Batch Import (v9)...')
 
 for filename in sorted(os.listdir(folder)):
     if not filename.endswith('.csv'): 
@@ -44,33 +78,37 @@ for filename in sorted(os.listdir(folder)):
         dtype = 'tiktok'
 
     try:
-        # --- SMART EXPLICIT FORMAT HANDLING FOR MELTWATER ---
+        # --- SMART EXPLICIT FORMAT HANDLING ---
         if dtype == 'meltwater':
             df = None
-            # Attempt 1: Try UTF-16 Tab-Separated (Meltwater Excel style)
-            try:
-                df = pd.read_csv(filepath, encoding='utf-16', sep='\t', low_memory=False, on_bad_lines='skip')
-                if len(df.columns) <= 1:
-                    # If it loaded but only found 1 giant column, it's not actually tab-separated
-                    df = None
-                else:
-                    print("  📥 Loaded via Meltwater UTF-16 Tab-Separated settings.")
-            except Exception:
-                df = None
-
-            # Attempt 2: Fallback to standard UTF-8/CSV settings
-            if df is None:
+            for enc, sep in [('utf-16', '\t'), ('utf-8-sig', ','), ('latin-1', ',')]:
                 try:
-                    df = pd.read_csv(filepath, encoding='utf-8-sig', low_memory=False, on_bad_lines='skip')
-                    print("  📥 Fallback loaded via standard UTF-8 settings.")
-                except Exception:
-                    df = pd.read_csv(filepath, encoding='latin-1', low_memory=False, on_bad_lines='skip')
-                    print("  📥 Fallback loaded via Latin-1 settings.")
+                    temp = pd.read_csv(filepath, encoding=enc, sep=sep, low_memory=False, on_bad_lines='skip')
+                    if len(temp.columns) > 1:
+                        df = temp
+                        print(f"  📥 Loaded via {enc}/{sep} settings.")
+                        break
+                except: continue
+                
+            if df is not None:
+                mapped_df = map_columns_by_type(df, 'meltwater')
+                processed_df = preprocess_dataframe(mapped_df)
+            else:
+                processed_df = pd.DataFrame()
 
-            mapped_df = map_columns_by_type(df, 'meltwater')
-            processed_df = preprocess_dataframe(mapped_df)
+        elif dtype == 'brandwatch':
+            try:
+                # Brandwatch exports have 6 rows of metadata before the actual header
+                df = pd.read_csv(filepath, encoding='utf-8', skiprows=6, low_memory=False, on_bad_lines='skip')
+                processed_df = map_brandwatch_columns(df)
+                processed_df = processed_df[processed_df['original_text'].str.len() > 10]  # Filter noise/empty rows
+                print("  📥 Loaded & mapped Brandwatch export.")
+            except Exception as e:
+                print(f"  ❌ Brandwatch mapping failed: {e}")
+                processed_df = pd.DataFrame()
+
         else:
-            # Fallback to standard validation wrappers for non-Meltwater trackers
+            # Fallback to standard validation wrappers for other trackers
             processed_df = process_uploaded_csv(filepath, dtype)
         
         if processed_df is None or processed_df.empty:
@@ -79,7 +117,7 @@ for filename in sorted(os.listdir(folder)):
             
         print(f"  🔄 CSV Pipeline Output Verified. Total clean rows parsed: {len(processed_df)}")
 
-        # Drop metrics tracker tracking variables
+        # --- DB INSERTION ---
         dropped_empty = 0
         dropped_duplicate = 0
         count = 0
@@ -94,7 +132,7 @@ for filename in sorted(os.listdir(folder)):
                 continue
 
             cid = safe_str(row.get('content_id') or '')
-            url = safe_str(row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '')
+            url = safe_str(row.get('url') or row.get('URL') or row.get('link') or '')
             
             # Anomaly content checkpoint
             if not cid and not url:
@@ -109,14 +147,21 @@ for filename in sorted(os.listdir(folder)):
                 dropped_duplicate += 1
                 continue
 
-            platform_name = row.get('platform') or row.get('Platform') or dtype.title()
+            # Platform normalization
+            plat = row.get('platform') or row.get('Platform') or dtype.title()
+            plat_lower = str(plat).lower()
+            if plat_lower in ['twitter', 'x', 'x.com']: plat = 'X'
+            elif plat_lower == 'tiktok': plat = 'TikTok'
+            elif plat_lower == 'facebook': plat = 'Facebook'
+            elif plat_lower == 'instagram': plat = 'Instagram'
+            elif plat_lower == 'telegram': plat = 'Telegram'
 
             ProcessedPost.objects.create(
                 account_id=safe_str(row.get('account_id', 'Unknown'))[:100],
                 content_id=cid[:100] if cid else None,
                 original_text=text,
                 url=url[:500] if url.startswith('http') else None,
-                platform=str(platform_name).upper() if str(platform_name).lower() == 'x' else str(platform_name).title(),
+                platform=str(plat).title(),
                 timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
                 source_dataset=source_obj,
                 is_election_related=True, 
