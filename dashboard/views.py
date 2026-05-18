@@ -1510,18 +1510,26 @@ class LexiconManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
+        # Load lexicon terms from DB (user-added + CONFIG defaults)
         lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
+        # If DB is empty, seed from CONFIG (one-time migration)
         if not lexicon_terms.exists():
             for category, terms in CONFIG['lexicon'].items():
                 for term, metadata in terms.items():
-                    LexiconTerm.objects.get_or_create(term=term, defaults={
-                        'category': category, 'severity': metadata.get('severity', 'medium'),
-                        'target_entity': metadata.get('target_entity', ''),
-                        'language': metadata.get('language', 'english'), 'is_election_related': True
-                    })
+                    LexiconTerm.objects.get_or_create(
+                        term=term,
+                        defaults={
+                            'category': category,
+                            'severity': metadata.get('severity', 'medium'),
+                            'target_entity': metadata.get('target_entity', ''),
+                            'language': metadata.get('language', 'english'),
+                            'is_election_related': True
+                        }
+                    )
             lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
+        # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
         
         # Get scan results from session (if any) and clear immediately
@@ -1550,28 +1558,33 @@ class LexiconManagementView(TemplateView):
         action = request.POST.get('action')
         
         if action == 'add_term':
+            # ✅ User-added term: save to DB
             term = request.POST.get('term')
             if term:
-                LexiconTerm.objects.get_or_create(term=term, defaults={
-                    'category': request.POST.get('category', 'uncategorized'),
-                    'severity': request.POST.get('severity', 'medium'),
-                    'target_entity': request.POST.get('target_entity', ''),
-                    'language': request.POST.get('language', 'english'),
-                    'is_election_related': True,
-                })
+                LexiconTerm.objects.get_or_create(
+                    term=term,
+                    defaults={
+                        'category': request.POST.get('category', 'uncategorized'),
+                        'severity': request.POST.get('severity', 'medium'),
+                        'target_entity': request.POST.get('target_entity', ''),
+                        'language': request.POST.get('language', 'english'),
+                        'is_election_related': True,
+                    }
+                )
                 messages.success(request, "✅ Term added successfully!")
         
         elif action == 'scan_text':
+            # ✅ Hybrid detection: lexicon + LLM
             text = request.POST.get('scan_text', '').strip()
             if text and len(text) > 10:
                 # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
                 
-                # 2. LLM-based detection
+                # 2. LLM-based detection (single word/phrase focus)
                 llm_result = detect_hate_speech_llm(text)
                 
-                # 3. Combine & decide
+                # 3. Combine results
                 is_hate_speech = (
                     lexicon_risk['score'] > 0 or 
                     (llm_result.get('is_hate_speech', False) and llm_result.get('confidence', 0) > 0.6)
