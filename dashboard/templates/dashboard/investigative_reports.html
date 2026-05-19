@@ -1,0 +1,218 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}Investigative Analysis Reports - Ethiopia Election Monitor{% endblock %}
+
+{% block content %}
+<!-- Header Section -->
+<div class="mb-8">
+    <div class="flex justify-between items-start mb-4">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">📑 Investigative Analysis Reports</h1>
+            <p class="text-gray-600">Investigative analysis reports of election monitoring documents</p>
+        </div>
+        <div class="text-right">
+            <div class="text-sm text-gray-500 mb-1">Total Reports</div>
+            <div class="text-3xl font-bold text-blue-600">{{ stats.total }}</div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div class="text-sm text-gray-500 mb-1">📊 Total Reports</div>
+            <div class="text-2xl font-bold text-gray-900">{{ stats.total }}</div>
+        </div>
+        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div class="text-sm text-gray-500 mb-1">🔴 Critical Risk</div>
+            <div class="text-2xl font-bold text-red-600">{{ stats.critical }}</div>
+        </div>
+        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div class="text-sm text-gray-500 mb-1">🟠 High Risk</div>
+            <div class="text-2xl font-bold text-orange-600">{{ stats.high }}</div>
+        </div>
+        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <div class="text-sm text-gray-500 mb-1">📅 This Month</div>
+            <div class="text-2xl font-bold text-blue-600">{{ stats.this_month }}</div>
+        </div>
+    </div>
+</div>
+
+{% if reports %}
+<!-- Reports Grid -->
+<div class="space-y-6">
+    {% for report in reports %}
+    <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow">
+        <!-- Report Header -->
+        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 border-b border-blue-100">
+            <div class="flex justify-between items-start mb-3">
+                <div class="flex items-center gap-3">
+                    <span class="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded-full">{{ report.report_type }}</span>
+                    {% if report.risk_level == 'critical' %}
+                    <span class="px-3 py-1 bg-red-600 text-white text-xs font-semibold rounded-full animate-pulse">🔴 Critical Risk</span>
+                    {% elif report.risk_level == 'high' %}
+                    <span class="px-3 py-1 bg-orange-600 text-white text-xs font-semibold rounded-full">🟠 High Risk</span>
+                    {% elif report.risk_level == 'medium' %}
+                    <span class="px-3 py-1 bg-yellow-500 text-white text-xs font-semibold rounded-full">🟡 Medium Risk</span>
+                    {% else %}
+                    <span class="px-3 py-1 bg-green-500 text-white text-xs font-semibold rounded-full">🟢 Low Risk</span>
+                    {% endif %}
+                </div>
+                <span class="text-sm text-gray-500">{{ report.uploaded_at|date:"M d, Y" }}</span>
+            </div>
+            
+            <h2 class="text-2xl font-bold text-gray-900 mb-2">{{ report.title }}</h2>
+            
+            <div class="flex items-center gap-4 text-sm text-gray-600">
+                <span class="flex items-center gap-1">
+                    👤 {{ report.source_analyst }}
+                </span>
+                <span>•</span>
+                <span>📄 {{ report.extracted_text|length|default:0 }} characters extracted</span>
+            </div>
+        </div>
+
+        <!-- Report Content -->
+        <div class="p-6 space-y-6">
+            <!-- Executive Summary -->
+            {% if report.summary %}
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                <h3 class="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                    📋 Executive Summary
+                </h3>
+                <p class="text-gray-800 leading-relaxed">{{ report.summary }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Key Sections Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Key Findings -->
+                {% if report.key_findings %}
+                <div class="bg-gradient-to-br from-blue-50 to-white border border-blue-200 rounded-lg p-5">
+                    <h3 class="text-lg font-bold text-blue-900 mb-3 flex items-center gap-2">
+                        🔑 Key Findings
+                    </h3>
+                    <ul class="space-y-2">
+                        {% for finding in report.key_findings %}
+                        <li class="flex items-start gap-2 text-sm text-gray-700">
+                            <span class="text-blue-500 mt-1">•</span>
+                            <span>{{ finding }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- Weaponised Narratives -->
+                {% if report.weaponised_narratives %}
+                <div class="bg-gradient-to-br from-red-50 to-white border border-red-200 rounded-lg p-5">
+                    <h3 class="text-lg font-bold text-red-900 mb-3 flex items-center gap-2">
+                        🎯 Weaponised Narratives
+                    </h3>
+                    <ul class="space-y-2">
+                        {% for narrative in report.weaponised_narratives %}
+                        <li class="flex items-start gap-2 text-sm text-gray-700">
+                            <span class="text-red-500 mt-1">⚠️</span>
+                            <span>{{ narrative }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- Actor Spotlight -->
+                {% if report.actor_spotlight %}
+                <div class="bg-gradient-to-br from-orange-50 to-white border border-orange-200 rounded-lg p-5">
+                    <h3 class="text-lg font-bold text-orange-900 mb-3 flex items-center gap-2">
+                        👤 Actor Spotlight
+                    </h3>
+                    <ul class="space-y-2">
+                        {% for actor in report.actor_spotlight %}
+                        <li class="flex items-start gap-2 text-sm text-gray-700">
+                            <span class="text-orange-500 mt-1">🔍</span>
+                            <span>{{ actor }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- TTP & Infrastructure -->
+                {% if report.ttp_infrastructure %}
+                <div class="bg-gradient-to-br from-purple-50 to-white border border-purple-200 rounded-lg p-5">
+                    <h3 class="text-lg font-bold text-purple-900 mb-3 flex items-center gap-2">
+                        ⚙️ TTP & Infrastructure
+                    </h3>
+                    <ul class="space-y-2">
+                        {% for ttp in report.ttp_infrastructure %}
+                        <li class="flex items-start gap-2 text-sm text-gray-700">
+                            <span class="text-purple-500 mt-1">🔗</span>
+                            <span>{{ ttp }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Mentioned Entities -->
+            {% if report.mentioned_entities %}
+            <div>
+                <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    👥 Mentioned Entities
+                </h3>
+                <div class="flex flex-wrap gap-2">
+                    {% for entity in report.mentioned_entities %}
+                    <span class="px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full border border-gray-300 hover:bg-gray-200 transition-colors">
+                        {{ entity }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Document Preview (Collapsible) -->
+            {% if report.extracted_text %}
+            <details class="border border-gray-200 rounded-lg overflow-hidden">
+                <summary class="cursor-pointer bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-100 flex items-center gap-2 list-none">
+                    <span class="transition-transform group-open/details:rotate-90">▶</span>
+                    📄 Full Document Preview ({{ report.extracted_text|length }} characters)
+                </summary>
+                <div class="p-4 bg-white max-h-96 overflow-y-auto text-sm text-gray-600 whitespace-pre-wrap font-mono leading-relaxed">
+                    {{ report.extracted_text }}
+                </div>
+            </details>
+            {% endif %}
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3 pt-4 border-t border-gray-200">
+                <a href="/admin/dashboard/monitoringreport/{{ report.id }}/change/" target="_blank" 
+                   class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                    ✏️ Edit Insights
+                </a>
+                <button onclick="window.print()" 
+                        class="inline-flex items-center gap-2 px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors">
+                    🖨️ Print Report
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="text-center py-16 bg-gradient-to-br from-gray-50 to-blue-50 rounded-2xl border-2 border-dashed border-gray-300">
+    <div class="text-6xl mb-4">📑</div>
+    <h3 class="text-2xl font-bold text-gray-800 mb-2">No Reports Yet</h3>
+    <p class="text-gray-600 mb-6">Upload your first investigative analysis report</p>
+    <div class="bg-white rounded-lg p-4 max-w-lg mx-auto text-left">
+        <p class="text-sm font-semibold text-gray-700 mb-2">Upload via terminal:</p>
+        <code class="text-xs bg-gray-100 p-2 rounded block overflow-x-auto">
+            python manage.py upload_report /path/to/report.pdf \<br>
+            &nbsp;&nbsp;--title "Report Title" \<br>
+            &nbsp;&nbsp;--analyst "Your Name" \<br>
+            &nbsp;&nbsp;--type Investigative
+        </code>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
