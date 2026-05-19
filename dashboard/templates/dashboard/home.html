@@ -2,7 +2,7 @@
 {% block title %}Home - Ethiopia Election Monitor{% endblock %}
 
 {% block content %}
-<!-- Post-Upload Summary (Shows after recent uploads) -->
+<!-- Post-Upload Summary -->
 {% if upload_summary.show %}
 <div class="bg-green-50 border border-green-200 rounded-xl p-6 mb-6 shadow-sm">
     <h2 class="text-lg font-bold text-green-800 mb-2">✅ Upload Complete!</h2>
@@ -112,7 +112,7 @@
 </div>
 {% endif %}
 
-<!-- ✅ NEW: Risk Actors Insight Card -->
+<!-- ✅ NEW: Risk Actors Insight Card (Relaxed Criteria) -->
 <div class="bg-white rounded-xl shadow-sm p-6 border border-red-100 mb-8">
     <div class="flex items-center gap-2 mb-4">
         <span class="text-2xl">⚠️</span>
@@ -133,7 +133,7 @@
                 </span>
             </div>
             <div class="text-xs text-gray-500 mb-1">
-                🌐 {{ actor.platforms }} | 📅 Last seen: {{ actor.last_seen }}
+                🌐 {{ actor.platforms }} | 📅 Last seen: {{ actor.last_seen }} | 🎯 {{ actor.risk_level|title }}
             </div>
             <p class="text-xs text-gray-700 italic line-clamp-2">
                 "{{ actor.recent_content }}"
@@ -142,7 +142,30 @@
         {% endfor %}
     </div>
     {% else %}
-    <p class="text-gray-500 text-sm italic">No high-risk actors detected in current filters.</p>
+    <p class="text-gray-500 text-sm italic">No accounts with medium+ risk posts in current filters. Try expanding your date range.</p>
+    {% endif %}
+</div>
+
+<!-- ✅ NEW: Top Hashtags Insight Card -->
+<div class="bg-white rounded-xl shadow-sm p-6 border border-purple-100 mb-8">
+    <div class="flex items-center gap-2 mb-4">
+        <span class="text-2xl">#️⃣</span>
+        <h3 class="text-lg font-bold text-gray-800">Trending Hashtags</h3>
+        <span class="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded border border-purple-200">
+            Top {{ top_hashtags|length }}
+        </span>
+    </div>
+    
+    {% if top_hashtags %}
+    <div class="flex flex-wrap gap-2">
+        {% for tag in top_hashtags %}
+        <span class="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-medium border border-purple-200 hover:bg-purple-100 transition-colors">
+            #{{ tag.tag }} <span class="text-xs text-purple-500 ml-1">({{ tag.count }})</span>
+        </span>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 text-sm italic">No hashtags found in current dataset. Hashtags are extracted from post text (#Ethiopia, #Election2026, etc.).</p>
     {% endif %}
 </div>
 
