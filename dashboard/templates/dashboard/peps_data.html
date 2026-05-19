@@ -7,7 +7,6 @@
         <a href="{% url 'peps' %}" class="text-blue-600 hover:underline text-sm">← Back to PEPs</a>
     </div>
 
-    <!-- Sheet Filter -->
     {% if sheets and sheets|length > 1 %}
     <div class="mb-4 flex items-center gap-3">
         <label class="block text-sm font-medium text-gray-700">Filter by Sheet:</label>
@@ -22,54 +21,28 @@
     {% endif %}
 
     {% if page_obj and page_obj.paginator.count > 0 %}
-    
-    <!-- Debug Info (remove after testing) -->
-    {% if not has_raw_data %}
-    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 text-sm text-yellow-800">
-        <strong>⚠️ Debug:</strong> raw_data is empty for these records. Showing model fields instead.
-        {% if sample_keys %}
-        <br>Sample raw_data keys: {{ sample_keys|join:", " }}
-        {% endif %}
-        {% if model_fields %}
-        <br>Available model fields: {{ model_fields|join:", " }}
-        {% endif %}
-    </div>
-    {% endif %}
-
     <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50">
                 <tr>
-                    {% if has_raw_data and page_obj.0.raw_data %}
-                        <!-- Dynamic headers from raw_data -->
-                        {% for key in page_obj.0.raw_data.keys %}
-                            {% if key not in 'source_file|source_sheet' %}
-                            <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">{{ key|title }}</th>
-                            {% endif %}
-                        {% endfor %}
-                    {% else %}
-                        <!-- Fallback: Show model fields -->
-                        {% for field in model_fields %}
-                        <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase">{{ field|title }}</th>
-                        {% endfor %}
+                    {% if page_obj.0.raw_data %}
+                    {% for key in page_obj.0.raw_data.keys %}
+                        {% if key %}
+                        <th class="px-4 py-3 text-left font-medium text-gray-500 uppercase whitespace-nowrap">{{ key|title }}</th>
+                        {% endif %}
+                    {% endfor %}
                     {% endif %}
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
                 {% for row in page_obj %}
                 <tr class="hover:bg-gray-50">
-                    {% if has_raw_data and row.raw_data %}
-                        <!-- Dynamic data from raw_data -->
-                        {% for key, value in row.raw_data.items %}
-                            {% if key not in 'source_file|source_sheet' %}
-                            <td class="px-4 py-3">{{ value|default:"—" }}</td>
-                            {% endif %}
-                        {% endfor %}
-                    {% else %}
-                        <!-- Fallback: Show model field values -->
-                        {% for field in model_fields %}
-                        <td class="px-4 py-3">{{ row|get_attr:field|default:"—" }}</td>
-                        {% endfor %}
+                    {% if row.raw_data %}
+                    {% for key, value in row.raw_data.items %}
+                        {% if key %}
+                        <td class="px-4 py-3 whitespace-nowrap text-gray-700">{{ value|default:"—" }}</td>
+                        {% endif %}
+                    {% endfor %}
                     {% endif %}
                 </tr>
                 {% endfor %}
@@ -77,37 +50,21 @@
         </table>
     </div>
 
-    <!-- Pagination -->
     {% if page_obj.paginator.num_pages > 1 %}
     <div class="mt-4 flex items-center justify-between border-t border-gray-200 pt-4">
-        <div class="text-sm text-gray-700">
-            Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }} records
-        </div>
+        <div class="text-sm text-gray-700">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
         <div class="flex gap-1">
             {% if page_obj.has_previous %}
-            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.previous_page_number }}" 
-               class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Prev</a>
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Prev</a>
             {% endif %}
-            <span class="px-3 py-1 text-sm text-gray-600">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
             {% if page_obj.has_next %}
-            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.next_page_number }}" 
-               class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next</a>
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.next_page_number }}" class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next</a>
             {% endif %}
         </div>
     </div>
     {% endif %}
-
     {% else %}
-    <div class="text-center py-12">
-        <p class="text-gray-500 text-lg mb-2">No records found</p>
-        <p class="text-sm text-gray-400">
-            {% if total_records == 0 %}
-                Run <code class="bg-gray-100 px-2 py-1 rounded">python manage.py load_election_data media/peps</code> to import data
-            {% else %}
-                Try selecting a different sheet or check your filters
-            {% endif %}
-        </p>
-    </div>
+    <div class="text-center py-12 text-gray-500">No records found for this selection.</div>
     {% endif %}
 </div>
 {% endblock %}
