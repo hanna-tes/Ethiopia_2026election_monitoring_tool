@@ -17,7 +17,7 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.views.generic import TemplateView, View
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Count, Q, F, Case, When, Value, CharField, Max
+from django.db.models import Count, Q, F, Case, When, Value, CharField, Max, Avg
 from django.utils import timezone
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -1123,20 +1123,18 @@ def get_election_posts_queryset(request):
     return queryset, start_date, end_date
 
 def get_risk_actors_insight(posts_queryset, limit=8):
-    """Identify accounts with medium/high/critical risk posts (relaxed criteria)"""
+    """Identify accounts with medium/high/critical risk posts"""
     risky_accounts = []
     
-    # Aggregate accounts by risk post count - include 'medium' risk for better coverage
+    # Aggregate accounts by risk post count (removed Avg to prevent FieldError)
     account_stats = posts_queryset.filter(
         risk_level__in=['medium', 'high', 'critical']
     ).values('account_id').annotate(
         risk_post_count=Count('id'),
-        latest_risk_post=Max('timestamp_share'),
-        avg_risk_score=Avg('risk_score')  # If you have this field
+        latest_risk_post=Max('timestamp_share')
     ).order_by('-risk_post_count')[:limit]
     
     for acc in account_stats:
-        # Get sample platforms & recent risky content
         sample = posts_queryset.filter(
             account_id=acc['account_id'],
             risk_level__in=['medium', 'high', 'critical']
