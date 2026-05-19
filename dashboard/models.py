@@ -233,50 +233,14 @@ class SyncSource(models.Model):
         return f"{self.name} ({self.get_file_type_display()})"
 
 class ElectionOfficeholder(models.Model):
-    # === CORE IDENTIFIERS ===
-    membership_id = models.CharField(max_length=255, blank=True, null=True)
-    person_id = models.CharField(max_length=255, blank=True, null=True)
-    role_id = models.CharField(max_length=255, blank=True, null=True)
-    party_id = models.CharField(max_length=255, blank=True, null=True)
-    contest_id = models.CharField(max_length=255, blank=True, null=True)
-
-    # === PERSON FIELDS ===
-    person_full_name = models.CharField(max_length=255, blank=True, null=True)
-    person_first_name = models.CharField(max_length=100, blank=True, null=True)
-    person_last_name = models.CharField(max_length=100, blank=True, null=True)
-    person_name_amharic = models.CharField(max_length=255, blank=True, null=True)
-    person_region = models.CharField(max_length=100, blank=True, null=True)
-    person_gender = models.CharField(max_length=20, blank=True, null=True)
-    person_fb_url = models.URLField(blank=True, null=True)
-    person_twitter_url = models.URLField(blank=True, null=True)
-    person_telegram = models.CharField(max_length=100, blank=True, null=True)
-
-    # === PARTY FIELDS ===
-    party_name_english = models.CharField(max_length=255, blank=True, null=True)
-    party_abbrv = models.CharField(max_length=50, blank=True, null=True)
-    party_name_amharic = models.CharField(max_length=255, blank=True, null=True)
-
-    # === ROLE & CHAMBER FIELDS ===
-    role_title = models.CharField(max_length=255, blank=True, null=True)
-    role_title_amharic = models.CharField(max_length=255, blank=True, null=True)
-    chamber_name_english = models.CharField(max_length=255, blank=True, null=True)
-    area_name = models.CharField(max_length=255, blank=True, null=True)
-
-    # === MEMBERSHIP/CONTEST FIELDS ===
-    membership_type = models.CharField(max_length=100, blank=True, null=True)
-    start_date = models.DateField(blank=True, null=True)
-    end_date = models.DateField(blank=True, null=True)
-    is_partisan = models.BooleanField(default=False)
-    has_end_date = models.BooleanField(default=False)
-
-    # === FLEXIBLE STORAGE FOR ALL OTHER COLUMNS ===
-    raw_data = models.JSONField(default=dict, blank=True)
     source_file = models.CharField(max_length=255)
-    source_sheet = models.CharField(max_length=100, blank=True, null=True)
+    source_sheet = models.CharField(max_length=100)
+    row_index = models.IntegerField()  # Tracks original Excel row
+    raw_data = models.JSONField(default=dict)  # Stores exact sheet row
 
     class Meta:
-        ordering = ['person_last_name', 'person_first_name']
-        indexes = [models.Index(fields=['source_file', 'person_id'])]
+        unique_together = ('source_file', 'source_sheet', 'row_index')
+        ordering = ['source_file', 'source_sheet', 'row_index']
 
     def __str__(self):
-        return f"{self.person_full_name or self.person_id} ({self.party_name_english or 'No Party'})"
+        return f"{self.source_file} - {self.source_sheet} (Row {self.row_index})"
