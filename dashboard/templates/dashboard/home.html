@@ -31,7 +31,8 @@
         <span class="text-sm text-gray-500 mt-2 block">Data last updated: <strong>{{ metrics.last_update }}</strong></span>
     </p>
 </div>
-<!-- DATE FILTER  -->
+
+<!-- DATE FILTER -->
 <form method="get" class="flex flex-wrap gap-3 items-end bg-gray-50 p-3 rounded-lg mb-6 border">
     <div>
         <label class="block text-xs font-medium text-gray-600 mb-1">From</label>
@@ -110,6 +111,40 @@
     </div>
 </div>
 {% endif %}
+
+<!-- ✅ NEW: Risk Actors Insight Card -->
+<div class="bg-white rounded-xl shadow-sm p-6 border border-red-100 mb-8">
+    <div class="flex items-center gap-2 mb-4">
+        <span class="text-2xl">⚠️</span>
+        <h3 class="text-lg font-bold text-gray-800">High-Risk Actors</h3>
+        <span class="text-xs bg-red-50 text-red-700 px-2 py-1 rounded border border-red-200">
+            {{ risk_actors|length }} detected
+        </span>
+    </div>
+    
+    {% if risk_actors %}
+    <div class="space-y-3 max-h-80 overflow-y-auto pr-2">
+        {% for actor in risk_actors %}
+        <div class="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-red-300 transition-colors">
+            <div class="flex items-center justify-between mb-1">
+                <span class="font-medium text-sm text-gray-900 truncate w-2/3">{{ actor.account_id }}</span>
+                <span class="text-xs font-semibold bg-red-100 text-red-800 px-2 py-0.5 rounded">
+                    {{ actor.risk_post_count }} risky posts
+                </span>
+            </div>
+            <div class="text-xs text-gray-500 mb-1">
+                🌐 {{ actor.platforms }} | 📅 Last seen: {{ actor.last_seen }}
+            </div>
+            <p class="text-xs text-gray-700 italic line-clamp-2">
+                "{{ actor.recent_content }}"
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 text-sm italic">No high-risk actors detected in current filters.</p>
+    {% endif %}
+</div>
 
 <!-- Plotly JS -->
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
