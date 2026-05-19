@@ -17,7 +17,7 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.views.generic import TemplateView, View
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Count, Q, F, Case, When, Value, CharField, Max, Avg
+from django.db.models import Count, Q, F, Case, When, Value, CharField, Max, Avg, ArrayAgg 
 from django.utils import timezone
 from django.conf import settings
 from django.core.files.storage import default_storage
