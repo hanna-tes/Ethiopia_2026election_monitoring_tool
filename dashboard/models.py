@@ -245,3 +245,28 @@ class ElectionOfficeholder(models.Model):
 
     def __str__(self):
         return f"{self.source_file} - {self.source_sheet} (Row {self.row_index})"
+
+class MonitoringReport(models.Model):
+    title = models.CharField(max_length=255)
+    source_analyst = models.CharField(max_length=255, blank=True, default="Internal Analyst")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    file_path = models.CharField(max_length=500, blank=True)
+    report_type = models.CharField(max_length=50, default='Investigative')
+    
+    # LLM Extracted Insights
+    summary = models.TextField(blank=True)
+    key_findings = models.JSONField(default=list, blank=True)
+    mentioned_entities = models.JSONField(default=list, blank=True)
+    risk_level = models.CharField(max_length=20, default='medium')
+    weaponised_narratives = models.JSONField(default=list, blank=True, help_text="Meta-narratives, polarization, disinfo/hate examples")
+    actor_spotlight = models.JSONField(default=list, blank=True, help_text="People/orgs amplifying toxic content")
+    ttp_infrastructure = models.JSONField(default=list, blank=True, help_text="Coordinated networks, amplification tactics, tech infrastructure")
+    
+    is_processed = models.BooleanField(default=False)
+    
+    class Meta:
+        ordering = ['-uploaded_at']
+        verbose_name_plural = "Monitoring Reports"
+        
+    def __str__(self):
+        return f"{self.title} ({self.report_type})"
