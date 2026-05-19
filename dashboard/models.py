@@ -235,8 +235,8 @@ class SyncSource(models.Model):
 class ElectionOfficeholder(models.Model):
     source_file = models.CharField(max_length=255)
     source_sheet = models.CharField(max_length=100)
-    row_index = models.IntegerField()  # Tracks original Excel row
-    raw_data = models.JSONField(default=dict)  # Stores exact sheet row
+    row_index = models.IntegerField(null=True, blank=True) 
+    raw_data = models.JSONField(default=dict)
 
     class Meta:
         unique_together = ('source_file', 'source_sheet', 'row_index')
