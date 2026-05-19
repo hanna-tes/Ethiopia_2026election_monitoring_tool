@@ -2073,7 +2073,35 @@ class ClearDataView(View):
         messages.success(request, "✅ All post data cleared successfully. You can now upload fresh data.")
         return redirect('upload_data')
 
-
+class InvestigativeReportsView(TemplateView):
+    """Dedicated view for investigative analysis reports"""
+    template_name = 'dashboard/investigative_reports.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get all monitoring reports
+        from dashboard.models import MonitoringReport
+        reports = MonitoringReport.objects.all().order_by('-uploaded_at')
+        
+        # Calculate stats
+        total_reports = reports.count()
+        critical_reports = reports.filter(risk_level='critical').count()
+        high_reports = reports.filter(risk_level='high').count()
+        this_month = reports.filter(uploaded_at__gte=timezone.now().replace(day=1)).count()
+        
+        context.update({
+            'active_tab': 'investigative_reports',
+            'reports': reports,
+            'stats': {
+                'total': total_reports,
+                'critical': critical_reports,
+                'high': high_reports,
+                'this_month': this_month,
+            }
+        })
+        return context
+        
 # === API Endpoints ===
 
 def scan_text_api(request):
