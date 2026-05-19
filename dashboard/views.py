@@ -1162,16 +1162,68 @@ class HomeView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        #  1. GET FILTERED QUERYSET (with date, platform, risk filters)
+        # 1. GET FILTERED QUERYSET (with date, platform, risk filters)
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         
         # 2. Fetch data and calculate metrics (using filtered queryset)
         posts = queryset  # ← Use filtered data everywhere below
         total_posts = posts.count()
         
-        # Platform breakdown
-        platforms = posts.values('platform').annotate(count=Count('id')).order_by('-count')
-        top_platform = platforms.first()['platform'] if platforms.exists() else "—"
+        # === ✅ PLATFORM DISTRIBUTION (NORMALIZED) ===
+        from collections import defaultdict
+        import plotly.express as px
+        import pandas as pd
+
+        # Get raw platform values from filtered posts
+        raw_platforms = list(posts.values_list('platform', flat=True))
+
+        # Normalize in Python (safe & transparent)
+        platform_counts = defaultdict(int)
+        for plat in raw_platforms:
+            if not plat: 
+                continue
+            p = plat.lower().strip()
+            if p in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com']:
+                platform_counts['X'] += 1
+            elif p in ['facebook', 'fb.watch', 'facebook.com', 'fb']:
+                platform_counts['Facebook'] += 1
+            elif p in ['telegram', 't.me', 'tg']:
+                platform_counts['Telegram'] += 1
+            elif p in ['tiktok', 'tik tok', 'tik-tok']:
+                platform_counts['TikTok'] += 1
+            elif p in ['media', 'news', 'news/media', 'civicsignal', 'civic signal']:
+                platform_counts['Media'] += 1
+            elif p in ['youtube', 'youtu.be', 'yt']:
+                platform_counts['YouTube'] += 1
+            elif p in ['instagram', 'insta', 'ig']:
+                platform_counts['Instagram'] += 1
+            else:
+                platform_counts[plat.title()] += 1
+
+        # Convert to DataFrame for Plotly
+        df_platforms = pd.DataFrame([
+            {'platform': k, 'count': v} 
+            for k, v in sorted(platform_counts.items(), key=lambda x: x[1], reverse=True)
+            if v > 0  # Drop zero-count platforms
+        ])
+
+        # Set top_platform for metrics display
+        top_platform = df_platforms.iloc[0]['platform'] if not df_platforms.empty else "—"
+
+        # Generate chart if we have data
+        if not df_platforms.empty:
+            fig_platform = px.bar(
+                df_platforms, x='platform', y='count',
+                labels={'platform': 'Platform', 'count': 'Posts'},
+                color='count', color_continuous_scale='Blues'
+            )
+            fig_platform.update_layout(
+                xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400
+            )
+            charts = {'platform': fig_platform.to_json()}
+        else:
+            charts = {}
+        # === ✅ END PLATFORM NORMALIZATION ===
         
         # Risk and account metrics
         unique_accounts = posts.values('account_id').distinct().count()
@@ -1182,16 +1234,7 @@ class HomeView(TemplateView):
         last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
         
         # 3. Prepare Charts (all using filtered posts)
-        charts = {}
         if posts.exists():
-            # A. Platform Distribution
-            fig_platform = px.bar(
-                platforms, x='platform', y='count', 
-                labels={'platform': 'Platform', 'count': 'Posts'},
-                color='count', color_continuous_scale='Blues'
-            )
-            charts['platform'] = fig_platform.to_json()
-            
             # B. Top Accounts (cleaning logic unchanged)
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             
@@ -1213,7 +1256,6 @@ class HomeView(TemplateView):
                     cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
             
             if cleaned_accounts:
-                import pandas as pd
                 df_accounts = pd.DataFrame(cleaned_accounts)
                 fig_accounts = px.bar(
                     df_accounts, 
@@ -1276,7 +1318,7 @@ class HomeView(TemplateView):
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         
-        # 5. Build Context (add dates for template pre-fill)
+        # 5. Build Context (add dates for template pre-fill + Risk Actors)
         context.update({
             'active_tab': 'home',
             'tabs': [
@@ -1297,6 +1339,7 @@ class HomeView(TemplateView):
             },
             'charts': charts,
             'upload_summary': upload_summary,
+            'risk_actors': get_risk_actors_insight(posts),  # ✅ NEW: Risk Actors Insight
             # ✅ Add these for date filter pre-fill
             'start_date': start_date.date().isoformat() if start_date else '',
             'end_date': end_date.date().isoformat() if end_date else '',
