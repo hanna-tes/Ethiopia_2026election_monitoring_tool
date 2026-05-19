@@ -1270,8 +1270,25 @@ def get_top_hashtags(posts_queryset, limit=10):
         if count >= 2  # Only show hashtags used 2+ times
     ]
 
+class BaseTabMixin:
+    """Adds consistent navigation tabs to any class-based view"""
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Define tabs once, use everywhere
+        context['tabs'] = [
+            {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
+            {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
+            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
+            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
+            {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
+            {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
+            {'name': 'Investigative Reports', 'url_name': 'investigative_reports', 'icon': '📑'},
+        ]
+        return context
 
-class HomeView(TemplateView):
+class HomeView(BaseTabMixin, TemplateView):
     """Executive dashboard - election-focused"""
     template_name = 'dashboard/home.html'
     
