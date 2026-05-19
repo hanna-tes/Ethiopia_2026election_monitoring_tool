@@ -9,6 +9,7 @@ urlpatterns = [
     path('peps/', views.PEPsView.as_view(), name='peps'),          # Main PEPs tab
     path('networks/', views.NetworksView.as_view(), name='networks'),
     path('lexicon-management/', views.LexiconManagementView.as_view(), name='lexicon_management'),
+    path('investigative-reports/', views.InvestigativeReportsView.as_view(), name='investigative_reports'),
     
     # === PEPs DATA VIEWS (FIXED CONFLICT) ===
     path('peps/registry/', views.PEPsHubView.as_view(), name='peps_hub'),   # File cards (HoPR, RC, Executive)
