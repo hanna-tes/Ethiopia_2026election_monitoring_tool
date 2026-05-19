@@ -1518,28 +1518,43 @@ class PEPsDataView(TemplateView):
         filename = self.request.GET.get('file')
         sheet = self.request.GET.get('sheet', '').strip()
         
-        qs = ElectionOfficeholder.objects.all()
+        # Base queryset
+        qs = ElectionOfficeholder.objects.filter(source_file=filename) if filename else ElectionOfficeholder.objects.none()
+        
+        # Get DISTINCT sheet names exactly once, sorted alphabetically
         if filename:
-            qs = qs.filter(source_file=filename)
-        if sheet and sheet.lower() != 'all':
-            qs = qs.filter(source_sheet=sheet)
-            
-        # Get available sheets
-        if filename:
-            sheets_list = list(ElectionOfficeholder.objects.filter(
+            context['sheets'] = list(ElectionOfficeholder.objects.filter(
                 source_file=filename
-            ).values_list('source_sheet', flat=True).distinct())
-            context['sheets'] = ['All'] + sorted([s for s in sheets_list if s])
+            ).values_list('source_sheet', flat=True).distinct().order_by('source_sheet'))
+            # Filter out empty/None values
+            context['sheets'] = [s for s in context['sheets'] if s]
         else:
             context['sheets'] = []
             
+        # Default to first sheet if none selected
+        if not sheet and context['sheets']:
+            sheet = context['sheets'][0]
+            
+        if sheet:
+            qs = qs.filter(source_sheet=sheet)
+            
         paginator = Paginator(qs.order_by('row_index'), 50)
         page_number = self.request.GET.get('page')
-        context['page_obj'] = paginator.get_page(page_number)
-        context['selected_file'] = filename
-        context['selected_sheet'] = sheet if sheet and sheet.lower() != 'all' else 'All'
-        context['total_records'] = qs.count()
+        page_obj = paginator.get_page(page_number)
         
+        # Pre-align rows to match Excel column order
+        column_order = page_obj[0].column_order if page_obj else []
+        aligned_rows = [[row.raw_data.get(col) for col in column_order] for row in page_obj]
+        
+        context.update({
+            'page_obj': page_obj,
+            'selected_file': filename,
+            'selected_sheet': sheet,
+            'total_records': qs.count(),
+            'column_order': column_order,
+            'aligned_rows': aligned_rows,
+            'active_tab': 'peps'  # Keeps PEPs tab highlighted
+        })
         return context
         
 class PEPsView(TemplateView):
