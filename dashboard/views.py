@@ -1123,26 +1123,27 @@ def get_election_posts_queryset(request):
     return queryset, start_date, end_date
 
 def get_risk_actors_insight(posts_queryset, limit=8):
-    """Identify accounts with high/critical risk posts"""
+    """Identify accounts with medium/high/critical risk posts (relaxed criteria)"""
     risky_accounts = []
     
-    # Aggregate accounts by risk post count
+    # Aggregate accounts by risk post count - include 'medium' risk for better coverage
     account_stats = posts_queryset.filter(
-        risk_level__in=['high', 'critical']
+        risk_level__in=['medium', 'high', 'critical']
     ).values('account_id').annotate(
         risk_post_count=Count('id'),
-        latest_risk_post=Max('timestamp_share')
+        latest_risk_post=Max('timestamp_share'),
+        avg_risk_score=Avg('risk_score')  # If you have this field
     ).order_by('-risk_post_count')[:limit]
     
     for acc in account_stats:
         # Get sample platforms & recent risky content
         sample = posts_queryset.filter(
             account_id=acc['account_id'],
-            risk_level__in=['high', 'critical']
+            risk_level__in=['medium', 'high', 'critical']
         ).order_by('-timestamp_share').first()
         
         platforms = list(
-            posts_queryset.filter(account_id=acc['account_id'], risk_level__in=['high', 'critical'])
+            posts_queryset.filter(account_id=acc['account_id'], risk_level__in=['medium', 'high', 'critical'])
             .values_list('platform', flat=True).distinct()
         )[:3]
         
@@ -1151,10 +1152,33 @@ def get_risk_actors_insight(posts_queryset, limit=8):
             'risk_post_count': acc['risk_post_count'],
             'platforms': ', '.join(platforms) if platforms else 'Unknown',
             'recent_content': sample.original_text[:120] + '...' if sample and sample.original_text else '—',
-            'last_seen': acc['latest_risk_post'].strftime('%Y-%m-%d') if acc['latest_risk_post'] else '—'
+            'last_seen': acc['latest_risk_post'].strftime('%Y-%m-%d') if acc['latest_risk_post'] else '—',
+            'risk_level': sample.risk_level if sample else 'medium'
         })
     return risky_accounts
+
+
+def get_top_hashtags(posts_queryset, limit=10):
+    """Extract and rank top hashtags from post content"""
+    import re
+    from collections import Counter
     
+    hashtags = []
+    for post in posts_queryset:
+        if post.original_text:
+            # Extract hashtags (case-insensitive, handles #Ethiopia, #ETHIOPIA, etc.)
+            found = re.findall(r'#(\w+)', post.original_text)
+            hashtags.extend([h.lower() for h in found if len(h) > 1])
+    
+    # Count and rank
+    hashtag_counts = Counter(hashtags)
+    return [
+        {'tag': tag, 'count': count}
+        for tag, count in hashtag_counts.most_common(limit)
+        if count >= 2  # Only show hashtags used 2+ times
+    ]
+
+
 class HomeView(TemplateView):
     """Executive dashboard - election-focused"""
     template_name = 'dashboard/home.html'
@@ -1166,64 +1190,77 @@ class HomeView(TemplateView):
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         
         # 2. Fetch data and calculate metrics (using filtered queryset)
-        posts = queryset  # ← Use filtered data everywhere below
+        posts = queryset
         total_posts = posts.count()
-        
-        # === ✅ PLATFORM DISTRIBUTION (NORMALIZED) ===
-        from collections import defaultdict
-        import plotly.express as px
-        import pandas as pd
 
-        # Get raw platform values from filtered posts
+        # Get raw platform values
         raw_platforms = list(posts.values_list('platform', flat=True))
-
-        # Normalize in Python (safe & transparent)
+        
+        # Normalize with explicit handling
         platform_counts = defaultdict(int)
         for plat in raw_platforms:
-            if not plat: 
+            if not plat:
                 continue
-            p = plat.lower().strip()
-            if p in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com']:
+            p = str(plat).lower().strip()
+            # X/Twitter variants
+            if p in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com', 'twitter_source']:
                 platform_counts['X'] += 1
-            elif p in ['facebook', 'fb.watch', 'facebook.com', 'fb']:
+            # Facebook variants
+            elif p in ['facebook', 'fb.watch', 'facebook.com', 'fb', 'facebook source']:
                 platform_counts['Facebook'] += 1
-            elif p in ['telegram', 't.me', 'tg']:
+            # Telegram variants
+            elif p in ['telegram', 't.me', 'tg', 'telegram source']:
                 platform_counts['Telegram'] += 1
-            elif p in ['tiktok', 'tik tok', 'tik-tok']:
+            # TikTok variants
+            elif p in ['tiktok', 'tik tok', 'tik-tok', 'tiktok source']:
                 platform_counts['TikTok'] += 1
-            elif p in ['media', 'news', 'news/media', 'civicsignal', 'civic signal']:
+            # Media/Civicsignal variants
+            elif p in ['media', 'news', 'news/media', 'civicsignal', 'civic signal', 'civicsignals']:
                 platform_counts['Media'] += 1
-            elif p in ['youtube', 'youtu.be', 'yt']:
+            # YouTube variants
+            elif p in ['youtube', 'youtu.be', 'yt', 'youtube source']:
                 platform_counts['YouTube'] += 1
-            elif p in ['instagram', 'insta', 'ig']:
+            # Instagram variants
+            elif p in ['instagram', 'insta', 'ig', 'instagram source']:
                 platform_counts['Instagram'] += 1
             else:
-                platform_counts[plat.title()] += 1
+                # Keep original but capitalize properly
+                platform_counts[str(plat).title()] += 1
 
-        # Convert to DataFrame for Plotly
+        # Convert to DataFrame - CRITICAL: sort AFTER creating DataFrame
         df_platforms = pd.DataFrame([
-            {'platform': k, 'count': v} 
-            for k, v in sorted(platform_counts.items(), key=lambda x: x[1], reverse=True)
-            if v > 0  # Drop zero-count platforms
+            {'platform': k, 'count': int(v)}  # Ensure count is int for Plotly
+            for k, v in platform_counts.items()
+            if v > 0
         ])
-
-        # Set top_platform for metrics display
+        
+        # Sort by count descending
+        if not df_platforms.empty:
+            df_platforms = df_platforms.sort_values('count', ascending=False)
+        
+        # Set top_platform for metrics
         top_platform = df_platforms.iloc[0]['platform'] if not df_platforms.empty else "—"
 
-        # Generate chart if we have data
+        # Generate chart
+        charts = {}
         if not df_platforms.empty:
             fig_platform = px.bar(
-                df_platforms, x='platform', y='count',
+                df_platforms, 
+                x='platform', 
+                y='count',
                 labels={'platform': 'Platform', 'count': 'Posts'},
-                color='count', color_continuous_scale='Blues'
+                color='count', 
+                color_continuous_scale='Blues',
+                title='Post Distribution by Platform'
             )
             fig_platform.update_layout(
-                xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400
+                xaxis_tickangle=-45, 
+                margin=dict(b=100, t=50, l=50, r=20), 
+                height=400,
+                xaxis={'categoryorder': 'total descending'} 
             )
-            charts = {'platform': fig_platform.to_json()}
-        else:
-            charts = {}
-        # === ✅ END PLATFORM NORMALIZATION ===
+            charts['platform'] = fig_platform.to_json()
+     
         
         # Risk and account metrics
         unique_accounts = posts.values('account_id').distinct().count()
@@ -1285,7 +1322,7 @@ class HomeView(TemplateView):
                 )
                 charts['risk'] = fig_risk.to_json()
             
-            # D. Daily Volume Chart (using filtered data)
+            # D. Daily Volume Chart
             daily_posts = posts.annotate(
                 day=TruncDay('timestamp_share')
             ).values('day').annotate(
@@ -1310,7 +1347,7 @@ class HomeView(TemplateView):
                     )
                     charts['daily'] = fig_daily.to_json()
         
-        # 4. Recent Upload Summary (unchanged)
+        # 4. Recent Upload Summary
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
         upload_summary = {
             'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
@@ -1318,7 +1355,7 @@ class HomeView(TemplateView):
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         
-        # 5. Build Context (add dates for template pre-fill + Risk Actors)
+        # 5. Build Context with ALL insights
         context.update({
             'active_tab': 'home',
             'tabs': [
@@ -1339,8 +1376,8 @@ class HomeView(TemplateView):
             },
             'charts': charts,
             'upload_summary': upload_summary,
-            'risk_actors': get_risk_actors_insight(posts),  # ✅ NEW: Risk Actors Insight
-            # ✅ Add these for date filter pre-fill
+            'risk_actors': get_risk_actors_insight(posts),  
+            'top_hashtags': get_top_hashtags(posts),  
             'start_date': start_date.date().isoformat() if start_date else '',
             'end_date': end_date.date().isoformat() if end_date else '',
         })
