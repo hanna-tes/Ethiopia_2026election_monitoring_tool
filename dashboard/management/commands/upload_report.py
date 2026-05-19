@@ -1,10 +1,7 @@
 import os
-import re
-import json
 import logging
 from django.core.management.base import BaseCommand
 from dashboard.models import MonitoringReport
-from dashboard.utils.llm_service import safe_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -38,64 +35,14 @@ def extract_text(file_path):
             
     raise ValueError(f"Unsupported file type: {ext}")
 
-def llm_extract_insights(text):
-    """
-    Use LLM to extract structured insights.
-    FIX: Risk level is now determined by content severity, not default.
-    """
-    # Smart truncation to handle token limits while keeping context
-    context = text[:2000] + "\n...\n" + text[-2000:] if len(text) > 4000 else text
-    
-    prompt = f"""You are a senior election monitoring analyst. Analyze the report and extract insights into STRICT JSON. Return ONLY valid JSON. No markdown, no explanations.
-
-REQUIRED JSON STRUCTURE:
-{{
-  "summary": "2-3 sentence executive summary",
-  "key_findings": ["finding 1", "finding 2"],
-  "mentioned_entities": ["entity 1", "entity 2"],
-  "risk_level": "low|medium|high|critical", 
-  "weaponised_narratives": ["Narrative/theme with brief example/context"],
-  "actor_spotlight": ["Account/Org/Person + brief role/amplification method"],
-  "ttp_infrastructure": ["Tactic/Infrastructure + how it enables manipulation"]
-}}
-
-RISK LEVEL GUIDELINES:
-- "critical": Incitement to violence, imminent harm, widespread hate speech, state-sponsored disinfo
-- "high": Coordinated manipulation, ethnic polarization, targeted harassment, false election info
-- "medium": Bias, misleading framing, unverified claims, moderate polarization
-- "low": Factual reporting, neutral analysis, constructive criticism
-
-REPORT TEXT:
-{context}
-
-JSON:"""
-    
-    try:
-        response = safe_llm_call(prompt, temperature=0.1, max_tokens=600)
-        # Clean response to ensure valid JSON (remove markdown code blocks)
-        cleaned = re.sub(r'^```json\s*|\s*```$', '', response.strip(), flags=re.MULTILINE)
-        return json.loads(cleaned)
-    except Exception as e:
-        logger.error(f"LLM extraction failed: {e}")
-        # Fallback: Return empty lists but force risk to 'medium' ONLY as a safe fallback for DB integrity
-        return {
-            "summary": "AI extraction failed. Manual review recommended.",
-            "key_findings": ["Review original document for details"],
-            "mentioned_entities": [],
-            "risk_level": "medium", 
-            "weaponised_narratives": [],
-            "actor_spotlight": [],
-            "ttp_infrastructure": []
-        }
-
 class Command(BaseCommand):
-    help = 'Upload & AI-analyze election monitoring reports'
+    help = 'Upload election monitoring reports (text extraction only)'
 
     def add_arguments(self, parser):
-        parser.add_argument('file_path', type=str, help='Path to PDF/DOCX/TXT file')
-        parser.add_argument('--title', type=str, help='Report title')
-        parser.add_argument('--analyst', type=str, default='Internal Analyst', help='Analyst/Source name')
-        parser.add_argument('--type', type=str, default='Investigative', choices=['Investigative', 'Monthly', 'Special'], help='Report type')
+        parser.add_argument('file_path', type=str)
+        parser.add_argument('--title', type=str)
+        parser.add_argument('--analyst', type=str, default='Internal Analyst')
+        parser.add_argument('--type', type=str, default='Investigative', choices=['Investigative', 'Monthly', 'Special'])
 
     def handle(self, *args, **options):
         file_path = options['file_path']
@@ -111,32 +58,30 @@ class Command(BaseCommand):
         try:
             raw_text = extract_text(file_path)
             if not raw_text or len(raw_text.strip()) < 50:
-                self.stderr.write("⚠️ Could not extract meaningful text from file.")
+                self.stderr.write("⚠️ Could not extract meaningful text.")
                 return
-                
-            self.stdout.write("🤖 Running AI insight extraction...")
-            insights = llm_extract_insights(raw_text)
             
-            # Save to DB
+            # Save directly to DB - NO LLM CALL
             report = MonitoringReport.objects.create(
                 title=title,
                 source_analyst=options['analyst'],
                 file_path=file_path,
                 report_type=options['type'],
-                summary=insights.get('summary', ''),
-                key_findings=insights.get('key_findings', []),
-                mentioned_entities=insights.get('mentioned_entities', []),
-                risk_level=insights.get('risk_level', 'medium'), # Uses LLM value, fallback only on error
-                weaponised_narratives=insights.get('weaponised_narratives', []),
-                actor_spotlight=insights.get('actor_spotlight', []),
-                ttp_infrastructure=insights.get('ttp_infrastructure', []),
+                extracted_text=raw_text[:10000],  # Store first 10k chars for preview
+                # Leave insight fields empty for manual entry via admin/UI
+                summary='',
+                key_findings=[],
+                mentioned_entities=[],
+                risk_level='medium',  # Default, can be updated later
+                weaponised_narratives=[],
+                actor_spotlight=[],
+                ttp_infrastructure=[],
                 is_processed=True
             )
             
             self.stdout.write(f"\n✅ SUCCESS! Report saved to database.")
-            self.stdout.write(f"📊 Risk Level: {report.risk_level.upper()} (AI-Assessed)")
-            self.stdout.write(f"🔑 Key Findings: {len(report.key_findings)}")
-            self.stdout.write(f"👥 Entities Mentioned: {len(report.mentioned_entities)}")
+            self.stdout.write(f"📝 Extracted {len(raw_text):,} characters")
+            self.stdout.write(f"✏️  Edit insights via Django Admin: http://localhost:8505/admin/dashboard/monitoringreport/{report.id}/change/")
             self.stdout.write(f"🔗 View in UI: http://localhost:8505/narratives/")
             
         except Exception as e:
