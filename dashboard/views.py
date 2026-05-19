@@ -1407,6 +1407,10 @@ class NarrativesView(TemplateView):
         context['start_date'] = start_date.date().isoformat() if start_date else ''
         context['end_date'] = end_date.date().isoformat() if end_date else ''
         
+        # Pass monitoring reports to template
+        from dashboard.models import MonitoringReport
+        context['monitoring_reports'] = MonitoringReport.objects.all().order_by('-uploaded_at')[:12]
+        
         return context
 
 class LexiconsView(TemplateView):
