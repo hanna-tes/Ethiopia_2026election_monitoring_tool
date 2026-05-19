@@ -234,8 +234,9 @@ class SyncSource(models.Model):
 
 class ElectionOfficeholder(models.Model):
     source_file = models.CharField(max_length=255)
-    source_sheet = models.CharField(max_length=100)
-    row_index = models.IntegerField(null=True, blank=True) 
+    source_sheet = models.CharField(max_length=100, default='')
+    row_index = models.IntegerField(null=True, blank=True)
+    column_order = models.JSONField(default=list, blank=True)  
     raw_data = models.JSONField(default=dict)
 
     class Meta:
