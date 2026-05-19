@@ -1523,37 +1523,21 @@ class PEPsDataView(TemplateView):
         qs = ElectionOfficeholder.objects.all()
         if filename:
             qs = qs.filter(source_file=filename)
-            
         if sheet and sheet.lower() != 'all':
             qs = qs.filter(source_sheet=sheet)
             
         # Get available sheets
         if filename:
-            sheets_qs = ElectionOfficeholder.objects.filter(
+            sheets_list = list(ElectionOfficeholder.objects.filter(
                 source_file=filename
-            ).values_list('source_sheet', flat=True).distinct()
-            sheets_list = [s for s in sheets_qs if s and s.strip()]
-            context['sheets'] = ['All'] + sorted(sheets_list)
+            ).values_list('source_sheet', flat=True).distinct())
+            context['sheets'] = ['All'] + sorted([s for s in sheets_list if s])
         else:
             context['sheets'] = []
             
-        # Pagination
-        paginator = Paginator(qs, 50)
+        paginator = Paginator(qs.order_by('row_index'), 50)
         page_number = self.request.GET.get('page')
-        page_obj = paginator.get_page(page_number)
-        
-        #  Check if raw_data is populated
-        if page_obj and page_obj.object_list:
-            first_row = page_obj.object_list[0]
-            context['has_raw_data'] = bool(first_row.raw_data)
-            context['sample_keys'] = list(first_row.raw_data.keys())[:10] if first_row.raw_data else []
-            context['model_fields'] = [f.name for f in ElectionOfficeholder._meta.fields if f.name not in ['id', 'source_file', 'source_sheet', 'raw_data']]
-        else:
-            context['has_raw_data'] = False
-            context['sample_keys'] = []
-            context['model_fields'] = []
-        
-        context['page_obj'] = page_obj
+        context['page_obj'] = paginator.get_page(page_number)
         context['selected_file'] = filename
         context['selected_sheet'] = sheet if sheet and sheet.lower() != 'all' else 'All'
         context['total_records'] = qs.count()
