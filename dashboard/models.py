@@ -253,16 +253,23 @@ class MonitoringReport(models.Model):
     file_path = models.CharField(max_length=500, blank=True)
     report_type = models.CharField(max_length=50, default='Investigative')
     
-    # LLM Extracted Insights
-    summary = models.TextField(blank=True)
-    key_findings = models.JSONField(default=list, blank=True)
-    mentioned_entities = models.JSONField(default=list, blank=True)
-    risk_level = models.CharField(max_length=20, default='medium')
-    weaponised_narratives = models.JSONField(default=list, blank=True, help_text="Meta-narratives, polarization, disinfo/hate examples")
-    actor_spotlight = models.JSONField(default=list, blank=True, help_text="People/orgs amplifying toxic content")
-    ttp_infrastructure = models.JSONField(default=list, blank=True, help_text="Coordinated networks, amplification tactics, tech infrastructure")
+    # ✅ Store extracted text directly
+    extracted_text = models.TextField(blank=True, help_text="Raw extracted text from document")
     
-    is_processed = models.BooleanField(default=False)
+    # ✅ Manual/analyst-curated insights (no LLM required)
+    summary = models.TextField(blank=True, help_text="Executive summary (manual entry)")
+    key_findings = models.JSONField(default=list, blank=True, help_text="List of key findings")
+    mentioned_entities = models.JSONField(default=list, blank=True)
+    risk_level = models.CharField(max_length=20, default='medium', choices=[
+        ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')
+    ])
+    
+    # ✅ Your requested sections (manual entry)
+    weaponised_narratives = models.JSONField(default=list, blank=True)
+    actor_spotlight = models.JSONField(default=list, blank=True)
+    ttp_infrastructure = models.JSONField(default=list, blank=True)
+    
+    is_processed = models.BooleanField(default=True)  # Always true since no LLM step
     
     class Meta:
         ordering = ['-uploaded_at']
