@@ -12,7 +12,6 @@ class Command(BaseCommand):
         parser.add_argument('folder', type=str)
 
     def clean_row(self, row):
-        """Convert pandas row to clean dict, handling NaN/None"""
         cleaned = {}
         for col, val in row.items():
             if pd.isna(val) or (isinstance(val, float) and np.isnan(val)):
@@ -36,38 +35,32 @@ class Command(BaseCommand):
             filepath = os.path.join(folder, filename)
             self.stdout.write(f"\n📂 Processing: {filename}")
 
-            # Clear old data for this file
             ElectionOfficeholder.objects.filter(source_file=filename).delete()
-
             xl = pd.ExcelFile(filepath)
             records_to_create = []
 
             for sheet_name in xl.sheet_names:
                 df = pd.read_excel(xl, sheet_name=sheet_name)
-                if df.empty:
-                    continue
+                if df.empty: continue
                 
-                # Clean column names
-                df.columns = [str(c).strip() for c in df.columns]
+                # ✅ Save exact column order as strings
+                col_order = [str(c).strip() for c in df.columns]
 
                 for idx, row in df.iterrows():
-                    # Skip completely empty rows
                     if all(pd.isna(v) or str(v).strip().lower() in ['nan', 'none', 'null', ''] for v in row.values):
                         continue
                     
-                    clean_dict = self.clean_row(row)
                     records_to_create.append(ElectionOfficeholder(
                         source_file=filename,
                         source_sheet=sheet_name,
                         row_index=idx,
-                        raw_data=clean_dict
+                        column_order=col_order,  # ✅ Preserve order
+                        raw_data=self.clean_row(row)
                     ))
 
             if records_to_create:
                 with transaction.atomic():
                     ElectionOfficeholder.objects.bulk_create(records_to_create, batch_size=500)
                 self.stdout.write(f"  ✅ Imported {len(records_to_create)} rows from {len(xl.sheet_names)} sheets")
-            else:
-                self.stdout.write(f"  ⚠️ No valid data found")
 
         self.stdout.write("\n🏁 Import complete.")
