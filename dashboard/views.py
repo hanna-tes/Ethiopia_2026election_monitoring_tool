@@ -1122,7 +1122,39 @@ def get_election_posts_queryset(request):
     
     return queryset, start_date, end_date
 
-
+def get_risk_actors_insight(posts_queryset, limit=8):
+    """Identify accounts with high/critical risk posts"""
+    risky_accounts = []
+    
+    # Aggregate accounts by risk post count
+    account_stats = posts_queryset.filter(
+        risk_level__in=['high', 'critical']
+    ).values('account_id').annotate(
+        risk_post_count=Count('id'),
+        latest_risk_post=Max('timestamp_share')
+    ).order_by('-risk_post_count')[:limit]
+    
+    for acc in account_stats:
+        # Get sample platforms & recent risky content
+        sample = posts_queryset.filter(
+            account_id=acc['account_id'],
+            risk_level__in=['high', 'critical']
+        ).order_by('-timestamp_share').first()
+        
+        platforms = list(
+            posts_queryset.filter(account_id=acc['account_id'], risk_level__in=['high', 'critical'])
+            .values_list('platform', flat=True).distinct()
+        )[:3]
+        
+        risky_accounts.append({
+            'account_id': acc['account_id'][:40] if acc['account_id'] else 'Unknown',
+            'risk_post_count': acc['risk_post_count'],
+            'platforms': ', '.join(platforms) if platforms else 'Unknown',
+            'recent_content': sample.original_text[:120] + '...' if sample and sample.original_text else '—',
+            'last_seen': acc['latest_risk_post'].strftime('%Y-%m-%d') if acc['latest_risk_post'] else '—'
+        })
+    return risky_accounts
+    
 class HomeView(TemplateView):
     """Executive dashboard - election-focused"""
     template_name = 'dashboard/home.html'
