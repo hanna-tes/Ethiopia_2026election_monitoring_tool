@@ -3,7 +3,7 @@
 
 {% block content %}
 
-<!-- Top Navigation Tabs (Hardcoded for safety) -->
+<!-- Top Navigation Tabs -->
 <div class="mb-6">
     <div class="border-b border-gray-200">
         <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
@@ -142,20 +142,27 @@
                                     💬 {{ pep.mention_count }} mentions
                                 </span>
                                 <span class="text-gray-300">|</span>
-                                <!-- ✅ FIXED: Use {% if %} instead of |split filter -->
-                                <span class="font-semibold 
-                                    {% if '🔴' in pep.sentiment_badge %}text-red-600
-                                    {% elif '🟡' in pep.sentiment_badge %}text-yellow-600
-                                    {% else %}text-green-600{% endif %}">
-                                    {{ pep.sentiment_badge }}
-                                </span>
+                                
+                                <!-- ✅ SAFE: Replaced complex filter logic with simple if/else blocks -->
+                                {% if '🔴' in pep.sentiment_badge %}
+                                    <span class="font-semibold text-red-600">{{ pep.sentiment_badge }}</span>
+                                {% elif '🟡' in pep.sentiment_badge %}
+                                    <span class="font-semibold text-yellow-600">{{ pep.sentiment_badge }}</span>
+                                {% else %}
+                                    <span class="font-semibold text-green-600">{{ pep.sentiment_badge }}</span>
+                                {% endif %}
+                                
                             </div>
                         </div>
                         <!-- Risk Score Badge -->
                         <div class="text-right">
-                            <div class="text-2xl font-bold {% if pep.risk_score >= 7 %}text-red-600{% elif pep.risk_score >= 4 %}text-orange-600{% else %}text-green-600{% endif %}">
-                                {{ pep.risk_score }}/10
-                            </div>
+                            {% if pep.risk_score >= 7 %}
+                                <div class="text-2xl font-bold text-red-600">{{ pep.risk_score }}/10</div>
+                            {% elif pep.risk_score >= 4 %}
+                                <div class="text-2xl font-bold text-orange-600">{{ pep.risk_score }}/10</div>
+                            {% else %}
+                                <div class="text-2xl font-bold text-green-600">{{ pep.risk_score }}/10</div>
+                            {% endif %}
                             <div class="text-xs text-gray-500">Risk Score</div>
                         </div>
                     </div>
@@ -199,7 +206,6 @@
                             <details class="border border-gray-200 rounded-lg overflow-hidden">
                                 <summary class="cursor-pointer bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 flex items-center justify-between list-none">
                                     <span class="flex items-center gap-2">
-                                        <!-- ✅ FIXED: Use static badge classes to avoid invalid CSS -->
                                         <span class="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded font-medium">
                                             {{ post.platform|default:"Unknown" }}
                                         </span>
