@@ -1669,7 +1669,7 @@ class PEPsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Force sync if DB is empty (your existing GitHub sync logic)
+        # 1. Force sync if DB is empty 
         if not PEP.objects.exists():
             github_url = getattr(settings, 'PEPS_CSV_URL', '')
             if github_url:
@@ -1700,18 +1700,26 @@ class PEPsView(TemplateView):
                 except Exception as e:
                     logger.error(f"PEP GitHub sync failed: {e}")
 
-        # 2. Query & Context 
-        context['total_candidates'] = ElectionOfficeholder.objects.count()
+        # 2. Query PEPs - Define variable BEFORE using it
+        active_peps = PEP.objects.filter(is_active=True).order_by('name')
         
-        context['peps'] = PEP.objects.filter(is_active=True).order_by('name')
-        context['total_peps'] = context['peps'].count()
-        context['verified_x_count'] = context['peps'].filter(x_verified=True).count()
-        context['verified_fb_count'] = context['peps'].filter(facebook_verified=True).count()
-        context['last_pep_sync'] = PEP.objects.aggregate(last=Max('last_updated'))['last']
-        context['active_tab'] = 'peps'
-
+        # 3. Get election-related posts for analysis
         election_posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
-        context['pep_analysis'] = get_pep_analysis_insights(election_posts, peps, limit=6)
+        
+        # 4. Generate PEP analysis insights - Use the defined variable
+        pep_analysis_data = get_pep_analysis_insights(election_posts, active_peps, limit=6)
+        
+        # 5. Build context
+        context.update({
+            'total_candidates': ElectionOfficeholder.objects.count(),
+            'peps': active_peps,  # For the officials table
+            'total_peps': active_peps.count(),
+            'verified_x_count': active_peps.filter(x_verified=True).count(),
+            'verified_fb_count': active_peps.filter(facebook_verified=True).count(),
+            'last_pep_sync': PEP.objects.aggregate(last=Max('last_updated'))['last'],
+            'active_tab': 'peps',
+            'pep_analysis': pep_analysis_data,  # For the peps analysis tab
+        })
         
         return context        
         
