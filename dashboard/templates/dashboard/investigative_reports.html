@@ -1,170 +1,111 @@
 {% extends 'dashboard/base.html' %}
-{% block title %}Investigative Analysis Reports - Ethiopia Election Monitor{% endblock %}
+{% block title %}Investigative Analysis Reports{% endblock %}
 
 {% block content %}
-<!-- Header -->
 <div class="mb-6">
     <h2 class="text-3xl font-bold text-gray-900 mb-2">📑 Investigative Analysis Reports</h2>
-    <p class="text-sm text-gray-600">{{ reports|length }} reports • Key insights from Ethiopia election monitoring report</p>
+    <p class="text-sm text-gray-600">{{ reports|length }} reports • Key insights from Ethiopia election monitoring</p>
 </div>
 
 {% if reports %}
 <div class="space-y-6">
     {% for report in reports %}
-    
-    <!-- Report Card -->
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
         
         <!-- Header -->
-        <div class="border-b border-gray-200 p-6">
-            <div class="flex justify-between items-start mb-3">
-                <div class="flex items-center gap-3">
-                    <span class="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded uppercase">{{ report.report_type }}</span>
-                    {% if report.risk_level == 'critical' %}
-                    <span class="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded border border-red-200">🔴 Critical</span>
-                    {% elif report.risk_level == 'high' %}
-                    <span class="px-3 py-1 bg-orange-100 text-orange-700 text-xs font-bold rounded border border-orange-200">🟠 High</span>
-                    {% elif report.risk_level == 'medium' %}
-                    <span class="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded border border-yellow-200">🟡 Medium</span>
-                    {% else %}
-                    <span class="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded border border-green-200">🟢 Low</span>
-                    {% endif %}
+        <div class="border-b border-gray-200 pb-4 mb-4">
+            <div class="flex justify-between items-start mb-2">
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-1 bg-blue-600 text-white text-xs font-bold rounded">{{ report.report_type|upper }}</span>
+                    <span class="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded">🟡 {{ report.risk_level|title }}</span>
                 </div>
-                <a href="/admin/dashboard/monitoringreport/{{ report.id }}/change/" target="_blank" class="text-sm font-semibold text-blue-600 hover:text-blue-800">✏️ Edit</a>
+                <a href="/admin/dashboard/monitoringreport/{{ report.id }}/change/" class="text-blue-600 hover:underline text-sm">✏️ Edit</a>
             </div>
-            
-            <h3 class="text-xl font-bold text-gray-900 mb-2">{{ report.title }}</h3>
-            <div class="flex items-center gap-3 text-sm text-gray-600">
-                <span>👤 {{ report.source_analyst }}</span>
-                <span class="text-gray-300">|</span>
-                <span>📅 {{ report.uploaded_at|date:"M d, Y" }}</span>
-            </div>
+            <h3 class="text-xl font-bold text-gray-900">{{ report.title }}</h3>
+            <p class="text-sm text-gray-600 mt-1">👤 {{ report.source_analyst }} | 📅 {{ report.uploaded_at|date:"M d, Y" }}</p>
         </div>
 
-        <!-- Content -->
-        <div class="p-6 space-y-6">
+        <!-- Executive Summary -->
+        {% if report.summary %}
+        <div class="mb-6">
+            <h4 class="text-sm font-bold text-gray-900 uppercase mb-2">📋 Executive Summary</h4>
+            <p class="text-gray-700 leading-relaxed">{{ report.summary }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Key Insights Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             
-            <!-- Executive Summary -->
-            {% if report.summary %}
+            {% if report.weaponised_narratives %}
             <div>
-                <h4 class="text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">📋 Executive Summary</h4>
-                <p class="text-gray-700 leading-relaxed">{{ report.summary }}</p>
-            </div>
-            {% endif %}
-
-            <!-- Key Insights Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                
-                <!-- Weaponised Narratives -->
-                {% if report.weaponised_narratives %}
-                <div class="space-y-2">
-                    <h4 class="text-sm font-bold text-red-700 uppercase">🎯 Weaponised Narratives</h4>
-                    <ul class="space-y-1.5">
-                        {% for narrative in report.weaponised_narratives|slice:":3" %}
-                        <li class="text-sm text-gray-700 leading-snug">• {{ narrative }}</li>
-                        {% endfor %}
-                        {% if report.weaponised_narratives|length > 3 %}
-                        <li class="text-xs text-gray-500 italic">+ {{ report.weaponised_narratives|length|add:"-3" }} more</li>
-                        {% endif %}
-                    </ul>
-                </div>
-                {% endif %}
-
-                <!-- Actor Spotlight -->
-                {% if report.actor_spotlight %}
-                <div class="space-y-2">
-                    <h4 class="text-sm font-bold text-purple-700 uppercase">👤 Key Actors</h4>
-                    <ul class="space-y-1.5">
-                        {% for actor in report.actor_spotlight|slice:":3" %}
-                        <li class="text-sm text-gray-700 leading-snug">• {{ actor }}</li>
-                        {% endfor %}
-                        {% if report.actor_spotlight|length > 3 %}
-                        <li class="text-xs text-gray-500 italic">+ {{ report.actor_spotlight|length|add:"-3" }} more</li>
-                        {% endif %}
-                    </ul>
-                </div>
-                {% endif %}
-
-                <!-- TTP & Infrastructure -->
-                {% if report.ttp_infrastructure %}
-                <div class="space-y-2">
-                    <h4 class="text-sm font-bold text-teal-700 uppercase">⚙️ TTPs</h4>
-                    <ul class="space-y-1.5">
-                        {% for ttp in report.ttp_infrastructure|slice:":3" %}
-                        <li class="text-sm text-gray-700 leading-snug">• {{ ttp }}</li>
-                        {% endfor %}
-                        {% if report.ttp_infrastructure|length > 3 %}
-                        <li class="text-xs text-gray-500 italic">+ {{ report.ttp_infrastructure|length|add:"-3" }} more</li>
-                        {% endif %}
-                    </ul>
-                </div>
-                {% endif %}
-            </div>
-
-            <!-- Key Findings (If Available) -->
-            {% if report.key_findings %}
-            <div>
-                <h4 class="text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">🔑 Key Findings</h4>
-                <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <ul class="space-y-2">
-                        {% for finding in report.key_findings %}
-                        <li class="text-sm text-gray-700 leading-relaxed flex items-start gap-2">
-                            <span class="text-blue-500 mt-1">▸</span>
-                            <span>{{ finding }}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            </div>
-            {% endif %}
-
-            <!-- Entities -->
-            {% if report.mentioned_entities %}
-            <div>
-                <h4 class="text-xs font-bold text-gray-600 uppercase mb-2">👥 Entities Mentioned</h4>
-                <div class="flex flex-wrap gap-1.5">
-                    {% for entity in report.mentioned_entities|slice:":10" %}
-                    <span class="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded hover:bg-gray-200 transition-colors">
-                        {{ entity }}
-                    </span>
+                <h4 class="text-sm font-bold text-red-700 uppercase mb-2">🎯 Narratives</h4>
+                <ul class="space-y-1 text-sm text-gray-700">
+                    {% for item in report.weaponised_narratives %}
+                    <li>• {{ item }}</li>
                     {% endfor %}
-                    {% if report.mentioned_entities|length > 10 %}
-                    <span class="px-2.5 py-1 bg-gray-50 text-gray-500 text-xs rounded">
-                        +{{ report.mentioned_entities|length|add:"-10" }} more
-                    </span>
-                    {% endif %}
-                </div>
+                </ul>
             </div>
             {% endif %}
 
-            <!-- Full Text (Collapsible) -->
-            {% if report.extracted_text %}
-            <div class="border-t border-gray-200 pt-4">
-                <details class="group">
-                    <summary class="cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-2 list-none">
-                        <span class="transition-transform group-open/details:rotate-90">▶</span>
-                        View full extracted text ({{ report.extracted_text|length }} chars)
-                    </summary>
-                    <div class="mt-3 p-4 bg-gray-50 rounded-lg text-sm text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
-                        {{ report.extracted_text }}
-                    </div>
-                </details>
+            {% if report.actor_spotlight %}
+            <div>
+                <h4 class="text-sm font-bold text-purple-700 uppercase mb-2">👤 Actors</h4>
+                <ul class="space-y-1 text-sm text-gray-700">
+                    {% for item in report.actor_spotlight %}
+                    <li>• {{ item }}</li>
+                    {% endfor %}
+                </ul>
             </div>
             {% endif %}
 
+            {% if report.ttp_infrastructure %}
+            <div>
+                <h4 class="text-sm font-bold text-teal-700 uppercase mb-2">⚙️ TTPs</h4>
+                <ul class="space-y-1 text-sm text-gray-700">
+                    {% for item in report.ttp_infrastructure %}
+                    <li>• {{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
         </div>
+
+        <!-- Key Findings -->
+        {% if report.key_findings %}
+        <div class="mb-4">
+            <h4 class="text-sm font-bold text-gray-900 uppercase mb-2">🔑 Key Findings</h4>
+            <div class="bg-gray-50 p-4 rounded border border-gray-200">
+                <ul class="space-y-2 text-sm text-gray-700">
+                    {% for finding in report.key_findings %}
+                    <li>▸ {{ finding }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Entities -->
+        {% if report.mentioned_entities %}
+        <div class="mb-4">
+            <h4 class="text-xs font-bold text-gray-600 uppercase mb-2">👥 Entities</h4>
+            <div class="flex flex-wrap gap-2">
+                {% for entity in report.mentioned_entities %}
+                <span class="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">{{ entity }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Full Text -->
+        {% if report.extracted_text %}
+        <details class="border-t border-gray-200 pt-4 mt-4">
+            <summary class="cursor-pointer text-sm font-semibold text-blue-600">📄 View full text ({{ report.extracted_text|length }} chars)</summary>
+            <div class="mt-3 p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap max-h-96 overflow-y-auto">{{ report.extracted_text }}</div>
+        </details>
+        {% endif %}
+
     </div>
     {% endfor %}
-</div>
-
-{% else %}
-<div class="text-center py-16 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
-    <div class="text-5xl mb-3">📑</div>
-    <h3 class="text-xl font-bold text-gray-800 mb-2">No Reports Yet</h3>
-    <p class="text-gray-600 mb-4">Upload your first investigative report</p>
-    <code class="text-xs bg-white p-3 rounded border border-gray-200 block max-w-md mx-auto">
-        python manage.py upload_report /path/to/report.pdf --title "Title" --analyst "Name"
-    </code>
 </div>
 {% endif %}
 {% endblock %}
