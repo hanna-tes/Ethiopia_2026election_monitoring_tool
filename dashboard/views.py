@@ -1503,14 +1503,6 @@ class LexiconsView(TemplateView):
         
         context.update({
             'active_tab': 'lexicons',
-            'tabs': [
-                {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            ],
             'top_terms': top_terms_with_meta,
             'category_counts': dict(category_counts),
             'severity_counts': dict(severity_counts),
@@ -1655,14 +1647,6 @@ class NetworksView(TemplateView):
         
         context.update({
             'active_tab': 'networks',
-            'tabs': [
-                {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            ],
             'network_graph_json': json.dumps(graph_data, default=str),
             'coordination_groups': coordination_groups,
             'total_coordinated_groups': len(coordination_groups),
@@ -1712,14 +1696,6 @@ class LexiconManagementView(TemplateView):
         
         context.update({
             'active_tab': 'lexicon_management',
-            'tabs': [
-                {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            ],
             'lexicon_terms': lexicon_terms,
             'categories': categories,
             'total_terms': lexicon_terms.count(),
@@ -1827,14 +1803,6 @@ class UploadDataView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['active_tab'] = 'upload'
-        context['tabs'] = [
-            {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-            {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-            {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-            {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-            {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-            {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-        ]
         context['recent_uploads'] = DataUpload.objects.order_by('-uploaded_at')[:10]
         return context
     
