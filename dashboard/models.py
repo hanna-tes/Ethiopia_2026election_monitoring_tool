@@ -271,6 +271,12 @@ class MonitoringReport(models.Model):
     actor_spotlight_full = models.TextField(blank=True, help_text="Full text of actor spotlight section")
     ttp_infrastructure_full = models.TextField(blank=True, help_text="Full text of TTP section")
     key_findings_full = models.TextField(blank=True, help_text="Full text of key findings section")
+
+    # ✅ Keep concise summary fields for quick display:
+    weaponised_narratives = models.TextField(blank=True, help_text="Concise LLM-generated bullet summaries")
+    actor_spotlight = models.TextField(blank=True, help_text="Concise LLM-generated bullet summaries")
+    ttp_infrastructure = models.TextField(blank=True, help_text="Concise LLM-generated bullet summaries")
+    
         
     is_processed = models.BooleanField(default=True)  # Always true since no LLM step
     
