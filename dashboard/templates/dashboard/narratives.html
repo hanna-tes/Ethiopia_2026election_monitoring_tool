@@ -31,47 +31,61 @@
         <div class="border border-gray-200 rounded-xl p-6 hover:shadow-md transition bg-white">
             
             <!-- Header -->
-            <div class="flex items-center gap-3 mb-4">
-                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
-                    #{{ summary.cluster_id }}
-                </div>
-                <div>
-                    <h3 class="text-lg font-bold text-gray-900">{{ summary.Narrative_Description }}</h3>
-                    <div class="text-sm text-gray-600 mt-1">
-                        📊 {{ summary.Total_Reach }} posts • 🚀 {{ summary.Emerging_Virality }} • {{ summary.Top_Platforms }}
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
+                        #{{ summary.cluster_id }}
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900">{{ summary.Narrative_Description }}</h3>
+                        <div class="text-sm text-gray-600 mt-1">
+                            📊 {{ summary.Total_Reach }} posts • 🚀 {{ summary.Emerging_Virality }} • {{ summary.Top_Platforms }}
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            📅 {{ summary.time_range }} • 👤 First shared by: {{ summary.first_account|truncatechars:25 }}
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <!-- ✅ Full Narrative Context (NO TRUNCATION, NO LABELS) -->
+            <!-- ✅ LLM-Generated Summary (Concise) -->
             {% if summary.Context %}
-            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-5">
-                <h4 class="text-sm font-semibold text-gray-900 mb-2">📋 Analysis</h4>
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-5">
+                <h4 class="text-sm font-semibold text-blue-900 mb-2">📋 AI-Powered Narrative Analysis</h4>
                 <div class="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">
                     {{ summary.Context }}
                 </div>
             </div>
             {% endif %}
             
-            <!-- ✅ Sample Posts (FULL TEXT, NO TRUNCATION) -->
+            <!-- ✅ Sample Posts (TRUNCATED - old style) -->
             {% if summary.sample_posts_with_urls %}
             <div>
-                <h5 class="font-semibold text-gray-800 mb-3">📂 Sample Posts</h5>
-                <div class="space-y-3">
+                <h5 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                    📂 Sample Posts ({{ summary.sample_posts_with_urls|length }})
+                    {% if summary.unique_urls_count %}
+                    <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                        {{ summary.unique_urls_count }} URLs
+                    </span>
+                    {% endif %}
+                </h5>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {% for post in summary.sample_posts_with_urls %}
-                    <div class="bg-white border border-gray-200 rounded-lg p-4">
-                        <div class="flex items-center gap-2 mb-2 text-xs text-gray-500">
-                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">{{ post.platform|default:"Unknown" }}</span>
-                            <span>{{ post.account|truncatechars:30 }}</span>
+                    <div class="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-sm transition">
+                        <div class="flex items-center gap-2 mb-2 text-xs">
+                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                                {{ post.platform|default:"Unknown" }}
+                            </span>
+                            <span class="text-gray-500 truncate">{{ post.account|truncatechars:25 }}</span>
                         </div>
-                        <!-- ✅ FULL POST TEXT, NO TRUNCATION -->
-                        <p class="text-sm text-gray-700 mb-3 whitespace-pre-wrap leading-relaxed">
+                        <!-- TRUNCATED POST TEXT -->
+                        <p class="text-sm text-gray-700 mb-2 leading-relaxed">
                             {{ post.text }}
                         </p>
                         {% if post.url %}
                         <a href="{{ post.url }}" target="_blank" rel="noopener noreferrer" 
-                           class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                            🔗 View Original Post
+                           class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                            🔗 View Post
                         </a>
                         {% endif %}
                     </div>
@@ -86,7 +100,7 @@
     {% else %}
     <div class="text-center py-12 bg-gray-50 rounded-xl">
         <div class="text-4xl mb-3">📰</div>
-        <p class="text-gray-600">No narratives detected. Upload more election posts to generate insights.</p>
+        <p class="text-gray-600">No narratives detected. Upload more election posts.</p>
     </div>
     {% endif %}
 </div>
