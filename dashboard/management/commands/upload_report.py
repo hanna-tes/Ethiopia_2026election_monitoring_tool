@@ -37,28 +37,24 @@ def extract_section_content(full_text, header_pattern):
     content = []
     in_section = False
     
-    # All known headers to detect section boundaries
     all_headers = [
         r'(?i)executive\s+summary',
         r'(?i)key\s+findings|findings|main\s+conclusions',
         r'(?i)weaponised\s+narratives|weaponized\s+narratives|harmful\s+narratives',
         r'(?i)actor\s+spotlight|key\s+actors|mentioned\s+actors',
         r'(?i)tactics,\s*techniques,\s*and\s*procedures|ttp|infrastructure',
-        r'(?i)\d+\.\s+[A-Z]',  # Numbered sections like "3.1 Hate speech..."
+        r'(?i)\d+\.\s+[A-Z]',
     ]
     
     for line in lines:
         clean = line.strip()
         if not clean: continue
         
-        # Check if we're entering the target section
         if re.search(header_pattern, clean) and not in_section:
             in_section = True
             continue
             
-        # If we're in the section, capture content
         if in_section:
-            # Stop if we hit another major header
             if any(re.search(h, clean) for h in all_headers if h != header_pattern):
                 break
             content.append(clean)
@@ -66,17 +62,16 @@ def extract_section_content(full_text, header_pattern):
     return '\n'.join(content).strip()
 
 def llm_summarize_section(section_name, full_content):
-    """Use LLM to create a concise, insightful summary of a section"""
-    # Truncate to avoid token limits while keeping context
-    context = full_content[:6000] if len(full_content) > 6000 else full_content
+    """Use LLM to create a concise, insightful summary (3-5 bullets max)"""
+    context = full_content[:4000] if len(full_content) > 4000 else full_content
     
     prompt = f"""You are an election monitoring analyst. Summarize this {section_name} section concisely.
 
 **Instructions:**
-1. Extract 3-5 KEY bullet points that capture the MOST important insights
+1. Extract EXACTLY 3-5 KEY bullet points that capture the MOST important insights
 2. Preserve SPECIFIC examples, entities, dates, and claims mentioned
 3. Keep the tone factual and analytical
-4. Each bullet should be 1-2 sentences max
+4. Each bullet should be 1-2 sentences MAX
 5. Focus on actionable intelligence for election monitoring
 
 **Section Content:**
@@ -88,9 +83,7 @@ def llm_summarize_section(section_name, full_content):
     "Key insight 1 with specific example",
     "Key insight 2 with entity/date",
     "Key insight 3 with claim/evidence"
-  ],
-  "key_entities": ["Entity 1", "Entity 2", "Entity 3"],
-  "risk_indicators": ["Indicator 1", "Indicator 2"]
+  ]
 }}
 JSON:"""
     
@@ -98,42 +91,34 @@ JSON:"""
         response = safe_llm_call(prompt)
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
-            return json.loads(json_match.group())
+            data = json.loads(json_match.group())
+            bullets = data.get('summary_bullets', [])
+            return bullets[:5]  # Always limit to 5
     except Exception as e:
         logger.error(f"LLM summarization failed for {section_name}: {e}")
     
-    # Fallback: Return first 3 substantive lines as bullets
-    lines = [l.strip() for l in full_content.split('\n') if len(l.strip()) > 50]
-    return {
-        "summary_bullets": [f"• {l}" for l in lines[:3]],
-        "key_entities": [],
-        "risk_indicators": []
-    }
+    # Smart fallback: extract only substantive bullet points, limit to 5
+    lines = [l.strip() for l in full_content.split('\n') 
+             if l.strip().startswith(('•', '-', '*', '▸', '→', '▪')) and len(l.strip()) > 30]
+    
+    # Filter out intro/descriptive lines
+    skip_phrases = ['this section', 'cite this', 'get more', 'share your', 'the report', 
+                   'among these', 'collectively', 'operations or other']
+    filtered = [l for l in lines if not any(skip in l.lower() for skip in skip_phrases)]
+    
+    # Clean and return max 5 bullets
+    cleaned = [re.sub(r'^[•\-\*\▸→▪\s]+', '', l).strip() for l in filtered[:5]]
+    return cleaned if cleaned else [full_content[:200] + "..."]
 
 def parse_and_summarize_sections(full_text):
     """Extract full sections and use LLM to create concise summaries"""
     
     sections_config = {
-        'executive_summary': {
-            'pattern': r'(?i)executive\s+summary',
-            'llm_prompt_addon': 'Focus on the main electoral risks and information environment assessment.'
-        },
-        'weaponised_narratives': {
-            'pattern': r'(?i)weaponised\s+narratives|weaponized\s+narratives|harmful\s+narratives',
-            'llm_prompt_addon': 'Focus on specific narratives, target groups, and amplification tactics.'
-        },
-        'actor_spotlight': {
-            'pattern': r'(?i)actor\s+spotlight|key\s+actors|mentioned\s+actors',
-            'llm_prompt_addon': 'Focus on organizations, accounts, or groups amplifying harmful content.'
-        },
-        'ttp_infrastructure': {
-            'pattern': r'(?i)tactics,\s*techniques,\s*and\s*procedures|ttp|infrastructure',
-            'llm_prompt_addon': 'Focus on platforms, coordination methods, and technical infrastructure.'
-        },
-        'key_findings': {
-            'pattern': r'(?i)key\s+findings|findings|main\s+conclusions',
-            'llm_prompt_addon': 'Focus on the most critical conclusions for election integrity.'
-        }
+        'executive_summary': r'(?i)executive\s+summary',
+        'weaponised_narratives': r'(?i)weaponised\s+narratives|weaponized\s+narratives|harmful\s+narratives',
+        'actor_spotlight': r'(?i)actor\s+spotlight|key\s+actors|mentioned\s+actors',
+        'ttp_infrastructure': r'(?i)tactics,\s*techniques,\s*and\s*procedures|ttp|infrastructure',
+        'key_findings': r'(?i)key\s+findings|findings|main\s+conclusions',
     }
     
     results = {}
@@ -143,25 +128,23 @@ def parse_and_summarize_sections(full_text):
     results['sample_urls'] = list(set([re.sub(r'[.,;)]$', '', u) for u in all_urls if len(u) > 10]))[:10]
     
     # Process each section
-    for section_key, config in sections_config.items():
-        content = extract_section_content(full_text, config['pattern'])
+    for section_key, pattern in sections_config.items():
+        content = extract_section_content(full_text, pattern)
         
-        if content and len(content) > 100:  # Only process substantive sections
+        if content and len(content) > 100:
             logger.info(f"🤖 Summarizing {section_key} ({len(content)} chars)...")
-            summary_data = llm_summarize_section(section_key.replace('_', ' ').title(), content)
+            bullets = llm_summarize_section(section_key.replace('_', ' ').title(), content)
             
             results[section_key] = {
-                'full_text': content[:10000],  # Store full text for expandable view
-                'summary_bullets': summary_data.get('summary_bullets', [])[:5],  # Top 5 bullets
-                'key_entities': summary_data.get('key_entities', [])[:10],  # Top 10 entities
-                'risk_indicators': summary_data.get('risk_indicators', [])
+                'full_text': content,  # ✅ NO CHARACTER LIMIT
+                'summary_bullets': bullets[:5],  # Max 5 concise bullets
+                'key_entities': []  # Can be extended if needed
             }
         else:
             results[section_key] = {
-                'full_text': content[:2000] if content else '',
+                'full_text': content if content else '',
                 'summary_bullets': [],
-                'key_entities': [],
-                'risk_indicators': []
+                'key_entities': []
             }
     
     return results
@@ -171,12 +154,12 @@ def assess_risk_level(full_text, parsed_sections):
     prompt = f"""Analyze this election monitoring report and assign a risk level.
 
 **RISK GUIDELINES:**
-- critical: Incitement to violence, coordinated hate speech, threats to electoral integrity, imminent harm
-- high: Widespread disinformation, ethnic/political polarization, coordinated manipulation, severe institutional distrust  
+- critical: Incitement to violence, coordinated hate speech, threats to electoral integrity
+- high: Widespread disinformation, ethnic/political polarization, coordinated manipulation
 - medium: Bias, unverified claims, moderate polarization, standard political criticism
 - low: Factual reporting, neutral analysis, procedural updates
 
-**Key sections from the report:**
+**Key sections:**
 Executive Summary: {parsed_sections.get('executive_summary', {}).get('full_text', '')[:500]}
 Weaponised Narratives: {parsed_sections.get('weaponised_narratives', {}).get('full_text', '')[:500]}
 
@@ -237,49 +220,52 @@ class Command(BaseCommand):
             self.stdout.write("🤖 Assessing contextual risk level...")
             risk_level = assess_risk_level(raw_text, parsed)
             
-            # Save to database
-            # Save to database - FULL CONTENT + LLM SUMMARIES (NO CHARACTER LIMITS)
+            # Helper to join bullets with ||| separator for easy template parsing
+            def bullets_to_text(bullets):
+                return '|||'.join(bullets) if bullets else ''
+            
+            # Save to database - FULL CONTENT + CONCISE SUMMARIES
             report = MonitoringReport.objects.create(
                 title=title,
                 source_analyst=options['analyst'],
                 file_path=file_path,
                 report_type=options['type'],
                 
-                # Store FULL extracted text (no limit)
-                extracted_text=raw_text,  
+                # ✅ Store FULL extracted text (NO LIMIT)
+                extracted_text=raw_text,
                 
-                # Executive summary (concise LLM-generated)
+                # Executive summary (concise)
                 summary=" ".join(parsed.get('executive_summary', {}).get('summary_bullets', [])[:2]),
                 
-                # Key findings (JSONField - store concise bullets)
+                # Key findings (JSONField - concise bullets)
                 key_findings=parsed.get('key_findings', {}).get('summary_bullets', []),
                 
-                # ✅ Store FULL section content in *_full TextFields (NO LIMITS)
+                # ✅ Store concise summaries as |||-separated text for template parsing
+                weaponised_narratives=bullets_to_text(parsed.get('weaponised_narratives', {}).get('summary_bullets', [])),
+                actor_spotlight=bullets_to_text(parsed.get('actor_spotlight', {}).get('summary_bullets', [])),
+                ttp_infrastructure=bullets_to_text(parsed.get('ttp_infrastructure', {}).get('summary_bullets', [])),
+                
+                # ✅ Store FULL section content (NO LIMITS)
                 weaponised_narratives_full=parsed.get('weaponised_narratives', {}).get('full_text', ''),
                 actor_spotlight_full=parsed.get('actor_spotlight', {}).get('full_text', ''),
                 ttp_infrastructure_full=parsed.get('ttp_infrastructure', {}).get('full_text', ''),
                 key_findings_full=parsed.get('key_findings', {}).get('full_text', ''),
                 
-                # Store concise LLM summaries as newline-separated text for quick display
-                # (These will be shown by default, with full content expandable)
-                weaponised_narratives='\n'.join(parsed.get('weaponised_narratives', {}).get('summary_bullets', [])),
-                actor_spotlight='\n'.join(parsed.get('actor_spotlight', {}).get('summary_bullets', [])),
-                ttp_infrastructure='\n'.join(parsed.get('ttp_infrastructure', {}).get('summary_bullets', [])),
-                
-                # Entities and risk indicators
+                # Entities
                 mentioned_entities=parsed.get('weaponised_narratives', {}).get('key_entities', []) + 
                                   parsed.get('actor_spotlight', {}).get('key_entities', []),
                 
                 sample_urls=parsed.get('sample_urls', []),
                 risk_level=risk_level,
                 is_processed=True
-            )            
+            )
+            
             self.stdout.write(f"\n✅ SUCCESS! Report saved with AI-generated insights.")
             self.stdout.write(f"📊 Risk Level: {report.risk_level.upper()}")
-            self.stdout.write(f"🔑 Key Findings: {len(report.key_findings)} AI-summarized bullets")
-            self.stdout.write(f"🎯 Narratives: {len(report.weaponised_narratives)} AI-summarized bullets")
-            self.stdout.write(f"👤 Actors: {len(report.actor_spotlight)} AI-summarized bullets")
-            self.stdout.write(f"⚙️ TTPs: {len(report.ttp_infrastructure)} AI-summarized bullets")
+            self.stdout.write(f"🔑 Key Findings: {len(report.key_findings)} bullets")
+            self.stdout.write(f"🎯 Narratives: {len(report.weaponised_narratives.split('|||')) if report.weaponised_narratives else 0} bullets")
+            self.stdout.write(f"👤 Actors: {len(report.actor_spotlight.split('|||')) if report.actor_spotlight else 0} bullets")
+            self.stdout.write(f"⚙️ TTPs: {len(report.ttp_infrastructure.split('|||')) if report.ttp_infrastructure else 0} bullets")
             self.stdout.write(f"🔗 Sample Links: {len(report.sample_urls)}")
             self.stdout.write(f"🔗 View: http://localhost:8505/investigative-reports/")
             
