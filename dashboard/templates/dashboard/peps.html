@@ -1,5 +1,6 @@
 {% extends 'dashboard/base.html' %}
 {% block title %}PEPs/PIPs Tracker{% endblock %}
+
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
     <div class="flex items-center gap-2 mb-4">
@@ -23,6 +24,9 @@
             </button>
             <button onclick="switchTab('candidates')" id="tab-candidates" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
                 🗳️ Election Candidates
+            </button>
+            <button onclick="switchTab('analysis')" id="tab-analysis" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                📊 PEP Analysis
             </button>
         </nav>
     </div>
@@ -99,6 +103,129 @@
             <strong>📊 Local Data Status:</strong> <span class="font-medium">{{ total_candidates|default:0 }}</span> election candidate records loaded from local Excel files. Click any card above to view the structured spreadsheet data.
         </div>
     </div>
+
+    <!-- ✅ NEW Tab 3: PEP Analysis (Insights from Social Media) -->
+    <div id="content-analysis" class="tab-content hidden">
+        
+        {% if pep_analysis %}
+        <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">🔍 PEP Mention & Narrative Analysis</h3>
+            <p class="text-sm text-gray-600">
+                Analysis of <span class="font-semibold">{{ total_peps }}</span> officials across social media posts. 
+                Shows mention frequency, critical narratives, and sample claims.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {% for pep in pep_analysis %}
+            <!-- PEP Analysis Card -->
+            <div class="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                
+                <!-- Card Header -->
+                <div class="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200 p-5">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="text-lg font-bold text-gray-900">{{ pep.pep_name }}</h4>
+                            <div class="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                                <span class="flex items-center gap-1">
+                                    💬 {{ pep.mention_count }} mentions
+                                </span>
+                                <span class="text-gray-300">|</span>
+                                <span class="font-semibold {{ pep.sentiment_badge|split:' '|first|lower }}">
+                                    {{ pep.sentiment_badge }}
+                                </span>
+                            </div>
+                        </div>
+                        <!-- Risk Score Badge -->
+                        <div class="text-right">
+                            <div class="text-2xl font-bold {% if pep.risk_score >= 7 %}text-red-600{% elif pep.risk_score >= 4 %}text-orange-600{% else %}text-green-600{% endif %}">
+                                {{ pep.risk_score }}/10
+                            </div>
+                            <div class="text-xs text-gray-500">Risk Score</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card Content -->
+                <div class="p-5 space-y-4">
+                    
+                    <!-- Critical Narratives -->
+                    {% if pep.critical_narratives %}
+                    <div>
+                        <h5 class="text-sm font-bold text-red-700 uppercase mb-2 flex items-center gap-1">
+                            ⚠️ Critical Narratives
+                        </h5>
+                        <div class="space-y-2">
+                            {% for narrative in pep.critical_narratives %}
+                            <div class="bg-red-50 border-l-4 border-red-400 p-3 rounded-r">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="text-sm font-semibold text-red-900">{{ narrative.theme }}</p>
+                                        <p class="text-xs text-red-700 mt-1">{{ narrative.description }}</p>
+                                    </div>
+                                    <span class="px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded">
+                                        {{ narrative.severity|title }}
+                                    </span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Sample Posts -->
+                    {% if pep.sample_posts %}
+                    <div>
+                        <h5 class="text-sm font-bold text-gray-700 uppercase mb-2 flex items-center gap-1">
+                            📝 Sample Claims
+                        </h5>
+                        <div class="space-y-2">
+                            {% for post in pep.sample_posts %}
+                            <details class="border border-gray-200 rounded-lg overflow-hidden">
+                                <summary class="cursor-pointer bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 flex items-center justify-between list-none">
+                                    <span class="flex items-center gap-2">
+                                        <span class="px-2 py-0.5 bg-{{ post.platform|lower }}-100 text-{{ post.platform|lower }}-700 text-xs rounded">
+                                            {{ post.platform }}
+                                        </span>
+                                        <span class="text-gray-500">{{ post.timestamp|date:"M d" }}</span>
+                                    </span>
+                                    <span class="text-blue-600 text-xs">▶ View</span>
+                                </summary>
+                                <div class="p-3 bg-white text-sm text-gray-700 whitespace-pre-wrap border-t border-gray-200">
+                                    {{ post.text }}
+                                    {% if post.url %}
+                                    <div class="mt-2">
+                                        <a href="{{ post.url }}" target="_blank" class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                            🔗 View Original Post
+                                        </a>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </details>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% else %}
+        <!-- Empty State -->
+        <div class="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+            <div class="text-5xl mb-3">📊</div>
+            <h3 class="text-lg font-bold text-gray-800 mb-2">No PEP Analysis Data Yet</h3>
+            <p class="text-gray-600 mb-4">Upload social media posts mentioning PEPs to generate narrative insights.</p>
+            <a href="{% url 'upload_data' %}" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                📤 Upload Data Now
+            </a>
+        </div>
+        {% endif %}
+
+    </div>
+
 </div>
 
 <script>
@@ -114,6 +241,24 @@
         
         document.getElementById('tab-officials').className = tabName === 'officials' ? activeClass : inactiveClass;
         document.getElementById('tab-candidates').className = tabName === 'candidates' ? activeClass : inactiveClass;
+        document.getElementById('tab-analysis').className = tabName === 'analysis' ? activeClass : inactiveClass;
     }
 </script>
+
+<style>
+    /* Sentiment badge colors */
+    .text-🔴 { color: #dc2626; }
+    .text-🟡 { color: #f59e0b; }
+    .text-🟢 { color: #22c55e; }
+    
+    /* Platform badge colors */
+    .bg-x-100 { background-color: #eff6ff; }
+    .text-x-700 { color: #1e40af; }
+    .bg-facebook-100 { background-color: #eff6ff; }
+    .text-facebook-700 { color: #1e40af; }
+    .bg-telegram-100 { background-color: #f0f9ff; }
+    .text-telegram-700 { color: #0369a1; }
+    .bg-tiktok-100 { background-color: #fefefe; }
+    .text-tiktok-700 { color: #1f2937; }
+</style>
 {% endblock %}
