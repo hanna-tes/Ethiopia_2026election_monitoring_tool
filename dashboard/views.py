@@ -301,26 +301,23 @@ Time Range: {min_ts} to {max_ts}"""
 
 
 def get_ethiopia_summaries(posts_queryset, max_clusters=10):
-    """Generates summaries with REAL claims extracted from actual posts"""
+    """Generates summaries with REAL claims extracted from actual posts - SIMPLIFIED"""
     all_summaries = []
     
     if posts_queryset.count() < 20:
         return all_summaries
     
-    # Get post data
-    post_data = list(posts_queryset.values('original_text', 'url', 'account_id', 'platform', 'timestamp_share', 'risk_level')[:2000])
+    post_data = list(posts_queryset.values('original_text', 'url', 'account_id', 'platform', 'timestamp_share')[:2000])
     
     if len(post_data) < 20:
         return all_summaries
     
-    # Filter to posts with meaningful text
     texts = [p['original_text'] for p in post_data if p['original_text'] and len(p['original_text'].strip()) > 50]
     
     if len(texts) < 20:
         return all_summaries
     
     try:
-        # Cluster posts by similarity
         vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1,2))
         X = vectorizer.fit_transform(texts)
         
@@ -328,12 +325,10 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         labels = kmeans.fit_predict(X)
         
-        # Group posts by cluster
         cluster_posts = defaultdict(list)
         for idx, label in enumerate(labels):
             cluster_posts[label].append(post_data[idx])
         
-        # Process each cluster
         for cluster_id, cluster_data in cluster_posts.items():
             if len(cluster_data) < 3:
                 continue
@@ -345,113 +340,103 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=10):
             min_ts = min(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
             max_ts = max(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
             
-            # EXTRACT CLAIMS from actual post content
-            specific_claims = []
-            critical_keywords = {
-                'election_fraud': ['rigged', 'stolen', 'fraud', 'manipulated', 'fake results', 'nebe biased'],
-                'hate_speech': ['kill', 'hate', 'enemy', 'traitor', 'genocide', 'ethnic cleansing'],
-                'violence_incitement': ['attack', 'fight', 'war', 'weapon', 'militia', 'armed'],
-                'disinformation': ['fake news', 'propaganda', 'lies', 'misleading', 'false'],
-                'foreign_interference': ['foreign', 'UAE', 'Egypt', 'Eritrea', 'interference', 'proxy']
-            }
+            #  EXTRACT SPECIFIC CLAIMS (no labels, just the claim text)
+            claims_found = []
+            seen_claims = set()
             
-            for text in cluster_texts[:30]:  # Analyze first 30 posts
-                text_lower = text.lower()
-                for claim_type, keywords in critical_keywords.items():
-                    for kw in keywords:
-                        if kw in text_lower:
-                            # Extract the sentence containing the keyword
-                            sentences = [s.strip() for s in text.split('.') if kw in s.lower() and len(s) > 20]
-                            for sentence in sentences[:2]:  # Max 2 sentences per keyword
-                                if sentence not in specific_claims:
-                                    specific_claims.append({
-                                        'claim': sentence[:300] + ('...' if len(sentence) > 300 else ''),
-                                        'type': claim_type.replace('_', ' ').title(),
-                                        'severity': 'high' if claim_type in ['hate_speech', 'violence_incitement'] else 'medium'
-                                    })
+            for text in cluster_texts[:50]:  # Scan first 50 posts
+                # Look for sentences with claim-like patterns
+                sentences = [s.strip() for s in text.split('.') if len(s.strip()) > 40]
+                for sentence in sentences:
+                    # Skip if it's just a URL or metadata
+                    if sentence.lower().startswith(('http', 'read more', 'via @', 'source:')):
+                        continue
+                    # Skip duplicates
+                    claim_key = sentence[:100].lower()
+                    if claim_key not in seen_claims:
+                        seen_claims.add(claim_key)
+                        claims_found.append(sentence[:400] + ('...' if len(sentence) > 400 else ''))
+                        if len(claims_found) >= 5:  #  Only keep top 5
+                            break
+                if len(claims_found) >= 5:
+                    break
             
-            # Build FULL narrative context (no truncation)
-            full_context_parts = []
+            #  Build clean, concise context (NO LABELS, NO TRUNCATION)
+            context_parts = []
             
-            # Add cluster theme based on top keywords
+            # Add primary topics
             if cluster_texts:
                 all_text = ' '.join(cluster_texts[:20]).lower()
-                top_topics = []
-                for topic, keywords in {
-                    'election integrity': ['election', 'vote', 'ballot', 'nebe', 'results'],
-                    'ethnic tension': ['amhara', 'oromo', 'tigray', 'ethnic', 'tribal'],
-                    'political criticism': ['government', 'abiy', 'prosperity', 'opposition', 'fano'],
-                    'security concerns': ['conflict', 'violence', 'militia', 'attack', 'security']
-                }.items():
+                topics = []
+                topic_keywords = {
+                    'election process': ['election', 'vote', 'ballot', 'nebe', 'results', 'polling'],
+                    'ethnic dynamics': ['amhara', 'oromo', 'tigray', 'ethnic', 'community', 'regional'],
+                    'political actors': ['abiy', 'prosperity party', 'opposition', 'fano', 'government'],
+                    'security issues': ['conflict', 'violence', 'attack', 'militia', 'drone', 'security'],
+                    'media & information': ['news', 'report', 'social media', 'post', 'platform', 'content']
+                }
+                for topic, keywords in topic_keywords.items():
                     if any(kw in all_text for kw in keywords):
-                        top_topics.append(topic)
-                
-                if top_topics:
-                    full_context_parts.append(f"🎯 Primary Topics: {', '.join(top_topics)}")
+                        topics.append(topic)
+                if topics:
+                    context_parts.append(f"🎯 Topics: {', '.join(topics[:3])}")
             
-            # Add specific claims with highlighting
-            if specific_claims:
-                full_context_parts.append("\n⚠️ Specific Claims Detected:")
-                for claim in specific_claims[:10]:  # Top 10 claims
-                    badge = "🔴" if claim['severity'] == 'high' else "🟡"
-                    full_context_parts.append(f"{badge} [{claim['type']}] {claim['claim']}")
+            # Add claims (plain text, no labels, max 5)
+            if claims_found:
+                context_parts.append("\n📌 Key Claims in This Cluster:")
+                for i, claim in enumerate(claims_found[:5], 1):
+                    context_parts.append(f"{i}. {claim}")
             
-            # Add sample quotes (real post excerpts)
+            # Add representative quotes (full text, no truncation)
             sample_quotes = []
-            for post in cluster_data[:5]:
-                if post['original_text'] and len(post['original_text']) > 50:
-                    # Clean and truncate for display
-                    clean_text = re.sub(r'http\S+|@\w+|#\w+', '', post['original_text']).strip()
-                    sample_quotes.append(f"• \"{clean_text[:250]}{'...' if len(clean_text) > 250 else ''}\"")
+            for post in cluster_data[:3]:
+                if post['original_text'] and len(post['original_text']) > 80:
+                    clean = re.sub(r'http\S+|@\w+|#\w+', '', post['original_text']).strip()
+                    if len(clean) > 50:
+                        sample_quotes.append(f'"{clean}"')
             
             if sample_quotes:
-                full_context_parts.append("\n📝 Representative Post Excerpts:")
-                full_context_parts.extend(sample_quotes)
+                context_parts.append("\n💬 Sample Post Excerpts:")
+                context_parts.extend(sample_quotes)
             
-            # Join all parts with proper formatting
-            full_context = '\n\n'.join(full_context_parts) if full_context_parts else "No specific claims detected in this cluster."
+            # Join with clean formatting
+            full_context = '\n\n'.join(context_parts) if context_parts else "Posts in this cluster discuss election-related themes."
             
-            # Prepare sample posts with URLs
+            # Prepare sample posts (FULL TEXT, no truncation)
             sample_posts_with_urls = []
-            for post in cluster_data[:10]:
-                if post['original_text'] and len(post['original_text'].strip()) > 30:
+            for post in cluster_data[:8]:
+                if post['original_text'] and len(post['original_text'].strip()) > 40:
                     sample_posts_with_urls.append({
-                        'text': post['original_text'][:300] + ('...' if len(post['original_text']) > 300 else ''),
+                        'text': post['original_text'],  
                         'url': post['url'] if post['url'] and str(post['url']).startswith('http') else None,
-                        'account': str(post['account_id'])[:30],
-                        'platform': post['platform'],
-                        'risk_level': post.get('risk_level', 'low')
+                        'account': str(post['account_id'])[:35],
+                        'platform': post['platform']
                     })
             
-            # Calculate metrics
+            # Metrics
             total_reach = len(cluster_data)
             platforms = [p['platform'] for p in cluster_data if p.get('platform')]
             platform_counts = Counter(platforms)
             top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
             
-            # Generate concise narrative description
-            narrative_desc = f"Cluster discussing {', '.join(top_topics[:2]) if top_topics else 'election-related topics'} with {len(specific_claims)} specific claims detected"
+            narrative_desc = f"Cluster of {total_reach} posts about {', '.join(topics[:2]) if 'topics' in locals() and topics else 'election topics'}"
             
             all_summaries.append({
                 'cluster_id': cluster_id,
-                'Context': full_context,  # ✅ FULL context, no truncation
+                'Context': full_context,  #  clean context
                 'Narrative_Description': narrative_desc,
                 'Total_Reach': total_reach,
                 'Emerging_Virality': assign_virality_tier(total_reach),
                 'Top_Platforms': top_platforms,
                 'sample_posts_with_urls': sample_posts_with_urls,
                 'post_count': len(cluster_data),
-                'unique_urls_count': len(set([p['url'] for p in cluster_data if p['url']])),
-                'specific_claims_count': len(specific_claims)
+                'unique_urls_count': len(set([p['url'] for p in cluster_data if p['url']]))
             })
         
-        # Sort by reach (most viral first)
         all_summaries.sort(key=lambda x: x['Total_Reach'], reverse=True)
         
     except Exception as e:
         logger.error(f"Narrative clustering failed: {e}")
-        import traceback
-        traceback.print_exc()
     
     return all_summaries[:max_clusters]
     
