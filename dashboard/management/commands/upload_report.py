@@ -1,6 +1,5 @@
 import os
 import re
-import json
 import logging
 from django.core.management.base import BaseCommand
 from dashboard.models import MonitoringReport
@@ -9,7 +8,7 @@ from dashboard.utils.llm_service import safe_llm_call
 logger = logging.getLogger(__name__)
 
 def extract_text(file_path):
-    """Extract text, preserving structure for section detection"""
+    """Extract text from PDF, DOCX, or TXT"""
     ext = os.path.splitext(file_path)[1].lower()
     
     if ext == '.txt':
@@ -31,147 +30,35 @@ def extract_text(file_path):
             raise ImportError("Install python-docx: pip install python-docx")
     raise ValueError(f"Unsupported file type: {ext}")
 
-def extract_section_content(full_text, header_pattern):
-    """Extract ALL content under a specific header until the next major header"""
-    lines = full_text.split('\n')
-    content = []
-    in_section = False
+def generate_executive_summary(full_text):
+    """Use LLM to generate a concise executive summary (2-3 sentences)"""
+    context = full_text[:3000] if len(full_text) > 3000 else full_text
     
-    # All known headers to detect section boundaries (more flexible)
-    all_headers = [
-        r'(?i)executive\s+summary',
-        r'(?i)key\s+findings|findings|main\s+conclusions|conclusions',
-        r'(?i)weaponised\s+narratives|weaponized\s+narratives|harmful\s+narratives|polarising\s+narratives',
-        r'(?i)actor\s+spotlight|key\s+actors|mentioned\s+actors|people\s+and\s+organisations',
-        r'(?i)tactics,\s*techniques,\s*and\s*procedures|ttp|infrastructure|information\s+manipulation',
-        r'(?i)\d+\.\d+\s+[A-Z]',  # Numbered subsections like "3.1 Hate speech..."
-        r'(?i)^\d+\.\s+[A-Z]',    # Numbered sections like "1. Executive Summary"
-    ]
-    
-    for line in lines:
-        clean = line.strip()
-        if not clean: continue
-        
-        # Check if we're entering the target section
-        if re.search(header_pattern, clean) and not in_section:
-            in_section = True
-            continue
-            
-        # If we're in the section, capture content
-        if in_section:
-            # Stop if we hit another major header
-            if any(re.search(h, clean) for h in all_headers if h != header_pattern):
-                break
-            content.append(clean)
-    
-    return '\n'.join(content).strip()
+    prompt = f"""You are an election monitoring analyst. Write a concise 2-3 sentence executive summary of this report.
 
-def extract_urls_from_section(section_content):
-    """Extract URLs only from within a specific section"""
-    if not section_content:
-        return []
-    urls = re.findall(r'https?://\S+', section_content)
-    # Clean and dedupe
-    cleaned = [re.sub(r'[.,;)]$', '', u) for u in urls if len(u) > 10]
-    return list(set(cleaned))[:5]  # Max 5 URLs per section
+**Focus on:**
+- Main electoral risks identified
+- Key information environment challenges
+- Most critical findings for decision-makers
 
-def llm_summarize_section(section_name, full_content):
-    """Use LLM to create a concise, insightful summary (3-5 bullets max)"""
-    context = full_content[:4000] if len(full_content) > 4000 else full_content
-    
-    prompt = f"""You are an election monitoring analyst. Summarize this {section_name} section concisely.
-
-**Instructions:**
-1. Extract EXACTLY 3-5 KEY bullet points that capture the MOST important insights
-2. Preserve SPECIFIC examples, entities, dates, and claims mentioned
-3. Keep the tone factual and analytical
-4. Each bullet should be 1-2 sentences MAX
-5. Focus on actionable intelligence for election monitoring
-
-**Section Content:**
+**Report excerpt:**
 {context}
 
-**Return ONLY valid JSON in this exact format:**
-{{
-  "summary_bullets": [
-    "Key insight 1 with specific example",
-    "Key insight 2 with entity/date",
-    "Key insight 3 with claim/evidence"
-  ]
-}}
-JSON:"""
+Return ONLY the summary text (2-3 sentences), no JSON, no bullet points, no explanations.
+Summary:"""
     
     try:
-        response = safe_llm_call(prompt)
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group())
-            bullets = data.get('summary_bullets', [])
-            return bullets[:5]  # Always limit to 5
+        summary = safe_llm_call(prompt).strip()
+        # Clean up any extra formatting
+        summary = re.sub(r'^["\']|["\']$', '', summary).strip()
+        return summary if len(summary) > 50 else full_text[:300] + "..."
     except Exception as e:
-        logger.error(f"LLM summarization failed for {section_name}: {e}")
-    
-    # Smart fallback: extract only substantive bullet points, limit to 5
-    lines = [l.strip() for l in full_content.split('\n') 
-             if l.strip().startswith(('•', '-', '*', '▸', '→', '▪', '–')) and len(l.strip()) > 30]
-    
-    # Filter out intro/descriptive lines
-    skip_phrases = ['this section', 'cite this', 'get more', 'share your', 'the report', 
-                   'among these', 'collectively', 'operations or other', 'regulatory and platform']
-    filtered = [l for l in lines if not any(skip in l.lower() for skip in skip_phrases)]
-    
-    # Clean and return max 5 bullets
-    cleaned = [re.sub(r'^[•\-\*\▸→▪–\s]+', '', l).strip() for l in filtered[:5]]
-    return cleaned if cleaned else [full_content[:200] + "..."]
+        logger.error(f"LLM summary failed: {e}")
+        # Fallback: first 300 chars
+        return full_text[:300] + "..." if full_text else "Summary not available."
 
-def parse_and_summarize_sections(full_text):
-    """Extract full sections and use LLM to create concise summaries"""
-    
-    sections_config = {
-        'executive_summary': r'(?i)executive\s+summary',
-        'weaponised_narratives': r'(?i)weaponised\s+narratives|weaponized\s+narratives|harmful\s+narratives|polarising\s+narratives',
-        'actor_spotlight': r'(?i)actor\s+spotlight|key\s+actors|mentioned\s+actors|people\s+and\s+organisations',
-        'ttp_infrastructure': r'(?i)tactics,\s*techniques,\s*and\s*procedures|ttp|infrastructure|information\s+manipulation',
-        'key_findings': r'(?i)key\s+findings|findings|main\s+conclusions|conclusions',
-    }
-    
-    results = {}
-    
-    # Process each section
-    for section_key, pattern in sections_config.items():
-        content = extract_section_content(full_text, pattern)
-        
-        if content and len(content) > 100:
-            logger.info(f"🤖 Summarizing {section_key} ({len(content)} chars)...")
-            bullets = llm_summarize_section(section_key.replace('_', ' ').title(), content)
-            
-            # Extract URLs only from this section
-            section_urls = extract_urls_from_section(content)
-            
-            results[section_key] = {
-                'full_text': content,  # ✅ NO CHARACTER LIMIT
-                'summary_bullets': bullets[:5],  # Max 5 concise bullets
-                'section_urls': section_urls,  # URLs from this section only
-                'key_entities': []  # Can be extended if needed
-            }
-        else:
-            results[section_key] = {
-                'full_text': content if content else '',
-                'summary_bullets': [],
-                'section_urls': [],
-                'key_entities': []
-            }
-    
-    # Combine URLs from all sections (deduped)
-    all_section_urls = []
-    for section_data in results.values():
-        all_section_urls.extend(section_data.get('section_urls', []))
-    results['all_sample_urls'] = list(set(all_section_urls))[:10]
-    
-    return results
-
-def assess_risk_level(full_text, parsed_sections):
-    """Context-aware risk assessment based on document content"""
+def assess_risk_level(full_text):
+    """Context-aware risk assessment"""
     prompt = f"""Analyze this election monitoring report and assign a risk level.
 
 **RISK GUIDELINES:**
@@ -180,9 +67,8 @@ def assess_risk_level(full_text, parsed_sections):
 - medium: Bias, unverified claims, moderate polarization, standard political criticism
 - low: Factual reporting, neutral analysis, procedural updates
 
-**Key sections:**
-Executive Summary: {parsed_sections.get('executive_summary', {}).get('full_text', '')[:500]}
-Weaponised Narratives: {parsed_sections.get('weaponised_narratives', {}).get('full_text', '')[:500]}
+**Report excerpt:**
+{full_text[:2000]}
 
 Return ONLY the risk level string: "low", "medium", "high", or "critical".
 JSON:"""
@@ -206,13 +92,14 @@ JSON:"""
     return 'low'
 
 class Command(BaseCommand):
-    help = 'Upload & AI-summarize election monitoring reports'
+    help = 'Upload election monitoring report with summary + full report link'
 
     def add_arguments(self, parser):
         parser.add_argument('file_path', type=str)
         parser.add_argument('--title', type=str)
         parser.add_argument('--analyst', type=str, default='Internal Analyst')
         parser.add_argument('--type', type=str, default='Investigative', choices=['Investigative', 'Monthly', 'Special'])
+        parser.add_argument('--url', type=str, help='Full report URL (Google Drive, Google Doc, PDF link, etc.)')
 
     def handle(self, *args, **options):
         file_path = options['file_path']
@@ -221,6 +108,7 @@ class Command(BaseCommand):
             return
 
         title = options['title'] or os.path.splitext(os.path.basename(file_path))[0].replace('_', ' ').title()
+        full_report_url = options.get('url', '').strip()
         
         self.stdout.write(f"📄 Processing: {title}")
         self.stdout.write("🔍 Extracting text from document...")
@@ -233,62 +121,46 @@ class Command(BaseCommand):
             
             self.stdout.write(f"✅ Extracted {len(raw_text):,} characters")
             
-            # Parse sections and generate LLM summaries
-            self.stdout.write("📖 Extracting sections & generating AI summaries...")
-            parsed = parse_and_summarize_sections(raw_text)
+            # Generate executive summary via LLM
+            self.stdout.write("🤖 Generating AI executive summary...")
+            summary = generate_executive_summary(raw_text)
             
             # Assess risk level
             self.stdout.write("🤖 Assessing contextual risk level...")
-            risk_level = assess_risk_level(raw_text, parsed)
+            risk_level = assess_risk_level(raw_text)
             
-            # Helper to join bullets with newline for template display
-            def bullets_to_newlines(bullets):
-                return '\n'.join([f"• {b}" for b in bullets]) if bullets else ''
-            
-            # Save to database - FULL CONTENT + CONCISE SUMMARIES
+            # Save to database - SIMPLE & CLEAN
             report = MonitoringReport.objects.create(
                 title=title,
                 source_analyst=options['analyst'],
                 file_path=file_path,
                 report_type=options['type'],
                 
-                # ✅ Store FULL extracted text (NO LIMIT)
-                extracted_text=raw_text,
+                # Store FULL extracted text (for reference/expandable view)
+                extracted_text=raw_text[:10000],  # First 10k chars for preview
                 
-                # Executive summary (concise)
-                summary=" ".join(parsed.get('executive_summary', {}).get('summary_bullets', [])[:2]),
+                # AI-generated executive summary
+                summary=summary,
                 
-                # Key findings (JSONField - concise bullets)
-                key_findings=parsed.get('key_findings', {}).get('summary_bullets', []),
+                # ✅ Full report URL (Google Drive, Google Doc, etc.)
+                full_report_url=full_report_url if full_report_url else None,
                 
-                # ✅ Store concise summaries as newline-separated text for template display
-                weaponised_narratives=bullets_to_newlines(parsed.get('weaponised_narratives', {}).get('summary_bullets', [])),
-                actor_spotlight=bullets_to_newlines(parsed.get('actor_spotlight', {}).get('summary_bullets', [])),
-                ttp_infrastructure=bullets_to_newlines(parsed.get('ttp_infrastructure', {}).get('summary_bullets', [])),
-                
-                # ✅ Store FULL section content (NO LIMITS)
-                weaponised_narratives_full=parsed.get('weaponised_narratives', {}).get('full_text', ''),
-                actor_spotlight_full=parsed.get('actor_spotlight', {}).get('full_text', ''),
-                ttp_infrastructure_full=parsed.get('ttp_infrastructure', {}).get('full_text', ''),
-                key_findings_full=parsed.get('key_findings', {}).get('full_text', ''),
-                
-                # Entities
-                mentioned_entities=parsed.get('weaponised_narratives', {}).get('key_entities', []) + 
-                                  parsed.get('actor_spotlight', {}).get('key_entities', []),
-                
-                # ✅ URLs from specific sections only
-                sample_urls=parsed.get('all_sample_urls', []),
+                # Keep other fields empty for now (can be filled via admin)
+                key_findings=[],
+                weaponised_narratives=[],
+                actor_spotlight=[],
+                ttp_infrastructure=[],
+                mentioned_entities=[],
+                sample_urls=[],
                 risk_level=risk_level,
                 is_processed=True
             )
             
-            self.stdout.write(f"\n✅ SUCCESS! Report saved with AI-generated insights.")
+            self.stdout.write(f"\n✅ SUCCESS! Report saved.")
             self.stdout.write(f"📊 Risk Level: {report.risk_level.upper()}")
-            self.stdout.write(f"🔑 Key Findings: {len(report.key_findings)} bullets")
-            self.stdout.write(f"🎯 Narratives: {len([l for l in report.weaponised_narratives.split('\\n') if l.strip()]) if report.weaponised_narratives else 0} bullets")
-            self.stdout.write(f"👤 Actors: {len([l for l in report.actor_spotlight.split('\\n') if l.strip()]) if report.actor_spotlight else 0} bullets")
-            self.stdout.write(f"⚙️ TTPs: {len([l for l in report.ttp_infrastructure.split('\\n') if l.strip()]) if report.ttp_infrastructure else 0} bullets")
-            self.stdout.write(f"🔗 Sample Links: {len(report.sample_urls)}")
+            self.stdout.write(f"📋 Summary: {summary[:100]}...")
+            if full_report_url:
+                self.stdout.write(f"🔗 Full Report: {full_report_url}")
             self.stdout.write(f"🔗 View: http://localhost:8505/investigative-reports/")
             
         except Exception as e:
