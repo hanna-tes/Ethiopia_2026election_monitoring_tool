@@ -42,16 +42,16 @@ def extract_text(file_path):
 
 def parse_sections_precisely(full_text):
     """
-    Scans the document for specific headers and extracts the content immediately following them.
-    Returns a dict with extracted sections and a list of all URLs found.
+    Scans the document for specific headers and extracts ONLY the actual content items
+    (bullet points, numbered lists, substantive claims) - skipping intro/descriptive text.
     """
     # Define headers we are looking for (Case Insensitive)
     headers_map = {
         'executive_summary': r'(?i)executive\s+summary',
-        'key_findings': r'(?i)key\s+findings|findings',
-        'weaponised_narratives': r'(?i)weaponised\s+narratives|weaponized\s+narratives|harmful\s+narratives',
-        'actor_spotlight': r'(?i)actor\s+spotlight|key\s+actors|mentioned\s+actors',
-        'ttp_infrastructure': r'(?i)tactics,\s*techniques,\s*and\s*procedures|ttp|infrastructure'
+        'key_findings': r'(?i)key\s+findings|findings|main\s+conclusions',
+        'weaponised_narratives': r'(?i)weaponised\s+narratives|weaponized\s+narratives|harmful\s+narratives|polarising\s+narratives',
+        'actor_spotlight': r'(?i)actor\s+spotlight|key\s+actors|mentioned\s+actors|people\s+and\s+organisations',
+        'ttp_infrastructure': r'(?i)tactics,\s*techniques,\s*and\s*procedures|ttp|infrastructure|information\s+manipulation'
     }
     
     extracted = {
@@ -64,6 +64,30 @@ def parse_sections_precisely(full_text):
     
     lines = full_text.split('\n')
     current_section = None
+    skip_intro = True  # Flag to skip introductory text after header
+    
+    # Helper to check if line is a real content item (not intro/description)
+    def is_content_item(line):
+        clean = line.strip()
+        if len(clean) < 20: return False  # Too short
+        # Skip lines that are clearly descriptive/intro
+        intro_phrases = [
+            'this section examines', 'the section lists', 'cite this research', 
+            'get more information', 'share your leads', 'this report is part',
+            'among these', 'collectively they', 'operations or other forms'
+        ]
+        if any(phrase in clean.lower() for phrase in intro_phrases):
+            return False
+        # Skip citation lines
+        if clean.lower().startswith('cite this') or 'www.disinfo' in clean.lower():
+            return False
+        # Keep bullet points, numbered items, or substantive claims
+        if re.match(r'^[-•*]\s+', clean) or re.match(r'^\d+[\.\)]\s+', clean):
+            return True
+        # Keep lines that look like actual findings/narratives (contain specific entities/actions)
+        if any(w in clean.lower() for w in ['hate speech', 'targeting', 'community', 'ethnic', 'polarisation', 'disinformation', 'manipulation', 'amplifying', 'coordinated']):
+            return True
+        return False
     
     # Helper to clean bullet points
     def clean_text(text):
@@ -71,13 +95,13 @@ def parse_sections_precisely(full_text):
 
     # 1. Extract URLs from the whole document
     all_urls = re.findall(r'https?://\S+', full_text)
-    # Clean URLs (remove trailing punctuation)
-    all_urls = list(set([re.sub(r'[.,;)]$', '', u) for u in all_urls if len(u) > 10]))[:10]  # Limit to 10 unique
+    all_urls = list(set([re.sub(r'[.,;)]$', '', u) for u in all_urls if len(u) > 10]))[:10]
 
     # 2. Scan lines for sections
-    for line in lines:
+    for i, line in enumerate(lines):
         clean_line = line.strip()
-        if not clean_line: continue
+        if not clean_line: 
+            continue
         
         # Check if line is a header
         matched_header = None
@@ -88,37 +112,40 @@ def parse_sections_precisely(full_text):
         
         if matched_header:
             current_section = matched_header
-            continue # Skip the header line itself
+            skip_intro = True  # Reset skip flag for new section
+            continue
             
-        # If we are inside a section, capture the line
+        # If we are inside a section, decide whether to capture
         if current_section:
-            # Stop capturing if we hit a new numbered section (e.g., "2.", "3.") or obvious new chapter
-            if re.match(r'^\d+\.\s', clean_line) and current_section:
-                # Check if this new number matches another header
-                is_header = False
-                for key, pattern in headers_map.items():
-                    if re.search(pattern, clean_line):
-                        is_header = True
-                        break
-                if is_header: continue
+            # Stop if we hit a new major section header
+            if any(re.search(pat, clean_line) for pat in headers_map.values()):
+                current_section = None
+                continue
             
-            # Add content
-            cleaned = clean_text(clean_line)
-            if len(cleaned) > 10: # Ignore short noise
-                extracted[current_section].append(cleaned)
-                
+            # Skip intro text for first few lines after header
+            if skip_intro:
+                if not is_content_item(clean_line):
+                    continue
+                else:
+                    skip_intro = False  # Stop skipping once we find real content
+            
+            # Capture valid content items
+            if is_content_item(clean_line):
+                cleaned = clean_text(clean_line)
+                if len(cleaned) > 30:  # Only keep substantive items
+                    extracted[current_section].append(cleaned)
+                    
     # Process lists into readable strings
     processed = {
-        'summary': " ".join(extracted['executive_summary'][:3]), # Join top 3 lines of summary
-        'findings': extracted['key_findings'][:5],  # Top 5 findings
-        'narratives': extracted['weaponised_narratives'][:5], # Top 5
-        'actors': extracted['actor_spotlight'][:5], # Top 5
-        'ttps': extracted['ttp_infrastructure'][:5], # Top 5
+        'summary': " ".join([l for l in extracted['executive_summary'][:3] if len(l) > 50]),
+        'findings': [l for l in extracted['key_findings'][:5] if len(l) > 30],
+        'narratives': [l for l in extracted['weaponised_narratives'][:5] if len(l) > 30],
+        'actors': [l for l in extracted['actor_spotlight'][:5] if len(l) > 30],
+        'ttps': [l for l in extracted['ttp_infrastructure'][:5] if len(l) > 30],
         'urls': all_urls
     }
     
     return processed
-
 def get_risk_level(text, parsed_data):
     """Context-aware risk assessment"""
     prompt = f"""Analyze this report summary and risk level:
