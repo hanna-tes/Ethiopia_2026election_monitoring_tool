@@ -253,6 +253,7 @@ class MonitoringReport(models.Model):
     file_path = models.CharField(max_length=500, blank=True)
     report_type = models.CharField(max_length=50, default='Investigative')
     sample_urls = models.JSONField(default=list, blank=True, help_text="Sample posts/URLs found in the report")
+
     
     # ✅ Store extracted text directly
     extracted_text = models.TextField(blank=True, help_text="Raw extracted text from document")
