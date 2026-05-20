@@ -266,11 +266,12 @@ class MonitoringReport(models.Model):
         ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')
     ])
     
-    # ✅ Your requested sections (manual entry)
-    weaponised_narratives = models.JSONField(default=list, blank=True)
-    actor_spotlight = models.JSONField(default=list, blank=True)
-    ttp_infrastructure = models.JSONField(default=list, blank=True)
-    
+    # Full section texts for expandable viewing
+    weaponised_narratives_full = models.TextField(blank=True, help_text="Full text of weaponised narratives section")
+    actor_spotlight_full = models.TextField(blank=True, help_text="Full text of actor spotlight section")
+    ttp_infrastructure_full = models.TextField(blank=True, help_text="Full text of TTP section")
+    key_findings_full = models.TextField(blank=True, help_text="Full text of key findings section")
+        
     is_processed = models.BooleanField(default=True)  # Always true since no LLM step
     
     class Meta:
