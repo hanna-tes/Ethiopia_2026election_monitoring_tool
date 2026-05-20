@@ -1377,14 +1377,6 @@ class HomeView(BaseTabMixin, TemplateView):
         # 6. BUILD CONTEXT
         context.update({
             'active_tab': 'home',
-            'tabs': [
-                {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
-                {'name': 'PEPs/PIPs Tracker', 'url_name': 'peps', 'icon': '👤'},
-                {'name': 'Mapped Lexicons', 'url_name': 'lexicons', 'icon': '🗣️'},
-                {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
-                {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
-                {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            ],
             'metrics': {
                 'total_posts': total_posts,
                 'unique_accounts': unique_accounts,
