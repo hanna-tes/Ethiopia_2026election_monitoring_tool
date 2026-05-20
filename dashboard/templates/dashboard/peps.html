@@ -2,6 +2,20 @@
 {% block title %}PEPs/PIPs Tracker{% endblock %}
 
 {% block content %}
+
+<!-- Top Navigation Tabs (Hardcoded for safety) -->
+<div class="mb-6">
+    <div class="border-b border-gray-200">
+        <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
+            <a href="{% url 'home' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🏠 Home</a>
+            <a href="{% url 'peps' %}" class="border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">👥 PIPs/PEPs Tracker</a>
+            <a href="{% url 'narratives' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">📰 Trending Narratives</a>
+            <a href="{% url 'networks' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🕸️ Network Analysis</a>
+            <a href="{% url 'lexicons' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🗣️ Lexicon Management</a>
+        </nav>
+    </div>
+</div>
+
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
     <div class="flex items-center gap-2 mb-4">
         <h2 class="text-2xl font-bold">👥 PEPs & Candidates Tracker</h2>
@@ -16,7 +30,7 @@
         Election candidates: <span class="font-bold">{{ total_candidates|default:0 }}</span>
     </p>
 
-    <!-- Tab Navigation -->
+    <!-- Inner Tab Navigation -->
     <div class="border-b border-gray-200 mb-6">
         <nav class="-mb-px flex space-x-8" aria-label="Tabs">
             <button onclick="switchTab('officials')" id="tab-officials" class="border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
@@ -31,7 +45,7 @@
         </nav>
     </div>
 
-    <!-- Tab 1: Key Officials (GitHub Synced) -->
+    <!-- Tab 1: Key Officials -->
     <div id="content-officials" class="tab-content">
         {% if peps %}
         <div class="overflow-x-auto">
@@ -71,10 +85,9 @@
         {% endif %}
     </div>
 
-    <!-- Tab 2: Election Candidates (Local Excel Files) -->
+    <!-- Tab 2: Election Candidates -->
     <div id="content-candidates" class="tab-content hidden">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <!-- HoPR Card -->
             <a href="{% url 'peps_data' %}?file=HoPR_Candidates.xlsx" class="block bg-gradient-to-br from-blue-50 to-white p-6 rounded-lg border border-blue-200 hover:shadow-md transition-shadow">
                 <div class="flex items-center justify-between">
                     <h3 class="text-lg font-semibold text-gray-800">🏛️ House of Peoples' Representatives</h3>
@@ -82,7 +95,6 @@
                 </div>
                 <p class="mt-2 text-sm text-gray-600">Federal parliamentary candidates & elected members.</p>
             </a>
-            <!-- Regional Council Card -->
             <a href="{% url 'peps_data' %}?file=Regional_Candidates.xlsx" class="block bg-gradient-to-br from-green-50 to-white p-6 rounded-lg border border-green-200 hover:shadow-md transition-shadow">
                 <div class="flex items-center justify-between">
                     <h3 class="text-lg font-semibold text-gray-800">🌍 Regional Councils</h3>
@@ -90,7 +102,6 @@
                 </div>
                 <p class="mt-2 text-sm text-gray-600">State-level council members across all regions.</p>
             </a>
-            <!-- Executive Members Card -->
             <a href="{% url 'peps_data' %}?file=Executive_Members.xlsx" class="block bg-gradient-to-br from-purple-50 to-white p-6 rounded-lg border border-purple-200 hover:shadow-md transition-shadow">
                 <div class="flex items-center justify-between">
                     <h3 class="text-lg font-semibold text-gray-800">⚖️ Executive Members</h3>
@@ -100,11 +111,11 @@
             </a>
         </div>
         <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-            <strong>📊 Local Data Status:</strong> <span class="font-medium">{{ total_candidates|default:0 }}</span> election candidate records loaded from local Excel files. Click any card above to view the structured spreadsheet data.
+            <strong>📊 Local Data Status:</strong> <span class="font-medium">{{ total_candidates|default:0 }}</span> election candidate records loaded from local Excel files.
         </div>
     </div>
 
-    <!-- ✅ NEW Tab 3: PEP Analysis (Insights from Social Media) -->
+    <!-- ✅ NEW Tab 3: PEP Analysis -->
     <div id="content-analysis" class="tab-content hidden">
         
         {% if pep_analysis %}
@@ -131,7 +142,11 @@
                                     💬 {{ pep.mention_count }} mentions
                                 </span>
                                 <span class="text-gray-300">|</span>
-                                <span class="font-semibold {{ pep.sentiment_badge|split:' '|first|lower }}">
+                                <!-- ✅ FIXED: Use {% if %} instead of |split filter -->
+                                <span class="font-semibold 
+                                    {% if '🔴' in pep.sentiment_badge %}text-red-600
+                                    {% elif '🟡' in pep.sentiment_badge %}text-yellow-600
+                                    {% else %}text-green-600{% endif %}">
                                     {{ pep.sentiment_badge }}
                                 </span>
                             </div>
@@ -184,8 +199,9 @@
                             <details class="border border-gray-200 rounded-lg overflow-hidden">
                                 <summary class="cursor-pointer bg-gray-50 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 flex items-center justify-between list-none">
                                     <span class="flex items-center gap-2">
-                                        <span class="px-2 py-0.5 bg-{{ post.platform|lower }}-100 text-{{ post.platform|lower }}-700 text-xs rounded">
-                                            {{ post.platform }}
+                                        <!-- ✅ FIXED: Use static badge classes to avoid invalid CSS -->
+                                        <span class="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded font-medium">
+                                            {{ post.platform|default:"Unknown" }}
                                         </span>
                                         <span class="text-gray-500">{{ post.timestamp|date:"M d" }}</span>
                                     </span>
@@ -230,12 +246,9 @@
 
 <script>
     function switchTab(tabName) {
-        // Hide all tab content
         document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-        // Show selected tab content
         document.getElementById('content-' + tabName).classList.remove('hidden');
         
-        // Update tab styling
         const activeClass = 'border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm';
         const inactiveClass = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm';
         
@@ -244,21 +257,4 @@
         document.getElementById('tab-analysis').className = tabName === 'analysis' ? activeClass : inactiveClass;
     }
 </script>
-
-<style>
-    /* Sentiment badge colors */
-    .text-🔴 { color: #dc2626; }
-    .text-🟡 { color: #f59e0b; }
-    .text-🟢 { color: #22c55e; }
-    
-    /* Platform badge colors */
-    .bg-x-100 { background-color: #eff6ff; }
-    .text-x-700 { color: #1e40af; }
-    .bg-facebook-100 { background-color: #eff6ff; }
-    .text-facebook-700 { color: #1e40af; }
-    .bg-telegram-100 { background-color: #f0f9ff; }
-    .text-telegram-700 { color: #0369a1; }
-    .bg-tiktok-100 { background-color: #fefefe; }
-    .text-tiktok-700 { color: #1f2937; }
-</style>
 {% endblock %}
