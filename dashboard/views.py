@@ -1271,6 +1271,103 @@ def get_top_hashtags(posts_queryset, limit=10):
         if count >= 2  # Only show hashtags used 2+ times
     ]
 
+def get_pep_analysis_insights(posts_queryset, peps_queryset, limit=5):
+    """
+    Analyze PEP mentions in posts to extract:
+    - Most mentioned officials
+    - Negative/critical narratives against them  
+    - Sample posts showing the claims
+    Returns structured data for UI display
+    """
+    from collections import defaultdict, Counter
+    import re
+    
+    # Build PEP name mapping for fuzzy matching
+    pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset}
+    
+    # Track mentions per PEP
+    pep_mentions = defaultdict(lambda: {
+        'count': 0,
+        'negative_posts': [],
+        'critical_narratives': [],
+        'sample_posts': []
+    })
+    
+    # Scan posts for PEP mentions + negative sentiment
+    for post in posts_queryset[:5000]:  # Limit for performance
+        if not post.original_text:
+            continue
+            
+        text_lower = post.original_text.lower()
+        
+        # Check for PEP mentions (fuzzy match)
+        for pep_name, pep_obj in pep_names.items():
+            # Simple fuzzy match: check if PEP name appears in text
+            if pep_name in text_lower or pep_obj.name.lower() in text_lower:
+                pep_data = pep_mentions[pep_obj.name]
+                pep_data['count'] += 1
+                
+                # Check for negative/critical language using lexicon
+                if post.risk_level in ['high', 'critical'] or post.sentiment == 'Negative':
+                    # Extract narrative snippet (first 150 chars around PEP name)
+                    idx = text_lower.find(pep_name)
+                    if idx >= 0:
+                        start = max(0, idx - 100)
+                        end = min(len(post.original_text), idx + len(pep_name) + 100)
+                        snippet = post.original_text[start:end].strip()
+                        
+                        # Avoid duplicates
+                        if snippet not in [p['text'] for p in pep_data['sample_posts'][:3]]:
+                            pep_data['sample_posts'].append({
+                                'text': snippet[:200] + ('...' if len(snippet) > 200 else ''),
+                                'platform': post.platform,
+                                'timestamp': post.timestamp_share,
+                                'risk_level': post.risk_level,
+                                'url': post.url if hasattr(post, 'url') and post.url else None
+                            })
+                
+                # Extract critical narrative themes using keywords
+                critical_keywords = {
+                    'corruption': ['corrupt', 'bribe', 'embezzle', 'theft', 'fraud'],
+                    'abuse': ['abuse', 'tyranny', 'oppression', 'dictator', 'authoritarian'],
+                    'failure': ['failed', 'incompetent', 'mismanagement', 'crisis'],
+                    'ethnic_bias': ['ethnic', 'tribal', 'biased', 'discrimination', 'marginalize'],
+                    'election_rigging': ['rigged', 'stolen', 'fraud', 'manipulated', 'nebe']
+                }
+                
+                for theme, keywords in critical_keywords.items():
+                    if any(kw in text_lower for kw in keywords):
+                        narrative = {
+                            'theme': theme.replace('_', ' ').title(),
+                            'description': f"Posts allege {theme.replace('_', ' ')} involving {pep_obj.name}",
+                            'severity': 'high' if post.risk_level == 'critical' else 'medium',
+                            'sample_count': 1
+                        }
+                        # Avoid duplicate narratives
+                        if not any(n['theme'] == narrative['theme'] for n in pep_data['critical_narratives']):
+                            pep_data['critical_narratives'].append(narrative)
+    
+    # Build final structured results
+    results = []
+    for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
+        if data['count'] < 2:  # Skip rarely mentioned
+            continue
+            
+        # Calculate sentiment breakdown
+        negative_count = len(data['sample_posts'])
+        sentiment = '🔴 High Criticism' if negative_count >= 3 else '🟡 Some Criticism' if negative_count >= 1 else '🟢 Mostly Neutral'
+        
+        results.append({
+            'pep_name': pep_name,
+            'mention_count': data['count'],
+            'sentiment_badge': sentiment,
+            'critical_narratives': data['critical_narratives'][:3],  # Top 3 narratives
+            'sample_posts': data['sample_posts'][:3],  # Top 3 sample posts
+            'risk_score': min(10, negative_count * 2 + len(data['critical_narratives']))
+        })
+    
+    return results
+
 class BaseTabMixin:
     """Adds consistent navigation tabs to any class-based view"""
     
@@ -1612,6 +1709,10 @@ class PEPsView(TemplateView):
         context['verified_fb_count'] = context['peps'].filter(facebook_verified=True).count()
         context['last_pep_sync'] = PEP.objects.aggregate(last=Max('last_updated'))['last']
         context['active_tab'] = 'peps'
+
+        election_posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
+        context['pep_analysis'] = get_pep_analysis_insights(election_posts, peps, limit=6)
+        
         return context        
         
 class NetworksView(TemplateView):
