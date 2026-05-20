@@ -238,34 +238,42 @@ class Command(BaseCommand):
             risk_level = assess_risk_level(raw_text, parsed)
             
             # Save to database
+            # Save to database - FULL CONTENT + LLM SUMMARIES (NO CHARACTER LIMITS)
             report = MonitoringReport.objects.create(
                 title=title,
                 source_analyst=options['analyst'],
                 file_path=file_path,
                 report_type=options['type'],
                 
-                # Store full extracted text for reference
-                extracted_text=raw_text[:10000],
+                # Store FULL extracted text (no limit)
+                extracted_text=raw_text,  
                 
-                # Store LLM-generated concise summaries
+                # Executive summary (concise LLM-generated)
                 summary=" ".join(parsed.get('executive_summary', {}).get('summary_bullets', [])[:2]),
-                key_findings=parsed.get('key_findings', {}).get('summary_bullets', []),
-                weaponised_narratives=parsed.get('weaponised_narratives', {}).get('summary_bullets', []),
-                actor_spotlight=parsed.get('actor_spotlight', {}).get('summary_bullets', []),
-                ttp_infrastructure=parsed.get('ttp_infrastructure', {}).get('summary_bullets', []),
                 
-                # Store entities and risk indicators
+                # Key findings (JSONField - store concise bullets)
+                key_findings=parsed.get('key_findings', {}).get('summary_bullets', []),
+                
+                # ✅ Store FULL section content in *_full TextFields (NO LIMITS)
+                weaponised_narratives_full=parsed.get('weaponised_narratives', {}).get('full_text', ''),
+                actor_spotlight_full=parsed.get('actor_spotlight', {}).get('full_text', ''),
+                ttp_infrastructure_full=parsed.get('ttp_infrastructure', {}).get('full_text', ''),
+                key_findings_full=parsed.get('key_findings', {}).get('full_text', ''),
+                
+                # Store concise LLM summaries as newline-separated text for quick display
+                # (These will be shown by default, with full content expandable)
+                weaponised_narratives='\n'.join(parsed.get('weaponised_narratives', {}).get('summary_bullets', [])),
+                actor_spotlight='\n'.join(parsed.get('actor_spotlight', {}).get('summary_bullets', [])),
+                ttp_infrastructure='\n'.join(parsed.get('ttp_infrastructure', {}).get('summary_bullets', [])),
+                
+                # Entities and risk indicators
                 mentioned_entities=parsed.get('weaponised_narratives', {}).get('key_entities', []) + 
                                   parsed.get('actor_spotlight', {}).get('key_entities', []),
-                
-                # Store full section texts for expandable viewing
-                # (You could add JSON fields for these if needed)
                 
                 sample_urls=parsed.get('sample_urls', []),
                 risk_level=risk_level,
                 is_processed=True
-            )
-            
+            )            
             self.stdout.write(f"\n✅ SUCCESS! Report saved with AI-generated insights.")
             self.stdout.write(f"📊 Risk Level: {report.risk_level.upper()}")
             self.stdout.write(f"🔑 Key Findings: {len(report.key_findings)} AI-summarized bullets")
