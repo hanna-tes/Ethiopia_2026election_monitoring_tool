@@ -78,4 +78,22 @@
         {% if report.report_file %}
         <a href="{{ report.report_file.url }}" download 
            class="inline-flex items-center gap-3 px-8 py-4 bg-[#0A192F] text-white text-lg font-semibold rounded-lg hover:bg-[#1E3A8A] transition-colors shadow-lg">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            Download Report
+        </a>
+        {% endif %}
+        
+        {% if report.full_report_url %}
+        <a href="{{ report.full_report_url }}" target="_blank" 
+           class="inline-flex items-center gap-3 px-8 py-4 bg-gray-100 text-gray-800 text-lg font-semibold rounded-lg hover:bg-gray-200 transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+            External Link
+        </a>
+        {% endif %}
+    </section>
+    
+    <p class="mt-6 text-sm text-gray-500">
+        Published: {{ report.uploaded_at|date:"F d, Y" }} &nbsp;|&nbsp; Analyst: {{ report.source_analyst }}
+    </p>
+</div>
+{% endblock %}
