@@ -247,44 +247,49 @@ class ElectionOfficeholder(models.Model):
         return f"{self.source_file} - {self.source_sheet} (Row {self.row_index})"
 
 class MonitoringReport(models.Model):
+    # ✅ Unified category field (replaces legacy report_type)
+    CATEGORY_CHOICES = [
+        ('baseline', 'Baseline Report'),
+        ('situational', 'Situational/TikTok Report'),
+        ('biweekly', 'Bi-weekly/UN Monthly Report'),
+    ]
+    
     title = models.CharField(max_length=255)
+    subtitle = models.CharField(max_length=300, blank=True, help_text="Short tagline under main title")
+    report_category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='baseline')
+    
     source_analyst = models.CharField(max_length=255, blank=True, default="Internal Analyst")
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    file_path = models.CharField(max_length=500, blank=True)
-    report_type = models.CharField(max_length=50, default='Investigative')
-    sample_urls = models.JSONField(default=list, blank=True, help_text="Sample posts/URLs found in the report")
-    report_file = models.FileField(upload_to='reports/', blank=True, null=True, help_text="Upload PDF/DOCX for direct download")
-
-
     
-    # ✅ Store extracted text directly
-    extracted_text = models.TextField(blank=True, help_text="Raw extracted text from document")
+    # Files & Links
+    report_file = models.FileField(upload_to='reports/', blank=True, null=True, help_text="PDF/DOCX for direct download")
+    full_report_url = models.URLField(blank=True, null=True, help_text="Fallback external link")
+    cover_image = models.ImageField(upload_to='report_covers/', blank=True, null=True, help_text="Thumbnail for report cards")
     
-    # ✅ Manual/analyst-curated insights (no LLM required)
-    summary = models.TextField(blank=True, help_text="Executive summary (manual entry)")
-    key_findings = models.JSONField(default=list, blank=True, help_text="List of key findings")
+    # Content & Analysis
+    summary = models.TextField(blank=True, help_text="Executive summary")
+    report_includes = models.JSONField(default=list, blank=True, help_text="Up to 5 bullet points: ['Analysis of...', 'Mapping of...']")
+    key_findings = models.JSONField(default=list, blank=True)
+    
     mentioned_entities = models.JSONField(default=list, blank=True)
     risk_level = models.CharField(max_length=20, default='medium', choices=[
         ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')
     ])
     
-    # Full section texts for expandable viewing
-    weaponised_narratives_full = models.TextField(blank=True, help_text="Full text of weaponised narratives section")
-    actor_spotlight_full = models.TextField(blank=True, help_text="Full text of actor spotlight section")
-    ttp_infrastructure_full = models.TextField(blank=True, help_text="Full text of TTP section")
-    key_findings_full = models.TextField(blank=True, help_text="Full text of key findings section")
-
-    # ✅ Keep concise summary fields for quick display:
-    weaponised_narratives = models.TextField(blank=True, help_text="Concise LLM-generated bullet summaries")
-    actor_spotlight = models.TextField(blank=True, help_text="Concise LLM-generated bullet summaries")
-    ttp_infrastructure = models.TextField(blank=True, help_text="Concise LLM-generated bullet summaries")
+    # Section content (concise + full)
+    weaponised_narratives = models.TextField(blank=True)
+    weaponised_narratives_full = models.TextField(blank=True)
+    actor_spotlight = models.TextField(blank=True)
+    actor_spotlight_full = models.TextField(blank=True)
+    ttp_infrastructure = models.TextField(blank=True)
+    ttp_infrastructure_full = models.TextField(blank=True)
+    key_findings_full = models.TextField(blank=True)
     
-        
-    is_processed = models.BooleanField(default=True)  # Always true since no LLM step
+    is_processed = models.BooleanField(default=True)
     
     class Meta:
         ordering = ['-uploaded_at']
         verbose_name_plural = "Monitoring Reports"
         
     def __str__(self):
-        return f"{self.title} ({self.report_type})"
+        return f"{self.title} ({self.get_report_category_display()})"
