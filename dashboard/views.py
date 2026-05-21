@@ -1508,7 +1508,7 @@ class BaseTabMixin:
             {'name': 'Trending Narratives', 'url_name': 'narratives', 'icon': '📰'},
             {'name': 'Networks & TTPs', 'url_name': 'networks', 'icon': '🕸️'},
             {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
-            {'name': 'Investigative Reports', 'url_name': 'investigative_reports', 'icon': '📑'},
+            {'name': 'Reports', 'url_name': 'reports_landing', 'icon': '📑'},
         ]
         return context
 
