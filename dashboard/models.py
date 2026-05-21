@@ -247,11 +247,10 @@ class ElectionOfficeholder(models.Model):
         return f"{self.source_file} - {self.source_sheet} (Row {self.row_index})"
 
 class MonitoringReport(models.Model):
-    # ✅ Unified category field (replaces legacy report_type)
     CATEGORY_CHOICES = [
         ('baseline', 'Baseline Report'),
-        ('situational', 'Situational/TikTok Report'),
-        ('biweekly', 'Bi-weekly/UN Monthly Report'),
+        ('situational', 'Situational Report'),
+        ('tiktok', 'TikTok Analysis Report'),
     ]
     
     title = models.CharField(max_length=255)
@@ -268,7 +267,7 @@ class MonitoringReport(models.Model):
     
     # Content & Analysis
     summary = models.TextField(blank=True, help_text="Executive summary")
-    report_includes = models.JSONField(default=list, blank=True, help_text="Up to 5 bullet points: ['Analysis of...', 'Mapping of...']")
+    report_includes = models.JSONField(default=list, blank=True, help_text="Up to 5 bullet points")
     key_findings = models.JSONField(default=list, blank=True)
     
     mentioned_entities = models.JSONField(default=list, blank=True)
@@ -276,7 +275,7 @@ class MonitoringReport(models.Model):
         ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')
     ])
     
-    # Section content (concise + full)
+    # Section content
     weaponised_narratives = models.TextField(blank=True)
     weaponised_narratives_full = models.TextField(blank=True)
     actor_spotlight = models.TextField(blank=True)
