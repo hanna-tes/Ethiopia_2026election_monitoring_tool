@@ -1467,15 +1467,18 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, limit=5):
 
 def reports_landing(request):
     """Landing page showing all report categories as cards"""
-    # Group reports by category
     baseline_reports = MonitoringReport.objects.filter(report_category='baseline').order_by('-uploaded_at')[:3]
     situational_reports = MonitoringReport.objects.filter(report_category='situational').order_by('-uploaded_at')[:3]
-    biweekly_reports = MonitoringReport.objects.filter(report_category='biweekly').order_by('-uploaded_at')[:3]
+    tiktok_reports = MonitoringReport.objects.filter(report_category='tiktok').order_by('-uploaded_at')[:3]
+    
+    # All reports for archive section
+    all_reports = MonitoringReport.objects.all().order_by('-uploaded_at')[:6]
     
     context = {
         'baseline_reports': baseline_reports,
         'situational_reports': situational_reports,
-        'biweekly_reports': biweekly_reports,
+        'tiktok_reports': tiktok_reports,
+        'all_reports': all_reports,
         'active_tab': 'reports',
     }
     return render(request, 'dashboard/reports_landing.html', context)
