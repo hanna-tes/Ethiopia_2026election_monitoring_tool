@@ -43,6 +43,8 @@ from .models import ProcessedPost, DataSource
 from django.views.decorators.cache import never_cache
 from .utils.llm_detector import detect_hate_speech_llm
 from .models import ElectionOfficeholder
+from django.shortcuts import render, get_object_or_404
+from .models import MonitoringReport
 
 logger = logging.getLogger(__name__)
 
@@ -1462,6 +1464,32 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, limit=5):
         })
     
     return results
+
+def reports_landing(request):
+    """Landing page showing all report categories as cards"""
+    # Group reports by category
+    baseline_reports = MonitoringReport.objects.filter(report_category='baseline').order_by('-uploaded_at')[:3]
+    situational_reports = MonitoringReport.objects.filter(report_category='situational').order_by('-uploaded_at')[:3]
+    biweekly_reports = MonitoringReport.objects.filter(report_category='biweekly').order_by('-uploaded_at')[:3]
+    
+    context = {
+        'baseline_reports': baseline_reports,
+        'situational_reports': situational_reports,
+        'biweekly_reports': biweekly_reports,
+        'active_tab': 'reports',
+    }
+    return render(request, 'dashboard/reports_landing.html', context)
+
+def report_detail(request, report_id):
+    """Individual report detail page"""
+    report = get_object_or_404(MonitoringReport, id=report_id)
+    
+    context = {
+        'report': report,
+        'active_tab': 'reports',
+    }
+    return render(request, 'dashboard/report_detail.html', context)
+    
 
 class BaseTabMixin:
     """Adds consistent navigation tabs to any class-based view"""
