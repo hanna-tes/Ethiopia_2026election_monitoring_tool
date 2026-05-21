@@ -9,7 +9,7 @@ urlpatterns = [
     path('peps/', views.PEPsView.as_view(), name='peps'),          # Main PEPs tab
     path('networks/', views.NetworksView.as_view(), name='networks'),
     path('lexicon-management/', views.LexiconManagementView.as_view(), name='lexicon_management'),
-    path('investigative-reports/', views.InvestigativeReportsView.as_view(), name='investigative_reports'),
+    #path('investigative-reports/', views.InvestigativeReportsView.as_view(), name='investigative_reports'),
     path('reports/', views.reports_landing, name='reports_landing'),
     path('reports/<int:report_id>/', views.report_detail, name='report_detail'),
     
