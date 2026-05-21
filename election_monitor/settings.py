@@ -84,7 +84,7 @@ DATABASES = {
         'USER': 'ethiopia_user',
         'PASSWORD': 'ElectionDbSecure2026!',  
         'HOST': 'localhost',
-        'PORT': '5432',
+        'PORT': '8505',
     }
 }
 
