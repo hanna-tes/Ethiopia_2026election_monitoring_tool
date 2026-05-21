@@ -6,6 +6,7 @@ class MonitoringReportAdmin(admin.ModelAdmin):
     list_display = ('title', 'report_category', 'uploaded_at', 'risk_level')
     list_filter = ('report_category', 'risk_level', 'uploaded_at')
     search_fields = ('title', 'summary')
+    readonly_fields = ('uploaded_at',)  # Makes timestamp view-only
     
     fieldsets = (
         ('Basic Information', {
@@ -20,8 +21,5 @@ class MonitoringReportAdmin(admin.ModelAdmin):
         ('Analysis', {
             'fields': ('risk_level', 'mentioned_entities', 'weaponised_narratives', 'actor_spotlight', 'ttp_infrastructure')
         }),
-        ('Metadata', {
-            'fields': ('uploaded_at', 'is_processed'),
-            'classes': ('collapse',)
-        }),
+    
     )
