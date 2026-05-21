@@ -253,7 +253,7 @@ class MonitoringReport(models.Model):
     file_path = models.CharField(max_length=500, blank=True)
     report_type = models.CharField(max_length=50, default='Investigative')
     sample_urls = models.JSONField(default=list, blank=True, help_text="Sample posts/URLs found in the report")
-    full_report_url = models.URLField(blank=True, null=True, help_text="Link to full report (Google Drive, etc.)")
+    report_file = models.FileField(upload_to='reports/', blank=True, null=True, help_text="Upload PDF/DOCX for direct download")
 
 
     
