@@ -1,3 +1,6 @@
+from django.contrib import admin
+from .models import MonitoringReport
+
 @admin.register(MonitoringReport)
 class MonitoringReportAdmin(admin.ModelAdmin):
     list_display = ('title', 'report_category', 'uploaded_at', 'risk_level')
@@ -6,7 +9,7 @@ class MonitoringReportAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('title', 'report_category', 'subtitle', 'source_analyst', 'report_type')
+            'fields': ('title', 'report_category', 'subtitle', 'source_analyst')
         }),
         ('Content', {
             'fields': ('summary', 'report_includes', 'key_findings')
