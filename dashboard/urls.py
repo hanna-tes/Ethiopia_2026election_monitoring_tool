@@ -12,7 +12,7 @@ urlpatterns = [
     #path('investigative-reports/', views.InvestigativeReportsView.as_view(), name='investigative_reports'),
     path('reports/', views.reports_landing, name='reports_landing'),
     path('reports/<int:report_id>/', views.report_detail, name='report_detail'),
-    
+    path('peps/analysis/', views.PEPsAnalysisView.as_view(), name='peps_analysis'),
     
     # === PEPs DATA VIEWS (FIXED CONFLICT) ===
     path('peps/registry/', views.PEPsHubView.as_view(), name='peps_hub'),   # File cards (HoPR, RC, Executive)
