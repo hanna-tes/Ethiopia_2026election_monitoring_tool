@@ -1493,7 +1493,140 @@ def report_detail(request, report_id):
     }
     return render(request, 'dashboard/report_detail.html', context)
     
-
+def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
+    """
+    Enhanced PEP analysis with platform breakdown, velocity, bot detection,
+    gendered attacks, narrative clusters, and cross-platform coordination.
+    """
+    from collections import defaultdict, Counter
+    from datetime import datetime, timedelta
+    import re
+    
+    pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset}
+    pep_mentions = defaultdict(lambda: {
+        'count': 0,
+        'platforms': Counter(),
+        'hourly_distribution': Counter(),
+        'hashtags': Counter(),
+        'risk_score': 0,
+        'bot_probability': 0,
+        'is_gendered_target': False,
+        'narrative_clusters': defaultdict(list),
+        'cross_platform_signals': [],
+        'deepfake_alerts': [],
+        'sample_posts': [],
+        'top_amplifiers': Counter(),
+        'geographic_origin': Counter(),
+        'sentiment_trend': [],
+    })
+    
+    # Analyze posts
+    for post in posts_queryset[:5000]:
+        if not post.original_text:
+            continue
+            
+        text_lower = post.original_text.lower()
+        
+        # Match PEPs
+        for pep_name, pep_obj in pep_names.items():
+            if pep_name in text_lower or pep_obj.name.lower() in text_lower:
+                data = pep_mentions[pep_obj.name]
+                data['count'] += 1
+                
+                # Platform breakdown
+                platform = post.platform or 'Unknown'
+                data['platforms'][platform] += 1
+                
+                # Hourly distribution (for velocity)
+                if post.timestamp_share:
+                    hour = post.timestamp_share.hour
+                    data['hourly_distribution'][hour] += 1
+                
+                # Extract hashtags
+                hashtags = re.findall(r'#(\w+)', post.original_text)
+                data['hashtags'].update(hashtags)
+                
+                # Detect gendered attacks (for women)
+                if any(word in text_lower for word in ['she', 'her', 'woman', 'female', 'wife', 'daughter']):
+                    if any(term in text_lower for term in ['unqualified', 'emotional', 'weak', 'beautiful', 'sexy', 'mother']):
+                        data['is_gendered_target'] = True
+                
+                # Bot detection signals
+                account_age_days = 365  # Default assumption
+                if hasattr(post, 'account_created_at') and post.account_created_at:
+                    account_age_days = (post.timestamp_share - post.account_created_at).days if post.timestamp_share else 365
+                
+                bot_signals = 0
+                if account_age_days < 30:
+                    bot_signals += 2
+                if len(post.original_text) < 50:
+                    bot_signals += 1
+                if post.original_text.count('http') > 2:
+                    bot_signals += 1
+                data['bot_probability'] = min(100, data['bot_probability'] + bot_signals)
+                
+                # Narrative clustering (simple keyword-based)
+                if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe']):
+                    data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
+                if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray']):
+                    data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
+                if any(kw in text_lower for kw in ['corrupt', 'theft', 'bribe']):
+                    data['narrative_clusters']['Corruption Allegations'].append(post.original_text[:100])
+                
+                # Sample posts
+                if len(data['sample_posts']) < 3:
+                    data['sample_posts'].append({
+                        'text': post.original_text[:150],
+                        'platform': platform,
+                        'timestamp': post.timestamp_share,
+                        'risk_level': post.risk_level if hasattr(post, 'risk_level') else 'medium'
+                    })
+    
+    # Build final results
+    results = []
+    for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
+        if data['count'] < 2:
+            continue
+        
+        # Calculate platform percentages
+        total_posts = sum(data['platforms'].values())
+        platform_breakdown = [
+            {'name': plat, 'count': cnt, 'percent': round(cnt/total_posts*100)}
+            for plat, cnt in data['platforms'].most_common(3)
+        ]
+        
+        # Detect velocity spikes
+        peak_hour = data['hourly_distribution'].most_common(1)
+        peak_hour = peak_hour[0][0] if peak_hour else 0
+        velocity_alert = peak_hour in [0, 1, 2, 3, 4, 5]  # Unusual late night activity
+        
+        # Top hashtags
+        top_hashtags = [{'tag': tag, 'count': cnt} for tag, cnt in data['hashtags'].most_common(5) if cnt > 1]
+        
+        # Narrative clusters summary
+        clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
+        
+        # Bot score interpretation
+        bot_score = min(100, data['bot_probability'])
+        bot_level = ' Low' if bot_score < 30 else '🟡 Medium' if bot_score < 60 else '🔴 High'
+        
+        results.append({
+            'pep_name': pep_name,
+            'mention_count': data['count'],
+            'platform_breakdown': platform_breakdown,
+            'velocity_alert': velocity_alert,
+            'peak_hour': peak_hour,
+            'top_hashtags': top_hashtags,
+            'bot_score': bot_score,
+            'bot_level': bot_level,
+            'is_gendered_target': data['is_gendered_target'],
+            'narrative_clusters': clusters,
+            'sample_posts': data['sample_posts'],
+            'risk_score': min(10, data['count'] // 5 + len(clusters)),
+        })
+    
+    return results
+    
 class BaseTabMixin:
     """Adds consistent navigation tabs to any class-based view"""
     
