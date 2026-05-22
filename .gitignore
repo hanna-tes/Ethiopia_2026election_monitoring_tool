@@ -14,3 +14,11 @@ db.sqlite3-journal
 # OS
 .DS_Store
 Thumbs.db
+__pycache__/
+*.pyc
+*.dump
+*.sqlite3
+__pycache__/
+*.pyc
+*.dump
+*.sqlite3
