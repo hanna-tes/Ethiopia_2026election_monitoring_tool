@@ -2447,6 +2447,22 @@ class InvestigativeReportsView(TemplateView):
             }
         })
         return context
+
+class PEPsAnalysisView(TemplateView):
+    template_name = 'dashboard/peps_analysis.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get election-related posts
+        posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
+        active_peps = PEP.objects.filter(is_active=True).order_by('name')
+        
+        # Generate enhanced analysis
+        context['pep_analysis'] = get_enhanced_pep_analysis(posts, active_peps, limit=8)
+        context['active_tab'] = 'peps'
+        
+        return context
         
 # === API Endpoints ===
 
