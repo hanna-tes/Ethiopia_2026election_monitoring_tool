@@ -1,19 +1,50 @@
-# Python
+o# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
 
 # Django
-db.sqlite3
-db.sqlite3-journal
-/staticfiles/
-/media/
-.env
 *.log
+local_settings.py
+db.sqlite3
+media/
+
+# Database dumps
+*.dump
+*.sql
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+
 __pycache__/
 *.pyc
 *.dump
@@ -33,3 +64,4 @@ model_cache/
 *.bin
 *.pt
 *.pth
+
