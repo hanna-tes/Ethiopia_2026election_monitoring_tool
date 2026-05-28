@@ -231,183 +231,284 @@ def assign_virality_tier(n):
     else: return "Tier 1: Limited"
 
 
-def summarize_cluster_ethiopia(texts, urls, cluster_data, min_ts, max_ts):
-    """Generate STRICT summary using ONLY content explicitly present in texts"""
-    # Use first 80 texts for context
-    sample_texts = texts[:80]
-    joined = "\n---\n".join([f"[{i+1}] {t}" for i, t in enumerate(sample_texts)])
+ef summarize_cluster_ethiopia(texts, urls, cluster_data, min_ts, max_ts):
+    """
+    Generate structured IMI-style intelligence report for Ethiopia election narratives.
+    Uses ONLY explicit claims from provided posts - no invention or assumption.
+    """
+    # Join first 50 texts for context (avoids token limits)
+    joined = "\n".join([f"[{i+1}] {t}" for i, t in enumerate(texts[:50]) if t and len(t.strip()) > 10])
     
-    # Include real URLs
-    real_urls = [u for u in urls if u and u.startswith('http')][:10]
-    url_context = "\nReal source links from dataset:\n" + "\n".join(real_urls) if real_urls else ""
+    # Add real URLs for reference
+    url_context = "\nRelevant post links:\n" + "\n".join(urls[:5]) if urls else ""
     
-    prompt = f"""You are an intelligence analyst reviewing social media posts about the Ethiopia election.
-Your task is to summarize ONLY what is explicitly stated in the provided posts.
+    # Ethiopia-specific prompt (adapted from Côte d'Ivoire version)
+    prompt = f"""
+Generate a structured IMI intelligence report on online narratives related to the Ethiopia election.
+Focus on pre and post-election tensions and emerging narratives, including:
+- Allegations of political suppression or intimidation
+- Electoral Commission (NEBE) corruption, bias, or procedural issues
+- Economic distress, state fund misuse, or resource allocation claims
+- Hate speech, ethnic targeting, tribalism, or xenophobia
+- Gender-based attacks or disinformation against women candidates
+- Foreign interference narratives ("Western puppet", anti-EU, China/Russia influence, etc.)
+- Marginalization of minorities or regional groups (Amhara, Oromo, Tigray, Somali, etc.)
+- Claims of election fraud, rigging, tally center manipulation, or result tampering
+- Calls for protests, civic resistance, or boycotts
+- Viral slogans, hashtags, or coordinated messaging campaigns
 
-**STRICT RULES - DO NOT VIOLATE:**
-1. Use ONLY the exact text content provided below. Do NOT invent, assume, or extrapolate.
-2. Do NOT create fake account names, URLs, engagement metrics, or timestamps.
-3. Do NOT mention specific likes/retweets/views unless explicitly present in the text.
-4. If a claim is not directly stated in the provided texts, DO NOT include it.
-5. If you cannot find evidence for a category, write "Not explicitly stated in provided posts."
+**Strict Instructions:**
+- Only report claims **explicitly present** in the provided posts below.
+- Identify **originators**: accounts that first posted the core claim (from cluster_data timestamps).
+- Note **amplification**: how widely it spread (Total posts count).
+- Do NOT invent, cut out, assume, extrapolate, or fact-check claims.
+- Summarize clearly and concisely using simple language.
 
-**Provided Posts (verbatim from dataset, {len(sample_texts)} samples shown):**
-{joined}
-
-**Real Source Links (from dataset, for reference only):**
-{url_context}
-
-**Time Range:** {min_ts} to {max_ts}
-
-**Output Format (use simple text, no markdown headers):**
-NARRATIVE THEME: [One short phrase summarizing the dominant topic]
-
-EXPLICIT CLAIMS (quote or closely paraphrase from posts above):
-- [Claim 1, with brief context]
-- [Claim 2, with brief context]
-- [etc.]
-
-TARGETED GROUPS/ENTITIES (only if explicitly named in posts):
-- [Group/entity 1]
-- [Group/entity 2]
-
-LANGUAGE/TONE OBSERVED: [e.g., accusatory, urgent, informational, etc.]
-
-SAMPLE QUOTES (exact phrases from provided posts, max 5):
+**Output Format (Use plain text, NO markdown headers or bold):**
+Narrative Title: [Short, descriptive title]
+Core Claim(s):
+- [Claim 1, directly quoted or closely paraphrased from posts]
+- [Claim 2]
+- [Claim 3]
+Originator(s): [Account IDs or "Unknown" if not determinable]
+Amplification: [Total posts] posts across [X] unique accounts
+First Detected: {min_ts}
+Last Updated: {max_ts}
+Language/Tone Observed: [e.g., accusatory, urgent, informational, mixed]
+Sample Quotes (exact phrases from posts, max 3):
 1. '[exact quote 1]'
 2. '[exact quote 2]'
 3. '[exact quote 3]'
 
-DO NOT include: fake accounts, fake URLs, engagement metrics, or claims not in the provided texts."""
+Documents for analysis:
+{joined}{url_context}
+"""
     
-    # For now, return a formatted placeholder (replace with actual LLM call when ready)
-    sample_quotes = []
-    for i, text in enumerate(sample_texts[:3]):
-        clean_text = text[:100].replace('"', "'").replace('\n', ' ') if text else ''
-        sample_quotes.append(f"{i+1}. '{clean_text}...'")
+    try:
+        response = safe_llm_call(prompt, temperature=0.2, max_tokens=2048)
+        raw_summary = response.strip() if response else ""
+    except Exception as e:
+        logger.warning(f"LLM summary failed: {e}")
+        # Fallback: extract key phrases directly from texts
+        return _fallback_summary(texts, urls, min_ts, max_ts)
     
-    return f"""NARRATIVE THEME: Cluster of {len(sample_texts)} posts discussing election-related topics
-
-EXPLICIT CLAIMS:
-- Posts in this cluster share similar language and themes
-- Content focuses on Ethiopian political discourse
-
-TARGETED GROUPS/ENTITIES:
-- Various Ethiopian political entities mentioned
-
-LANGUAGE/TONE OBSERVED: Mixed, with some urgent and informational tones
-
-SAMPLE QUOTES:
-{chr(10).join(sample_quotes)}
-
-Time Range: {min_ts} to {max_ts}"""
+    # Clean LLM output: remove markdown, code blocks, instruction echoes
+    cleaned = re.sub(r'\*\*.*?(Instructions|strict|Output Format).*?\*\*', '', raw_summary, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r'```.*?```', '', cleaned, flags=re.DOTALL)  # Remove code blocks
+    cleaned = re.sub(r'###|##|#|\*\*|\*', '', cleaned)  # Remove markdown headers/bold
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)  # Normalize whitespace
+    return cleaned.strip()
 
 
-def get_ethiopia_summaries(posts_queryset, max_clusters=10):
+def _fallback_summary(texts, urls, min_ts, max_ts):
+    """Fallback when LLM fails: extract key phrases directly from posts"""
+    if not texts:
+        return "No content available for summarization."
+    
+    # Extract top keywords (simple frequency)
+    from collections import Counter
+    import re
+    words = []
+    for t in texts[:20]:
+        words.extend(re.findall(r'\b[a-zA-Z]{4,}\b', t.lower()))
+    top_words = [w for w, _ in Counter(words).most_common(10) if w not in {'the', 'and', 'for', 'that', 'with', 'this', 'from', 'have', 'were', 'will'}]
+    
+    # Get first 3 substantive sentences
+    sentences = []
+    for t in texts:
+        sents = [s.strip() for s in t.split('.') if len(s.strip()) > 30]
+        sentences.extend(sents[:2])
+        if len(sentences) >= 3:
+            break
+    
+    return f"""Narrative Title: Cluster discussing {', '.join(top_words[:3]) if top_words else 'election-related topics'}
+
+Core Claim(s):
+- Posts reference electoral processes and political developments in Ethiopia
+- Content includes mentions of specific incidents, actors, or regional dynamics
+
+Originator(s): Unknown (automated extraction)
+Amplification: {len(texts)} posts
+First Detected: {min_ts}
+Last Updated: {max_ts}
+Language/Tone Observed: Mixed tones with informational and analytical content
+
+Sample Quotes:
+1. '{sentences[0][:150]}...'
+2. '{sentences[1][:150]}...'
+3. '{sentences[2][:150]}...'"""
+
+
+def get_ethiopia_summaries(posts_queryset, max_clusters=15):
     """
-    Generates LLM-powered concise summaries with real claim extraction & robust fallback.
-    Keeps language/tone analysis, first account info, and truncated sample posts.
+    Generates IMI-style structured summaries with Ethiopia-specific topic/tone mapping.
+    Uses clustering + LLM with robust fallback when model fails.
     """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.cluster import DBSCAN
+    from collections import defaultdict, Counter
+    import re
+    
     all_summaries = []
-
-    if posts_queryset.count() < 20:
-        return all_summaries
-
-    post_data = list(posts_queryset.values('original_text', 'url', 'account_id', 'platform', 'timestamp_share')[:2000])
-
+    
+    # Get posts with required fields
+    post_data = list(posts_queryset.values(
+        'id', 'original_text', 'url', 'account_id', 'platform', 'timestamp_share'
+    ).filter(original_text__isnull=False).exclude(original_text='').order_by('-timestamp_share')[:2000])
+    
     if len(post_data) < 20:
         return all_summaries
-
+    
+    # Filter to substantive texts
     texts = [p['original_text'] for p in post_data if p['original_text'] and len(p['original_text'].strip()) > 50]
-
+    urls = [p['url'] for p in post_data if p.get('url') and str(p['url']).startswith('http')]
+    
     if len(texts) < 20:
         return all_summaries
-
+    
     try:
-        # 1. Cluster posts by semantic similarity
-        vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1, 2))
+        # 1. Cluster posts by semantic similarity (DBSCAN for flexible cluster shapes)
+        vectorizer = TfidfVectorizer(max_features=3000, stop_words='english', ngram_range=(1, 2), min_df=2)
         X = vectorizer.fit_transform(texts)
-
-        n_clusters = max(2, min(max_clusters, len(texts) // 20))
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        labels = kmeans.fit_predict(X)
-
+        
+        # DBSCAN: eps=0.3, min_samples=2 finds tight coordination groups
+        clustering = DBSCAN(eps=0.3, min_samples=2, metric='cosine').fit(X)
+        labels = clustering.labels_
+        
+        # Group posts by cluster label (exclude noise: label=-1)
         cluster_posts = defaultdict(list)
         for idx, label in enumerate(labels):
-            cluster_posts[label].append(post_data[idx])
-
-        # 2. Process each cluster
-        for cluster_id, cluster_data in cluster_posts.items():
-            if len(cluster_data) < 3:
+            if label != -1:
+                cluster_posts[label].append(post_data[idx])
+        
+        # Process top 15 clusters by size
+        top_clusters = sorted(cluster_posts.items(), key=lambda x: len(x[1]), reverse=True)[:max_clusters]
+        
+        for cluster_id, cluster_data in top_clusters:
+            if len(cluster_data) < 3:  # Skip tiny clusters
                 continue
-
+            
+            # Extract data for summarization
             cluster_texts = [p['original_text'] for p in cluster_data if p['original_text']]
+            cluster_urls = [p['url'] for p in cluster_data if p.get('url') and str(p['url']).startswith('http')]
+            
+            # Timestamps for originator tracking
             timestamps = [p['timestamp_share'] for p in cluster_data if p.get('timestamp_share')]
-            first_account = cluster_data[0]['account_id'] if cluster_data else 'Unknown'
-
-            min_ts = min(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
-            max_ts = max(timestamps).strftime('%Y-%m-%d') if timestamps else 'N/A'
-
-            # Pre-analyze topics & tone (used by both LLM output and fallback)
+            if not timestamps:
+                continue
+                
+            min_ts = min(timestamps)
+            max_ts = max(timestamps)
+            min_ts_str = min_ts.strftime('%Y-%m-%d') if min_ts else 'N/A'
+            max_ts_str = max_ts.strftime('%Y-%m-%d') if max_ts else 'N/A'
+            
+            # Originators: first 5 accounts by timestamp
+            sorted_by_time = sorted(cluster_data, key=lambda x: x['timestamp_share'] or datetime.max)
+            originators = list(dict.fromkeys([p['account_id'] for p in sorted_by_time[:10] if p.get('account_id')]))[:5]
+            originators = [str(o)[:40] for o in originators] if originators else ["Unknown"]
+            
+            # Amplification metrics
+            total_reach = len(cluster_data)
+            unique_accounts = len(set(p['account_id'] for p in cluster_data if p.get('account_id')))
+            platforms = [p['platform'] for p in cluster_data if p.get('platform')]
+            platform_counts = Counter(platforms)
+            top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
+            
+            # === ETHIOPIA-SPECIFIC TOPIC & TONE MAPPING (from your old version) ===
             all_text_lower = ' '.join(cluster_texts[:10]).lower()
             
             topic_map = {
-                'election process': ['election', 'vote', 'ballot', 'nebe', 'results', 'polling'],
-                'ethnic dynamics': ['amhara', 'oromo', 'tigray', 'ethnic', 'community', 'regional'],
-                'political actors': ['abiy', 'prosperity party', 'opposition', 'fano', 'government'],
-                'security concerns': ['conflict', 'violence', 'attack', 'militia', 'drone', 'security'],
-                'information environment': ['media', 'social media', 'disinformation', 'fake news', 'platform']
+                'election process': ['election', 'vote', 'ballot', 'nebe', 'results', 'polling', 'tally', 'counting'],
+                'ethnic dynamics': ['amhara', 'oromo', 'tigray', 'somali', 'afar', 'sidama', 'ethnic', 'tribal', 'regional'],
+                'political actors': ['abiy', 'prosperity party', 'opposition', 'fano', 'government', 'parliament', 'minister'],
+                'security concerns': ['conflict', 'violence', 'attack', 'militia', 'drone', 'security', 'war', 'tension'],
+                'information environment': ['media', 'social media', 'disinformation', 'fake news', 'platform', 'censorship'],
+                'foreign interference': ['foreign', 'international', 'au', 'un', 'eu', 'china', 'russia', 'usa', 'egypt'],
+                'economic issues': ['economy', 'inflation', 'unemployment', 'poverty', 'development', 'funds', 'corruption'],
             }
             detected_topics = [t for t, kws in topic_map.items() if any(kw in all_text_lower for kw in kws)]
-
+            
             tone_map = {
-                'accusatory and urgent': ['accuse', 'blame', 'demand', 'condemn', 'outrage', 'crisis'],
-                'informational and analytical': ['report', 'analysis', 'data', 'found', 'according', 'study'],
-                'emotional and concerned': ['worried', 'concerned', 'fear', 'alarming', 'devastating'],
-                'critical and skeptical': ['criticize', 'fail', 'question', 'doubt', 'skeptical', 'misleading']
+                'accusatory and urgent': ['accuse', 'blame', 'demand', 'condemn', 'outrage', 'crisis', 'emergency', 'immediate'],
+                'informational and analytical': ['report', 'analysis', 'data', 'found', 'according', 'study', 'research', 'evidence'],
+                'emotional and concerned': ['worried', 'concerned', 'fear', 'alarming', 'devastating', 'tragic', 'heartbreaking'],
+                'critical and skeptical': ['criticize', 'fail', 'question', 'doubt', 'skeptical', 'misleading', 'manipulated'],
+                'hopeful and constructive': ['hope', 'solution', 'progress', 'unity', 'peace', 'dialogue', 'reform'],
             }
             detected_tone = 'Mixed tones with informational and analytical content'
             for tone, kws in tone_map.items():
                 if any(kw in all_text_lower for kw in kws):
                     detected_tone = tone.title()
                     break
+            
+            # === GENERATE STRUCTURED SUMMARY (IMI-style) ===
+            joined = "\n".join([f"[{i+1}] {t}" for i, t in enumerate(cluster_texts[:50]) if t and len(t.strip()) > 10])
+            url_context = "\nRelevant post links:\n" + "\n".join(cluster_urls[:5]) if cluster_urls else ""
+            
+            prompt = f"""
+Generate a structured IMI intelligence report on online narratives related to the Ethiopia election.
+Focus on pre and post-election tensions and emerging narratives, including:
+- Allegations of political suppression or intimidation
+- Electoral Commission (NEBE) corruption, bias, or procedural issues
+- Economic distress, state fund misuse, or resource allocation claims
+- Hate speech, ethnic targeting, tribalism, or xenophobia
+- Gender-based attacks or disinformation against women candidates
+- Foreign interference narratives ("Western puppet", anti-EU, China/Russia influence, etc.)
+- Marginalization of minorities or regional groups (Amhara, Oromo, Tigray, Somali, etc.)
+- Claims of election fraud, rigging, tally center manipulation, or result tampering
+- Calls for protests, civic resistance, or boycotts
+- Viral slogans, hashtags, or coordinated messaging campaigns
 
-            # 3. Generate LLM Summary
-            context_text = "\n".join(cluster_texts[:30])
-            summary_prompt = f"""You are an election monitoring analyst. Analyze these social media posts about Ethiopia's election and provide:
+**Strict Instructions:**
+- Only report claims **explicitly present** in the provided posts below.
+- Identify **originators**: accounts that first posted the core claim (from cluster_data timestamps).
+- Note **amplification**: how widely it spread (Total posts count).
+- Do NOT invent, cut out, assume, extrapolate, or fact-check claims.
+- Summarize clearly and concisely using simple language.
 
-**Posts to analyze:**
-{context_text[:3000]}
+**Output Format (Use plain text, NO markdown headers or bold):**
+Narrative Title: [Short, descriptive title]
+Core Claim(s):
+- [Claim 1, directly quoted or closely paraphrased from posts]
+- [Claim 2]
+- [Claim 3]
+Originator(s): [Account IDs or "Unknown" if not determinable]
+Amplification: [Total posts] posts across [X] unique accounts
+First Detected: {min_ts_str}
+Last Updated: {max_ts_str}
+Language/Tone Observed: {detected_tone}
+Primary Topics: {', '.join(detected_topics[:3]) if detected_topics else 'Ethiopian electoral discourse'}
+Sample Quotes (exact phrases from posts, max 3):
+1. '[exact quote 1]'
+2. '[exact quote 2]'
+3. '[exact quote 3]'
 
-**Provide a concise summary including:**
-1. Main narrative theme (1 sentence)
-2. Key claims being made (2-3 specific claims extracted directly from the text)
-3. Language/tone observed
-4. Primary topics discussed
-
-**Format your response clearly with these sections:**
-NARRATIVE THEME: [one sentence]
-KEY CLAIMS:
-- [claim 1]
-- [claim 2]
-- [claim 3]
-LANGUAGE/TONE: [description]
-PRIMARY TOPICS: [topics]"""
-
+Documents for analysis:
+{joined}{url_context}
+"""
+            
             try:
-                llm_summary = safe_llm_call(summary_prompt, temperature=0.3, max_tokens=400)
-                llm_summary = llm_summary.strip()
-                llm_summary = re.sub(r'\*\*|\*|```|`', '', llm_summary)
+                response = safe_llm_call(prompt, temperature=0.2, max_tokens=2048)
+                raw_summary = response.strip() if response else ""
             except Exception as e:
                 logger.warning(f"LLM summary failed for cluster {cluster_id}: {e}")
-                
-                # ✅ FALLBACK: Extract real claims from posts
+                raw_summary = ""
+            
+            # Clean LLM output
+            cleaned_summary = re.sub(r'\*\*.*?(Instructions|strict|Output Format).*?\*\*', '', raw_summary, flags=re.IGNORECASE | re.DOTALL)
+            cleaned_summary = re.sub(r'```.*?```', '', cleaned_summary, flags=re.DOTALL)
+            cleaned_summary = re.sub(r'###|##|#|\*\*|\*', '', cleaned_summary)
+            cleaned_summary = re.sub(r'\n{3,}', '\n\n', cleaned_summary).strip()
+            
+            # === FALLBACK: If LLM fails or returns empty, use rule-based extraction ===
+            if not cleaned_summary or len(cleaned_summary) < 50:
+                # Extract key claims using keywords (from your old fallback logic)
                 specific_claims = []
                 seen_claims = set()
                 claim_keywords = ['alleged', 'claims', 'reported', 'found', 'accused', 'stated',
                                   'manipulated', 'rigged', 'violence', 'attack', 'killed', 'hate',
                                   'disinformation', 'fake', 'biased', 'unfair', 'targeting', 'condemn']
-
+                
                 for text in cluster_texts[:30]:
                     sentences = [s.strip() for s in text.split('.') if len(s.strip()) > 40]
                     for sentence in sentences:
@@ -422,122 +523,68 @@ PRIMARY TOPICS: [topics]"""
                                     break
                     if len(specific_claims) >= 3:
                         break
-
+                
                 claims_text = '\n'.join([f"- {c}" for c in specific_claims[:3]]) if specific_claims else \
                     "- Posts discuss electoral processes and political developments in Ethiopia\n" \
                     "- Content includes references to specific incidents and political actors\n" \
                     "- Themes include governance, security, and information dynamics"
+                
+                # Get sample quotes for fallback
+                sample_quotes = []
+                for text in cluster_texts[:3]:
+                    clean = text[:150].replace("'", "'").strip()
+                    if clean and len(clean) > 20:
+                        sample_quotes.append(f"'{clean}...'")
+                
+                cleaned_summary = f"""Narrative Title: Cluster discussing {', '.join(detected_topics[:2]) if detected_topics else 'election-related topics'}
 
-                llm_summary = f"""NARRATIVE THEME: Cluster of {len(cluster_data)} posts discussing {', '.join(detected_topics[:2]) if detected_topics else 'election-related topics'}
-
-KEY CLAIMS:
+Core Claim(s):
 {claims_text}
 
-LANGUAGE/TONE: {detected_tone}
-
-PRIMARY TOPICS: {', '.join(detected_topics[:3]) if detected_topics else 'Ethiopian electoral discourse'}"""
-
-            # 4. Prepare sample posts (TRUNCATED - old style)
-            sample_posts_with_urls = []
-            for post in cluster_data[:5]:
-                if post['original_text'] and len(post['original_text'].strip()) > 30:
-                    sample_posts_with_urls.append({
-                        'text': post['original_text'][:200] + ('...' if len(post['original_text']) > 200 else ''),
-                        'url': post['url'] if post['url'] and str(post['url']).startswith('http') else None,
-                        'account': str(post['account_id'])[:30],
-                        'platform': post['platform']
-                    })
-
-            # 5. Build metrics & return dict
-            total_reach = len(cluster_data)
-            platforms = [p['platform'] for p in cluster_data if p.get('platform')]
-            platform_counts = Counter(platforms)
-            top_platforms = ", ".join([f"{p} ({c})" for p, c in platform_counts.most_common(3)])
-
+Originator(s): {', '.join(originators) if originators != ["Unknown"] else "Unknown"}
+Amplification: {total_reach} posts across {unique_accounts} unique accounts
+First Detected: {min_ts_str}
+Last Updated: {max_ts_str}
+Language/Tone Observed: {detected_tone}
+Primary Topics: {', '.join(detected_topics[:3]) if detected_topics else 'Ethiopian electoral discourse'}
+Sample Quotes:
+{chr(10).join(sample_quotes[:3]) if sample_quotes else "1. '[No substantial quotes available]'" }"""
+            
+            # Filter out noise/irrelevant clusters
+            summary_lower = cleaned_summary.lower()
+            noise_indicators = ["no relevant claims", "no explicit claims", "insufficient data", "not applicable", "unable to determine"]
+            if any(ind in summary_lower for ind in noise_indicators):
+                continue
+            
+            # Assign virality tier
+            virality = assign_virality_tier(total_reach)
+            
             all_summaries.append({
-                'cluster_id': cluster_id,
-                'Context': llm_summary,
-                'Narrative_Description': f"Posts discussing {', '.join(detected_topics[:2]) if detected_topics else 'election-related topics'}",
+                'cluster_id': int(cluster_id) + 1,
+                'Context': cleaned_summary,
+                'Originators': ", ".join(originators),
+                'Amplifiers_Count': unique_accounts,
                 'Total_Reach': total_reach,
-                'Emerging_Virality': assign_virality_tier(total_reach),
+                'Emerging_Virality': virality,
                 'Top_Platforms': top_platforms,
-                'sample_posts_with_urls': sample_posts_with_urls,
-                'post_count': len(cluster_data),
-                'unique_urls_count': len(set([p['url'] for p in cluster_data if p['url']])),
-                'first_account': first_account[:40] if first_account else 'Unknown',
-                'time_range': f"{min_ts} to {max_ts}"
+                'Min_TS': min_ts_str,
+                'Max_TS': max_ts_str,
+                'Posts_Data': cluster_data,  # Keep for evidence table
+                'Platform_Diversity': len(platform_counts),
+                'Detected_Topics': detected_topics,
+                'Detected_Tone': detected_tone,
             })
-
+        
+        # Sort by reach (most amplified first)
         all_summaries.sort(key=lambda x: x['Total_Reach'], reverse=True)
-
+        
     except Exception as e:
         logger.error(f"Narrative clustering failed: {e}")
         import traceback
         traceback.print_exc()
-
+    
     return all_summaries[:max_clusters]
-    
-def extract_narrative_description(summary_text, sample_posts):
-    """Generate a specific, meaningful 1-sentence narrative description from actual cluster posts"""
-    
-    if not sample_posts:
-        return "Analyzing narrative content..."
-    
-    # Combine all posts in this cluster for analysis
-    all_text = ' '.join([p for p in sample_posts if p and isinstance(p, str)]).lower()
-    
-    # Define topic keywords for Ethiopia election context
-    topic_keywords = {
-        'election fraud': ['rigged', 'fraud', 'stolen', 'manipulated', 'fake results', 'cheating', 'ballot', 'nebe'],
-        'voter intimidation': ['intimidation', 'threat', 'forced', 'coerced', 'violence', 'fear', 'suppress', 'arrest'],
-        'ethnic tension': ['amhara', 'oromo', 'tigray', 'somali', 'afar', 'sidama', 'ethnic', 'tribal', 'discrimination'],
-        'political violence': ['kill', 'attack', 'war', 'conflict', 'militia', 'armed', 'bloodshed', 'massacre'],
-        'international observation': ['observer', 'international', 'AU', 'UN', 'monitor', 'transparency', 'legitimate', 'credible'],
-        'government criticism': ['government', 'authorities', 'regime', 'corrupt', 'failed', 'oppression', 'tyranny'],
-        'opposition support': ['opposition', 'protest', 'resistance', 'freedom', 'democracy', 'rights', 'liberation'],
-        'media manipulation': ['propaganda', 'fake news', 'disinformation', 'censorship', 'biased media', 'state media'],
-        'humanitarian crisis': ['displaced', 'refugee', 'hunger', 'famine', 'aid', 'crisis', 'suffering'],
-        'youth engagement': ['youth', 'young', 'students', 'next generation', 'future', 'university']
-    }
-    
-    # Count topic matches in THIS cluster's posts
-    topic_scores = {}
-    for topic, keywords in topic_keywords.items():
-        score = sum(1 for kw in keywords if kw in all_text)
-        if score > 0:
-            topic_scores[topic] = score
-    
-    # If we found topics, generate a specific description for THIS cluster
-    if topic_scores:
-        # Get top 3 topics by score for this cluster
-        top_topics = sorted(topic_scores.items(), key=lambda x: x[1], reverse=True)[:3]
-        topic_list = [t[0] for t in top_topics]
         
-        # Format the description
-        if len(topic_list) == 1:
-            return f"Posts discussing {topic_list[0]}."
-        elif len(topic_list) == 2:
-            return f"Posts discussing {topic_list[0]} and {topic_list[1]}."
-        else:
-            return f"Posts discussing {topic_list[0]}, {topic_list[1]}, and {topic_list[2]}."
-    
-    # Fallback: Extract key phrase from the most representative post in THIS cluster
-    best_post = None
-    for post in sample_posts:
-        if post and isinstance(post, str) and len(post.strip()) > 50:
-            best_post = post
-            break
-    
-    if best_post:
-        # Clean and extract first meaningful sentence
-        clean = re.sub(r'http\S+|@\w+|#\w+', '', best_post).strip()
-        sentences = [s.strip() for s in clean.split('.') if len(s.strip()) > 30]
-        if sentences:
-            return sentences[0][:200] + ('...' if len(sentences[0]) > 200 else '')
-        return clean[:200] + ('...' if len(clean) > 200 else '')
-    
-    return "Analyzing narrative content from posts..."
-    
     
 def get_top_pairs(coordination_groups):
     """Get top coordinated account pairs"""
