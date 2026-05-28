@@ -1832,16 +1832,19 @@ class TTPProxyView(View):
     Optionally enrich prompts with live PostgreSQL data via SSH tunnel.
     """
     def post(self, request):
-        TTP_API_URL = os.getenv('TTP_API_URL', 'http://127.0.0.1:8002/v1/chat/completions') 
+        # Load config from environment
+        TTP_API_URL = os.getenv('TTP_API_URL', 'http://127.0.0.1:8002/v1/chat/completions')
         TTP_API_KEY = os.getenv('TTP_API_KEY')
         DB_TUNNEL_PORT = int(os.getenv('DB_TUNNEL_PORT', '5433'))
         DB_PASSWORD = os.getenv('DB_PASSWORD')
-
-     if not TTP_API_KEY:
-         raise ImproperlyConfigured("TTP_API_KEY environment variable is required.")
-     if not DB_PASSWORD:
-         raise ImproperlyConfigured("DB_PASSWORD environment variable is required.")   
-
+        
+        # Fail fast if secrets are missing
+        if not TTP_API_KEY:
+            from django.core.exceptions import ImproperlyConfigured
+            raise ImproperlyConfigured("TTP_API_KEY environment variable is required.")
+        if not DB_PASSWORD:
+            from django.core.exceptions import ImproperlyConfigured
+            raise ImproperlyConfigured("DB_PASSWORD environment variable is required.")
         
         try:
             body = json.loads(request.body)
@@ -1866,7 +1869,8 @@ class TTPProxyView(View):
                             ORDER BY timestamp_share DESC LIMIT 8
                         """)
                         rows = cur.fetchall()
-                        cur.close(); conn.close()
+                        cur.close()
+                        conn.close()
                         
                         dossier = [{
                             "account": r[0] or "unknown",
@@ -1884,10 +1888,15 @@ class TTPProxyView(View):
                         logger.warning(f"DB enrichment skipped: {e}")
             
             # Forward to Gemma FastAPI server
-            resp = requests.post(TTP_API_URL, json=body, headers={
-                'Content-Type': 'application/json',
-                'x-api-key': TTP_API_KEY
-            }, timeout=120)
+            resp = requests.post(
+                TTP_API_URL,
+                json=body,
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-api-key': TTP_API_KEY
+                },
+                timeout=120
+            )
             resp.raise_for_status()
             return JsonResponse(resp.json())
             
@@ -1897,7 +1906,7 @@ class TTPProxyView(View):
         except Exception as e:
             logger.error(f"Proxy error: {e}")
             return JsonResponse({'error': str(e)}, status=500)
-
+            
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
     
