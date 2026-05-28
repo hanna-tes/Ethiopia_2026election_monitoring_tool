@@ -229,22 +229,22 @@ document.addEventListener('DOMContentLoaded', () => {
           resultsContainer.innerHTML = `<div class="text-center py-4 text-blue-600">Found ${base.allNetworks.length} coordination groups. Running TTP analysis...</div>`;
           
           // Call your Django proxy to forward to Gemma
-          const ttpRes = await fetch('/dashboard/api/ttp-proxy/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': 'ethiopia-ttp-dev-key'  // Match your TTP_API_KEY
-            },
-            body: JSON.stringify({
-              model: 'gemma-disarm-phase3-ttp',
-              messages: [{
-                role: 'user',
-                content: `Analyze these ${base.allNetworks.length} coordination networks for DISARM TTPs. Return strict JSON with technique matches.`
-              }],
-              temperature: 0.1,
-              max_tokens: 1024
-            })
-          });
+        const ttpRes = await fetch('/api/ttp-proxy/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': 'ethiopia-ttp-dev-key'  
+          },
+          body: JSON.stringify({
+            model: 'gemma-disarm-phase3-ttp',
+            messages: [{
+              role: 'user',
+              content: `Analyze these ${base.allNetworks.length} coordination networks for DISARM TTPs. Return strict JSON with technique matches.`
+            }],
+            temperature: 0.1,
+            max_tokens: 1024
+          })
+        });
           
           if (!ttpRes.ok) throw new Error(`TTP analysis failed: ${ttpRes.status}`);
           const ttpData = await ttpRes.json();
