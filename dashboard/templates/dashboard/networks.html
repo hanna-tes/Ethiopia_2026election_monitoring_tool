@@ -1,293 +1,368 @@
 {% extends 'dashboard/base.html' %}
 {% load static %}
 
-{% block title %}Network & TTP Analysis{% endblock %}
+{% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
 
 {% block extra_head %}
 {{ block.super }}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'dashboard/ttp_radar/shared.css' %}" />
 <style>
-  /* Minor tweaks to fit your dashboard */
-  .shell { width: 100%; max-width: none; padding: 0 12px; }
-  .topbar { margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; }
-  .page-layout { grid-template-columns: 1fr; }
-  .sidebar { position: static; width: 100%; margin-bottom: 20px; }
-  /* Ensure workspace fits in tab */
-  #workspace { margin-top: 1rem; }
+  /* Professional card-based layout */
+  .network-card { 
+    background: white; 
+    border-radius: 12px; 
+    padding: 1.5rem; 
+    margin-bottom: 1.5rem; 
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+    border-left: 4px solid #3b82f6;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .network-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .network-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: flex-start; 
+    margin-bottom: 1rem; 
+  }
+  .network-title { 
+    font-size: 1.25rem; 
+    font-weight: 600; 
+    color: #1f2937; 
+    margin: 0; 
+  }
+  .risk-badge { 
+    padding: 0.25rem 0.75rem; 
+    border-radius: 9999px; 
+    font-size: 0.75rem; 
+    font-weight: 600; 
+  }
+  .risk-high { background: #fef2f2; color: #dc2626; }
+  .risk-medium { background: #fff7ed; color: #ea580c; }
+  .risk-low { background: #f0fdf4; color: #16a34a; }
+  
+  .metrics-grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); 
+    gap: 0.75rem; 
+    margin: 1rem 0; 
+  }
+  .metric-item { 
+    text-align: center; 
+    padding: 0.5rem; 
+    background: #f8fafc; 
+    border-radius: 8px; 
+  }
+  .metric-value { 
+    font-size: 1.25rem; 
+    font-weight: 700; 
+    color: #3b82f6; 
+  }
+  .metric-label { 
+    font-size: 0.75rem; 
+    color: #64748b; 
+  }
+  
+  .ttp-list { 
+    display: flex; 
+    flex-wrap: wrap; 
+    gap: 0.5rem; 
+    margin: 1rem 0; 
+  }
+  .ttp-tag { 
+    background: #e0e7ff; 
+    color: #3730a3; 
+    padding: 0.25rem 0.5rem; 
+    border-radius: 4px; 
+    font-size: 0.8rem; 
+    font-family: monospace; 
+  }
+  
+  .evidence-expander { 
+    margin-top: 1rem; 
+  }
+  .evidence-table { 
+    width: 100%; 
+    border-collapse: collapse; 
+    font-size: 0.85rem; 
+  }
+  .evidence-table th { 
+    background: #f1f5f9; 
+    padding: 0.75rem; 
+    text-align: left; 
+    font-weight: 600; 
+    color: #475569; 
+    border-bottom: 2px solid #e2e8f0; 
+  }
+  .evidence-table td { 
+    padding: 0.75rem; 
+    border-bottom: 1px solid #e2e8f0; 
+    vertical-align: top; 
+  }
+  .post-text { 
+    max-width: 400px; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    white-space: nowrap; 
+  }
+  .platform-badge { 
+    display: inline-block; 
+    padding: 0.125rem 0.5rem; 
+    border-radius: 4px; 
+    font-size: 0.7rem; 
+    font-weight: 500; 
+    background: #e2e8f0; 
+    color: #475569; 
+  }
+  
+  .loading-state {
+    text-align: center;
+    padding: 2rem;
+    color: #64748b;
+  }
+  .error-state {
+    text-align: center;
+    padding: 2rem;
+    color: #dc2626;
+    background: #fef2f2;
+    border-radius: 8px;
+    margin: 1rem 0;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="shell">
-
-  <header class="topbar">
-    <div class="topbar-left">
-      <span class="wordmark">DISARM Radar</span>
-      <span class="topbar-sep">·</span>
-      <span class="topbar-sub">Gemma fine-tune adapter</span>
+<div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+  <div class="flex justify-between items-start mb-6">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900 mb-1">🕸️ Network & TTP Analysis</h2>
+      <p class="text-sm text-gray-500">Analyzing {{ total_posts|default:"—" }} election-related posts from your database</p>
     </div>
-    <span id="runStatus" class="status-pill">Ready</span>
-  </header>
+    <button id="refreshBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-2">
+      🔄 Refresh Analysis
+    </button>
+  </div>
 
-  <div class="page-layout">
+  <!-- Loading State -->
+  <div id="loadingState" class="loading-state hidden">
+    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+    <p class="text-gray-600">Analyzing coordination patterns with Gemma model...</p>
+  </div>
 
-    <!-- ── Left column: inputs ────────────────────────── -->
-    <aside class="sidebar">
+  <!-- Error State -->
+  <div id="errorState" class="error-state hidden">
+    <p class="font-semibold">⚠️ Analysis failed</p>
+    <p class="text-sm" id="errorMessage">Please try again or check server logs.</p>
+  </div>
 
-      <div class="sidebar-section">
-        <p class="sidebar-label">Dataset</p>
-        <label class="file-drop">
-          <input id="csvFile" type="file" accept=".csv,text/csv" />
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>Drop a CSV or click to browse</span>
-        </label>
-        <div class="sidebar-actions">
-          <button id="runBtn" class="btn-run">Run analysis</button>
-          <button id="loadSampleBtn" class="btn-text">Use sample data</button>
-          <button id="exportBtn" class="btn-text">Export JSON</button>
-        </div>
-      </div>
-
-      <div class="sidebar-section">
-        <p class="sidebar-label">Model endpoint</p>
-        <div class="field-stack">
-          <div class="field">
-            <label for="baseUrl">Base URL</label>
-            <input id="baseUrl" type="text" value="/dashboard/api/ttp-proxy/v1" />
-          </div>
-          <div class="field">
-            <label for="modelName">Model</label>
-            <input id="modelName" type="text" value="gemma-disarm-phase3-ttp" />
-          </div>
-          <div class="field">
-            <label for="apiKey">API key</label>
-            <input id="apiKey" type="password" placeholder="Optional" />
-          </div>
-        </div>
-      </div>
-
-      <div class="sidebar-section">
-        <p class="sidebar-label">System prompt</p>
-        <textarea id="systemPrompt" rows="6">You are a fine-tuned DISARM TTP adjudicator. Consider only these techniques: T0049, T0049.002, T0049.003, T0049.005, T0016, T0060, T0097.202, T0143.003, T0119, T0119.001, T0119.002, T0097.102, T0143.002, T0149.003, T0084.002. Use only raw observable cues present in the dossier. Return strict JSON only. Prefer false negatives over false positives.</textarea>
-      </div>
-
-      <details class="sidebar-section collapsible">
-        <summary>Detection thresholds</summary>
-        <div class="field-stack" style="margin-top:12px">
-          <div class="field-row">
-            <div class="field">
-              <label for="linkWindow">Link window (min)</label>
-              <input id="linkWindow" type="number" min="1" max="180" value="30" />
-            </div>
-            <div class="field">
-              <label for="postWindow">Post window (min)</label>
-              <input id="postWindow" type="number" min="1" max="180" value="15" />
-            </div>
-          </div>
-          <div class="field-row">
-            <div class="field">
-              <label for="textThreshold">Text similarity</label>
-              <input id="textThreshold" type="number" min="0.5" max="1" step="0.01" value="0.82" />
-            </div>
-            <div class="field">
-              <label for="minEvidence">Min evidence pairs</label>
-              <input id="minEvidence" type="number" min="1" max="20" value="2" />
-            </div>
-          </div>
-          <div class="field">
-            <label for="networkThreshold">Alert threshold</label>
-            <input id="networkThreshold" type="number" min="10" max="100" value="45" />
-          </div>
-        </div>
-      </details>
-
-    </aside>
-
-    <!-- ── Main content ───────────────────────────────── -->
-    <main class="main-content">
-
-      <!-- Summary row -->
-      <div class="summary-row">
-        <div class="summary-stat">
-          <span id="kpiRows">0</span>
-          <label>rows</label>
-        </div>
-        <div class="summary-stat">
-          <span id="kpiAccounts">0</span>
-          <label>accounts</label>
-        </div>
-        <div class="summary-stat accent">
-          <span id="kpiNetworks">0</span>
-          <label>networks flagged</label>
-        </div>
-        <div class="summary-stat accent">
-          <span id="kpiTtps">0</span>
-          <label>TTPs confirmed</label>
-        </div>
-        <div class="summary-stat domain">
-          <span id="kpiDomain">—</span>
-          <label>top domain</label>
-        </div>
-      </div>
-
-      <!-- Results table -->
-      <section class="content-section">
-        <h2>Detected networks</h2>
-        <div class="table-wrap">
-          <table>
-            <colgroup>
-              <col style="width:18%">
-              <col style="width:14%">
-              <col style="width:7%">
-              <col style="width:17%">
-              <col style="width:20%">
-              <col style="width:7%">
-              <col style="width:17%">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Network</th>
-                <th>Type</th>
-                <th>Accounts</th>
-                <th>Content target</th>
-                <th>Manipulation evidence</th>
-                <th>Risk</th>
-                <th>TTPs</th>
-              </tr>
-            </thead>
-            <tbody id="networkTableBody">
-              <tr><td colspan="7" class="muted-cell">Upload a CSV file or use sample data and run the analysis to see results here.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Workspace -->
-      <section id="workspace" class="workspace hidden">
-
-        <div class="workspace-header">
-          <div class="workspace-header-left">
-            <h2 id="workspaceTitle">—</h2>
-            <span id="workspaceRisk" class="risk-badge">—</span>
-          </div>
-          <button id="closeWorkspaceBtn" class="btn-close" aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-
-        <div class="workspace-cols">
-
-          <div class="workspace-main">
-            <div id="networkOverview" class="overview-row"></div>
-
-            <div class="ws-card">
-              <h3>Coordination graph</h3>
-              <p class="card-note">Hover a node for account details. Drag to reposition. Edge weight reflects coordination strength.</p>
-              <div id="accountCloud"></div>
-            </div>
-
-            <div class="ws-card">
-              <h3>Account breakdown</h3>
-              <div class="scroll-box">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Account</th>
-                      <th>Posts</th>
-                      <th>Manipulative</th>
-                      <th>Avg. cue score</th>
-                    </tr>
-                  </thead>
-                  <tbody id="accountTableBody"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div class="workspace-side">
-            <div class="ws-card">
-              <h3>Confirmed TTPs</h3>
-              <p class="card-note">The model rejected techniques not supported by observable evidence.</p>
-              <div id="techniqueList" class="technique-stack"></div>
-            </div>
-
-            <div class="ws-card">
-              <h3>Content targets</h3>
-              <div id="targetList" class="stack"></div>
-            </div>
-          </div>
-
-        </div>
-
-        <div id="evidencePanel" class="evidence-panel hidden">
-          <div class="evidence-header">
-            <h3 id="evidenceTitle">Evidence</h3>
-            <span id="evidenceChip" class="evidence-label">—</span>
-          </div>
-          <div id="evidenceFeed" class="feed-stack"></div>
-        </div>
-
-      </section>
-
-      <!-- Preview -->
-      <section class="content-section">
-        <h2>Ingestion preview <span class="section-note">first 25 rows</span></h2>
-        <div id="previewTable" class="table-wrap">
-          <div class="empty-state">No data loaded. Upload a CSV or use the sample dataset.</div>
-        </div>
-      </section>
-
-    </main>
-  </div><!-- /page-layout -->
-
-  <footer class="page-footer">
-    DISARM Radar · Gemma Adapter · Ethiopia Election Monitor
-  </footer>
-
-</div><!-- /shell -->
+  <!-- Results Container -->
+  <div id="resultsContainer" class="space-y-6">
+    <!-- Networks will be injected here by JavaScript -->
+    <div class="text-center py-8 text-gray-500">
+      Click "Refresh Analysis" to detect coordination networks and TTPs from your database.
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 {{ block.super }}
-<script src="{% static 'dashboard/ttp_radar/shared-core.js' %}"></script>
-<script src="{% static 'dashboard/ttp_radar/ui-base.js' %}"></script>
-<script src="{% static 'dashboard/ttp_radar/llm-adjudication.js' %}"></script>
-<script src="{% static 'dashboard/ttp_radar/app.js' %}"></script>
 <script>
-  // Auto-fill Base URL to route through Django proxy
-  document.addEventListener('DOMContentLoaded', () => {
-    const baseUrlInput = document.getElementById('baseUrl');
-    if (baseUrlInput) {
-      baseUrlInput.value = '/dashboard/api/ttp-proxy/v1';
+document.addEventListener('DOMContentLoaded', () => {
+  const refreshBtn = document.getElementById('refreshBtn');
+  const loadingState = document.getElementById('loadingState');
+  const errorState = document.getElementById('errorState');
+  const errorMessage = document.getElementById('errorMessage');
+  const resultsContainer = document.getElementById('resultsContainer');
+  
+  // Auto-load on page visit (optional - remove if you prefer manual trigger)
+  // loadNetworkAnalysis();
+  
+  refreshBtn.addEventListener('click', loadNetworkAnalysis);
+  
+  async function loadNetworkAnalysis() {
+    // Show loading state
+    loadingState.classList.remove('hidden');
+    errorState.classList.add('hidden');
+    resultsContainer.innerHTML = '';
+    
+    try {
+      // 1. Load posts from your Django API (PostgreSQL)
+      const dataRes = await fetch('/dashboard/api/ttp-radar-data/?country=Ethiopia&limit=100');
+      if (!dataRes.ok) throw new Error(`Failed to load posts: ${dataRes.status}`);
+      const data = await dataRes.json();
+      
+      if (data.records.length === 0) {
+        resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No election posts found in database.</div>';
+        loadingState.classList.add('hidden');
+        return;
+      }
+      
+      // 2. Format for DisarmCore (matches teammate's UI expectations)
+      const records = data.records.map(row => ({
+        account: row.account_id,
+        post: row.original_text,
+        publication_date: row.timestamp_share,
+        primary_url: row.URL,
+        primary_domain: row.URL ? new URL(row.URL).hostname.replace('www.', '') : '',
+        platform: row.Platform,
+        hashtags: (row.original_text.match(/#\w+/g) || []).map(h => h.slice(1)),
+        manipulation_categories: [],
+      }));
+      
+      // 3. Run coordination detection (client-side, using teammate's logic)
+      if (typeof window.DisarmCore?.analyzeRecords === 'function') {
+        const params = {
+          linkWindowMin: 30,
+          postWindowMin: 15,
+          textThreshold: 0.82,
+          minEvidence: 2,
+          networkThreshold: 45,
+        };
+        
+        const base = window.DisarmCore.analyzeRecords(records, params, { filterNetworksWithTechniques: false });
+        
+        // 4. If networks found, send to Gemma for TTP adjudication
+        if (base.allNetworks && base.allNetworks.length > 0) {
+          // Show progress
+          resultsContainer.innerHTML = `<div class="text-center py-4 text-blue-600">Found ${base.allNetworks.length} coordination groups. Running TTP analysis...</div>`;
+          
+          // Call your Django proxy to forward to Gemma
+          const ttpRes = await fetch('/dashboard/api/ttp-proxy/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': 'ethiopia-ttp-dev-key'  // Match your TTP_API_KEY
+            },
+            body: JSON.stringify({
+              model: 'gemma-disarm-phase3-ttp',
+              messages: [{
+                role: 'user',
+                content: `Analyze these ${base.allNetworks.length} coordination networks for DISARM TTPs. Return strict JSON with technique matches.`
+              }],
+              temperature: 0.1,
+              max_tokens: 1024
+            })
+          });
+          
+          if (!ttpRes.ok) throw new Error(`TTP analysis failed: ${ttpRes.status}`);
+          const ttpData = await ttpRes.json();
+          
+          // 5. Render professional results
+          renderNetworkResults(base.allNetworks, ttpData);
+        } else {
+          resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No coordination networks detected with current thresholds.</div>';
+        }
+      } else {
+        throw new Error('DisarmCore not loaded. Check static files.');
+      }
+      
+    } catch (err) {
+      console.error('Analysis error:', err);
+      errorState.classList.remove('hidden');
+      errorMessage.textContent = err.message || 'Unknown error';
+    } finally {
+      loadingState.classList.add('hidden');
+    }
+  }
+  
+  function renderNetworkResults(networks, ttpResponse) {
+    if (!networks.length) {
+      resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No networks to display.</div>';
+      return;
     }
     
-    // Optional: Pre-load sample data button handler override to use Django-served sample
-    const sampleBtn = document.getElementById('loadSampleBtn');
-    if (sampleBtn) {
-      sampleBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        try {
-          const res = await fetch('/static/dashboard/ttp_radar/sample_input.csv');
-          const text = await res.text();
-          // Trigger the existing loadSampleCsv function from ui-base.js
-          if (typeof loadSampleCsv === 'function') {
-            loadSampleCsv(text);
-          } else {
-            // Fallback: manually set records if core function exists
-            if (window.DisarmCore?.ingestCsv) {
-              const { records } = window.DisarmCore.ingestCsv(text);
-              if (typeof renderPreview === 'function') renderPreview(records);
-            }
-          }
-        } catch (err) {
-          console.warn('Sample data load failed:', err);
-          alert('Could not load sample data. Please upload a CSV file instead.');
-        }
-      });
+    let html = '';
+    networks.slice(0, 10).forEach((net, idx) => {
+      const riskClass = net.riskScore >= 67 ? 'risk-high' : net.riskScore >= 40 ? 'risk-medium' : 'risk-low';
+      const ttps = net.candidateTechniques || [];
+      
+      html += `
+      <div class="network-card">
+        <div class="network-header">
+          <h3 class="network-title">Network #${idx + 1} — ${net.type || 'Coordination Group'}</h3>
+          <span class="risk-badge ${riskClass}">${net.riskBand || 'Medium'} Risk</span>
+        </div>
+        
+        <div class="metrics-grid">
+          <div class="metric-item">
+            <div class="metric-value">${net.accounts?.length || 0}</div>
+            <div class="metric-label">Accounts</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-value">${net.posts || 0}</div>
+            <div class="metric-label">Posts</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-value">${net.manipulationShare ? Math.round(net.manipulationShare * 100) : 0}%</div>
+            <div class="metric-label">Manipulation</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-value">${net.signalTotals?.coLink || 0}</div>
+            <div class="metric-label">Link Coord.</div>
+          </div>
+        </div>
+        
+        ${ttps.length ? `
+        <div>
+          <h4 class="text-sm font-semibold text-gray-700 mb-2">🎯 Detected TTPs</h4>
+          <div class="ttp-list">
+            ${ttps.slice(0, 5).map(ttp => `
+              <span class="ttp-tag">${ttp.techniqueId}: ${ttp.name?.slice(0, 30)}...</span>
+            `).join('')}
+            ${ttps.length > 5 ? `<span class="ttp-tag">+${ttps.length - 5} more</span>` : ''}
+          </div>
+        </div>` : '<p class="text-sm text-gray-500 italic">No specific TTPs confirmed for this network.</p>'}
+        
+        <div class="evidence-expander">
+          <details>
+            <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">
+              📂 View Network Evidence (${net.accounts?.length || 0} accounts)
+            </summary>
+            <div class="mt-3 overflow-x-auto">
+              <table class="evidence-table">
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Platform</th>
+                    <th>Post Preview</th>
+                    <th>Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${net.llmDossier?.evidence_posts?.slice(0, 5).map(post => `
+                  <tr>
+                    <td class="font-mono text-xs">${post.account?.slice(0, 20) || 'Unknown'}</td>
+                    <td><span class="platform-badge">${post.platform || 'Unknown'}</span></td>
+                    <td class="post-text">${post.post?.slice(0, 100) || '—'}</td>
+                    <td class="text-xs text-gray-500">${post.publication_date ? new Date(post.publication_date).toLocaleDateString() : '—'}</td>
+                  </tr>
+                  `).join('') || '<tr><td colspan="4" class="text-center text-gray-500 py-4">No evidence posts available</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </div>`;
+    });
+    
+    resultsContainer.innerHTML = html;
+    
+    if (networks.length > 10) {
+      resultsContainer.innerHTML += `
+      <div class="text-center mt-4 p-4 bg-gray-50 rounded-lg">
+        <p class="text-gray-600">... and ${networks.length - 10} more networks</p>
+        <button class="text-blue-600 hover:underline text-sm mt-2" onclick="loadMoreNetworks()">View all</button>
+      </div>`;
     }
-  });
+  }
+  
+  // Optional: Load more networks (pagination)
+  window.loadMoreNetworks = function() {
+    // Implement pagination logic here if needed
+    alert('Full network list would load here. Implement pagination as needed.');
+  };
+});
 </script>
 {% endblock %}
