@@ -37,18 +37,52 @@
                         #{{ summary.cluster_id }}
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-gray-900">{{ summary.Narrative_Description }}</h3>
+                        <!-- ✅ Use structured summary's first line as title (fallback to old field) -->
+                        <h3 class="text-lg font-bold text-gray-900">
+                            {% if summary.Context %}
+                                {% with first_line=summary.Context|split:"\n"|first %}
+                                    {% if "Narrative Title:" in first_line %}
+                                        {{ first_line|cut:"Narrative Title:"|strip }}
+                                    {% else %}
+                                        {{ summary.Narrative_Description }}
+                                    {% endif %}
+                                {% endwith %}
+                            {% else %}
+                                {{ summary.Narrative_Description }}
+                            {% endif %}
+                        </h3>
                         <div class="text-sm text-gray-600 mt-1">
                             📊 {{ summary.Total_Reach }} posts • 🚀 {{ summary.Emerging_Virality }} • {{ summary.Top_Platforms }}
                         </div>
                         <div class="text-xs text-gray-500 mt-1">
-                            📅 {{ summary.time_range }} • 👤 First shared by: {{ summary.first_account|truncatechars:25 }}
+                            📅 {{ summary.Min_TS }} to {{ summary.Max_TS }} 
+                            {% if summary.Originators and summary.Originators != "Unknown" %}
+                                • 👤 Origin: {{ summary.Originators|truncatechars:30 }}
+                            {% endif %}
                         </div>
                     </div>
                 </div>
             </div>
             
-            <!-- ✅ LLM-Generated Summary (Concise) -->
+            <!-- ✅ NEW: Display detected topics & tone (optional, non-breaking) -->
+            {% if summary.Detected_Topics or summary.Detected_Tone %}
+            <div class="flex flex-wrap gap-2 mb-4">
+                {% if summary.Detected_Topics %}
+                    {% for topic in summary.Detected_Topics %}
+                    <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                        🏷️ {{ topic }}
+                    </span>
+                    {% endfor %}
+                {% endif %}
+                {% if summary.Detected_Tone %}
+                <span class="px-2 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium">
+                    🎭 {{ summary.Detected_Tone }}
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- ✅ LLM-Generated Summary (Now structured IMI-style) -->
             {% if summary.Context %}
             <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-5">
                 <h4 class="text-sm font-semibold text-blue-900 mb-2">📋 Narrative Analysis</h4>
@@ -58,7 +92,7 @@
             </div>
             {% endif %}
             
-            <!-- ✅ Sample Posts (TRUNCATED - old style) -->
+            <!-- ✅ Sample Posts (TRUNCATED - old style, unchanged) -->
             {% if summary.sample_posts_with_urls %}
             <div>
                 <h5 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
