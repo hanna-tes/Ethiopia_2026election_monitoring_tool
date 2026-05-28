@@ -4,8 +4,18 @@ from django import template
 register = template.Library()
 
 @register.filter
-def splitlines(value):
-    """Split a string by newlines and return non-empty lines"""
+def split(value, arg):
+    """Split a string by delimiter"""
     if not value:
         return []
-    return [line.strip() for line in value.split('\n') if line.strip()]
+    return [item.strip() for item in value.split(arg) if item.strip()]
+
+@register.filter  
+def cut(value, arg):
+    """Remove a substring"""
+    return value.replace(arg, '') if value else value
+
+@register.filter
+def strip(value):
+    """Strip whitespace"""
+    return value.strip() if value else value
