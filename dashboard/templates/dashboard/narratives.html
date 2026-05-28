@@ -1,7 +1,172 @@
 {% extends 'dashboard/base.html' %}
 {% load static %}
-{% load custom_filters %}
+
 {% block title %}Trending Narratives - Ethiopia Election Monitor{% endblock %}
+
+{% block extra_head %}
+{{ block.super }}
+<style>
+  /* === NARRATIVE CARD STYLING === */
+  .narrative-card { 
+    background: white; 
+    border-radius: 12px; 
+    padding: 1.5rem; 
+    margin-bottom: 1.5rem; 
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+    border-left: 4px solid #3b82f6;
+  }
+
+  .narrative-title { 
+    font-size: 1.25rem; 
+    font-weight: 700;
+    color: #1f2937; 
+    margin: 0 0 0.75rem 0; 
+    line-height: 1.3;
+  }
+
+  .narrative-section {
+    margin: 0.75rem 0;
+    line-height: 1.6;
+  }
+
+  .narrative-section strong {
+    font-weight: 600;
+    color: #374151;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .narrative-section ul {
+    margin: 0.25rem 0 0.5rem 1.25rem;
+    padding: 0;
+    list-style: disc;
+  }
+
+  .narrative-section li {
+    margin: 0.15rem 0;
+    color: #4b5563;
+  }
+
+  .narrative-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.75rem 0;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
+  .narrative-meta span {
+    background: #f3f4f6;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .narrative-quotes {
+    background: #f9fafb;
+    border-left: 3px solid #9ca3af;
+    padding: 0.75rem 1rem;
+    margin: 0.75rem 0;
+    font-style: italic;
+    color: #374151;
+    font-size: 0.9rem;
+  }
+
+  .narrative-quotes code {
+    display: block;
+    margin: 0.25rem 0;
+    font-family: ui-monospace, monospace;
+    font-style: normal;
+    background: #e5e7eb;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  /* === AMHARIC TRANSLATION TOGGLE === */
+  .amharic-text {
+    direction: ltr;
+    text-align: left;
+  }
+
+  .translate-btn {
+    background: #dbeafe;
+    color: #1e40af;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-left: 0.5rem;
+    transition: background 0.2s;
+  }
+
+  .translate-btn:hover {
+    background: #bfdbfe;
+  }
+
+  .translate-btn.loading {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  /* === EVIDENCE EXPANDER === */
+  .evidence-expander {
+    margin-top: 1rem;
+  }
+
+  .evidence-expander summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #2563eb;
+    padding: 0.5rem 0;
+  }
+
+  .evidence-expander summary:hover {
+    color: #1d4ed8;
+  }
+
+  .evidence-post {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .evidence-post-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .platform-badge {
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+
+  .evidence-post-text {
+    font-size: 0.875rem;
+    color: #374151;
+    line-height: 1.5;
+    margin-bottom: 0.5rem;
+  }
+
+  .evidence-post-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-size: 0.75rem;
+  }
+
+  .evidence-post-link:hover {
+    text-decoration: underline;
+  }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
@@ -30,17 +195,17 @@
     {% if summaries %}
     <div class="space-y-6">
         {% for summary in summaries %}
-        <div class="border border-gray-200 rounded-xl p-6 hover:shadow-md transition bg-white">
+        <div class="narrative-card">
             
-            <!-- Header -->
+            <!-- Header with Title & Metrics -->
             <div class="flex items-start justify-between mb-4">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
                         #{{ summary.cluster_id }}
                     </div>
                     <div>
-                        <!-- ✅ Use structured summary's first line as title (fallback to old field) -->
-                        <h3 class="text-lg font-bold text-gray-900">
+                        <!-- Extract title from structured summary -->
+                        <h3 class="narrative-title">
                             {% if summary.Context %}
                                 {% with first_line=summary.Context|split:"\n"|first %}
                                     {% if "Narrative Title:" in first_line %}
@@ -66,7 +231,7 @@
                 </div>
             </div>
             
-            <!-- ✅ NEW: Display detected topics & tone (optional, non-breaking) -->
+            <!-- Topics & Tone Badges -->
             {% if summary.Detected_Topics or summary.Detected_Tone %}
             <div class="flex flex-wrap gap-2 mb-4">
                 {% if summary.Detected_Topics %}
@@ -84,49 +249,73 @@
             </div>
             {% endif %}
             
-            <!-- ✅ LLM-Generated Summary (Now structured IMI-style) -->
+            <!-- Structured Summary Content -->
             {% if summary.Context %}
-            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-5">
-                <h4 class="text-sm font-semibold text-blue-900 mb-2">📋 Narrative Analysis</h4>
-                <div class="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">
-                    {{ summary.Context }}
-                </div>
+            <div class="narrative-content space-y-3">
+                {% autoescape off %}
+                {{ summary.Context|linebreaksbr }}
+                {% endautoescape %}
             </div>
             {% endif %}
             
-            <!-- ✅ Sample Posts (TRUNCATED - old style, unchanged) -->
-            {% if summary.sample_posts_with_urls %}
-            <div>
-                <h5 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                    📂 Sample Posts ({{ summary.sample_posts_with_urls|length }})
-                    {% if summary.unique_urls_count %}
-                    <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                        {{ summary.unique_urls_count }} URLs
-                    </span>
-                    {% endif %}
-                </h5>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {% for post in summary.sample_posts_with_urls %}
-                    <div class="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-sm transition">
-                        <div class="flex items-center gap-2 mb-2 text-xs">
-                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
-                                {{ post.platform|default:"Unknown" }}
-                            </span>
-                            <span class="text-gray-500 truncate">{{ post.account|truncatechars:25 }}</span>
+            <!-- Collapsible Evidence Section -->
+            {% if summary.Posts_Data %}
+            <div class="evidence-expander mt-4">
+                <details>
+                    <summary class="flex items-center gap-2">
+                        📂 View Full Cluster Evidence ({{ summary.Posts_Data|length }} posts)
+                        {% if summary.unique_urls_count %}
+                        <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                            {{ summary.unique_urls_count }} URLs
+                        </span>
+                        {% endif %}
+                    </summary>
+                    <div class="mt-3 space-y-3">
+                        {% for post in summary.Posts_Data|slice:":5" %}
+                        <div class="evidence-post">
+                            <div class="evidence-post-header">
+                                <div class="flex items-center gap-2">
+                                    <span class="platform-badge">
+                                        {{ post.platform|default:"Unknown" }}
+                                    </span>
+                                    <span class="text-gray-500 truncate font-mono text-xs">
+                                        {{ post.account_id|truncatechars:25 }}
+                                    </span>
+                                </div>
+                                <span class="text-gray-400 text-xs">
+                                    {{ post.timestamp_share|date:"M d, H:i" }}
+                                </span>
+                            </div>
+                            
+                            <!-- Post Text -->
+                            <div class="evidence-post-text amharic-text" id="post-{{ forloop.counter }}-text">
+                                {{ post.original_text|truncatechars:200 }}
+                            </div>
+                            
+                            <!-- Translation Button for Amharic -->
+                            {% if post.original_text and "፣" in post.original_text or "።" in post.original_text or "አ" in post.original_text %}
+                            <button class="translate-btn" onclick="translatePost('{{ forloop.counter }}', '{{ post.original_text|escapejs }}')">
+                                🔤 Translate to English
+                            </button>
+                            <div id="post-{{ forloop.counter }}-translation" class="hidden mt-2 text-sm text-gray-600 italic bg-blue-50 p-2 rounded"></div>
+                            {% endif %}
+                            
+                            {% if post.url %}
+                            <a href="{{ post.url }}" target="_blank" rel="noopener noreferrer" 
+                               class="evidence-post-link inline-flex items-center gap-1 mt-2">
+                                🔗 View Post
+                            </a>
+                            {% endif %}
                         </div>
-                        <!-- TRUNCATED POST TEXT -->
-                        <p class="text-sm text-gray-700 mb-2 leading-relaxed">
-                            {{ post.text }}
-                        </p>
-                        {% if post.url %}
-                        <a href="{{ post.url }}" target="_blank" rel="noopener noreferrer" 
-                           class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-                            🔗 View Post
-                        </a>
+                        {% endfor %}
+                        
+                        {% if summary.Posts_Data|length > 5 %}
+                        <div class="text-center text-sm text-gray-500 py-2">
+                            + {{ summary.Posts_Data|length|add:"-5" }} more posts in this cluster
+                        </div>
                         {% endif %}
                     </div>
-                    {% endfor %}
-                </div>
+                </details>
             </div>
             {% endif %}
             
@@ -140,4 +329,58 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+// === AMHARIC TRANSLATION FUNCTION ===
+window.translatePost = async function(postId, amharicText) {
+    const btn = event.target;
+    const target = document.getElementById(`post-${postId}-translation`);
+    
+    if (!btn || !target) return;
+    
+    // Show loading state
+    btn.classList.add('loading');
+    btn.textContent = '⏳ Translating...';
+    btn.disabled = true;
+    
+    try {
+        // Using LibreTranslate API (free, no key required for demo)
+        const response = await fetch('https://libretranslate.com/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                q: amharicText.slice(0, 500),  // Limit to avoid token limits
+                source: 'am',  // Amharic
+                target: 'en',  // English
+                format: 'text'
+            })
+        });
+        
+        if (!response.ok) throw new Error('Translation failed');
+        
+        const data = await response.json();
+        target.textContent = data.translatedText || 'Translation unavailable';
+        target.classList.remove('hidden');
+        
+        // Update button
+        btn.textContent = '✅ Translated';
+        setTimeout(() => {
+            btn.textContent = '🔤 Translate to English';
+            btn.classList.remove('loading');
+            btn.disabled = false;
+        }, 2000);
+        
+    } catch (err) {
+        console.error('Translation error:', err);
+        target.textContent = '⚠️ Translation failed. Try again later.';
+        target.classList.remove('hidden');
+        btn.textContent = '🔤 Retry Translation';
+        btn.classList.remove('loading');
+        btn.disabled = false;
+    }
+};
+</script>
 {% endblock %}
