@@ -23,3 +23,8 @@ __pycache__/
 *.dump
 *.sqlite3
 .env
+model_cache/
+*.safetensors
+*.bin
+*.pt
+*.pth
