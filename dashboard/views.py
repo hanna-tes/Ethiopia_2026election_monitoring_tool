@@ -285,7 +285,7 @@ Documents for analysis:
 """
     
     try:
-        response = safe_llm_call(prompt, temperature=0.2, max_tokens=2048)
+        response = safe_llm_call(prompt, max_tokens=2048)
         raw_summary = response.strip() if response else ""
     except Exception as e:
         logger.warning(f"LLM summary failed: {e}")
@@ -1832,10 +1832,15 @@ class TTPProxyView(View):
     Optionally enrich prompts with live PostgreSQL data via SSH tunnel.
     """
     def post(self, request):
-        TTP_API_URL = os.getenv('TTP_API_URL', 'http://127.0.0.1:8505/v1/chat/completions')
+        TTP_API_URL = os.getenv('TTP_API_URL', 'http://127.0.0.1:8002/v1/chat/completions') 
         TTP_API_KEY = os.getenv('TTP_API_KEY')
-        DB_TUNNEL_PORT = int(os.getenv('DB_TUNNEL_PORT', '5432'))
+        DB_TUNNEL_PORT = int(os.getenv('DB_TUNNEL_PORT', '5433'))
         DB_PASSWORD = os.getenv('DB_PASSWORD')
+
+     if not TTP_API_KEY:
+         raise ImproperlyConfigured("TTP_API_KEY environment variable is required.")
+     if not DB_PASSWORD:
+         raise ImproperlyConfigured("DB_PASSWORD environment variable is required.")   
 
         
         try:
@@ -2376,14 +2381,10 @@ def export_posts_api(request):
 
 def ttp_radar_data_api(request):
     """Return election-related posts as JSON for the TTP Radar UI"""
-    from django.http import JsonResponse
-    from dashboard.models import ProcessedPost
     
-    # Get filter params
     country = request.GET.get('country', 'Ethiopia')
-    limit = min(int(request.GET.get('limit', 100)), 500)  # Cap for performance
+    limit = min(int(request.GET.get('limit', 100)), 500)
     
-    # Query your PostgreSQL database
     posts = ProcessedPost.objects.filter(
         is_election_related=True,
         target_country__iexact=country
@@ -2392,17 +2393,15 @@ def ttp_radar_data_api(request):
         'url', 'timestamp_share', 'target_country'
     )
     
-    # Format for teammate's UI (matches their expected CSV structure)
     formatted = []
     for p in posts:
         formatted.append({
             'account_id': p['account_id'] or 'unknown',
             'content_id': f"post_{p['id']}",
-            'object_id': p['original_text'] or '',
-            'URL': p['url'] or '',
-            'timestamp_share': p['timestamp_share'].isoformat() if p['timestamp_share'] else '',
-            'Platform': p['platform'] or 'Unknown',
             'original_text': p['original_text'] or '',
+            'URL': p['url'] or '',
+            'timestamp_share': p['timestamp_share'].isoformat() if p['timestamp_share'] else None,
+            'Platform': p['platform'] or 'Unknown',
             'target_country': p['target_country'] or 'Ethiopia',
         })
     
@@ -2412,5 +2411,3 @@ def ttp_radar_data_api(request):
         'country': country,
         'generated_at': timezone.now().isoformat()
     })
-
-
