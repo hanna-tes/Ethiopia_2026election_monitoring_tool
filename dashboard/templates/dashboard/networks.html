@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     try {
       // 1. Load posts from your Django API (PostgreSQL)
-      const dataRes = await fetch('/dashboard/api/ttp-radar-data/?country=Ethiopia&limit=100');
+      const dataRes = await fetch('/api/ttp-radar-data/?country=Ethiopia&limit=100');
       if (!dataRes.ok) throw new Error(`Failed to load posts: ${dataRes.status}`);
       const data = await dataRes.json();
       
