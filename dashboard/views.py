@@ -537,84 +537,6 @@ def extract_narrative_description(summary_text, sample_posts):
     
     return "Analyzing narrative content from posts..."
     
-def analyze_ttps(coordination_groups, posts):
-    """Analyze Tactics, Techniques, and Procedures from coordinated groups - FULLY FIXED"""
-    ttps = []
-    
-    if not coordination_groups:
-        return ttps
-    
-    # TTP 1: Coordinated Inauthentic Behavior (CIB)
-    cib_groups = [g for g in coordination_groups if g['account_count'] >= 5]
-    if cib_groups:
-        ttps.append({
-            'name': 'Coordinated Inauthentic Behavior (CIB)',
-            'description': f'Detected {len(cib_groups)} groups with 5+ accounts sharing identical content.',
-            'severity': 'High',
-            'evidence': f'{sum(g["post_count"] for g in cib_groups)} total posts across {sum(g["account_count"] for g in cib_groups)} accounts.'
-        })
-    
-    # TTP 2: Cross-Platform Amplification - FIXED for new data structure
-    cross_platform_groups = []
-    for g in coordination_groups:
-        # Extract platforms from sample_posts_with_urls
-        platforms = set(p['platform'] for p in g.get('sample_posts_with_urls', []) if p.get('platform'))
-        if len(platforms) > 1:
-            cross_platform_groups.append({
-                'group': g,
-                'platforms': list(platforms)
-            })
-    
-    if cross_platform_groups:
-        all_platforms = set(p['platforms'] for p in cross_platform_groups)
-        ttps.append({
-            'name': 'Cross-Platform Amplification',
-            'description': f'{len(cross_platform_groups)} groups operating across {len(all_platforms)} platforms.',
-            'severity': 'Medium',
-            'evidence': f"Platforms: {', '.join(sorted(all_platforms))}"
-        })
-    
-    # TTP 3: Rapid Response / Burst Posting
-    burst_groups = [g for g in coordination_groups if g['post_count'] > 10]
-    if burst_groups:
-        max_posts = max(g['post_count'] for g in burst_groups)
-        ttps.append({
-            'name': 'Rapid Response / Burst Posting',
-            'description': f'{len(burst_groups)} groups with high-volume posting (max: {max_posts} posts/group).',
-            'severity': 'Medium',
-            'evidence': f"Identical content bursts across {sum(g['account_count'] for g in burst_groups)} accounts."
-        })
-    
-    # TTP 4: Hashtag Manipulation (Simplified)
-    hashtag_groups = [g for g in coordination_groups if '#' in g['text_sample']]
-    if hashtag_groups:
-        hashtags = []
-        for g in hashtag_groups[:5]:  # Check top 5 groups
-            text = g['text_sample']
-            found = re.findall(r'#\w+', text, re.IGNORECASE)
-            hashtags.extend(found)
-        
-        if hashtags:
-            unique_hashtags = list(set(hashtags))[:5]
-            ttps.append({
-                'name': 'Hashtag Manipulation',
-                'description': f'Coordinated use of {len(unique_hashtags)} hashtags: {", ".join(unique_hashtags)}.',
-                'severity': 'Low',
-                'evidence': f'Found in {len(hashtag_groups)} coordination groups.'
-            })
-    
-    # TTP 5: URL Amplification (NEW - uses your URL data!)
-    url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
-    if url_groups:
-        total_unique_urls = sum(len(g.get('unique_urls', [])) for g in url_groups)
-        ttps.append({
-            'name': 'URL Amplification',
-            'description': f'{len(url_groups)} groups amplifying {total_unique_urls} URLs.',
-            'severity': 'Low',
-            'evidence': 'Multiple accounts sharing same external links.'
-        })
-    
-    return ttps
     
 def get_top_pairs(coordination_groups):
     """Get top coordinated account pairs"""
@@ -681,145 +603,6 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     
     return coordination[:max_groups]
 
-def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, layout='spring'):
-    """Generate cleaner network graph - FIXED usernames and platform info"""
-    G = nx.Graph()
-    
-    # Group by exact text to find coordination
-    text_groups = posts_queryset.values('original_text').annotate(
-        account_count=Count('account_id', distinct=True)
-    ).filter(account_count__gte=min_connections)
-    
-    for group in text_groups:
-        text = group['original_text']
-        # Get real account data with URLs
-        accounts_data = list(posts_queryset.filter(original_text=text).values(
-            'account_id', 'platform', 'url'
-        ).distinct())
-        
-        accounts = []
-        for acc_data in accounts_data:
-            # --- UPDATED CLEANING LOGIC ---
-            username = clean_username(acc_data['account_id'])
-            
-            # Filter out generic artifacts that aren't real usernames
-            if username and len(username) > 2 and username.lower() not in ['twitter', 'facebook', 'tiktok', 'source']:
-                accounts.append({
-                    'id': username,
-                    'platform': acc_data['platform'],
-                    'sample_url': acc_data['url'] if acc_data['url'] and acc_data['url'].startswith('http') else None
-                })
-        
-        # Create edges between coordinated accounts
-        for i in range(len(accounts)):
-            for j in range(i+1, len(accounts)):
-                u_id = accounts[i]['id']
-                v_id = accounts[j]['id']
-                
-                # Ensure we don't link an account to itself
-                if u_id == v_id:
-                    continue
-
-                if G.has_edge(u_id, v_id):
-                    G[u_id][v_id]['weight'] += 1
-                else:
-                    G.add_edge(u_id, v_id, weight=1, 
-                             platform1=accounts[i]['platform'], 
-                             platform2=accounts[j]['platform'],
-                             sample_url1=accounts[i]['sample_url'],
-                             sample_url2=accounts[j]['sample_url'])
-    
-    if G.number_of_edges() == 0:
-        return {'nodes': [], 'edges': [], 'message': 'No coordination detected'}
-    
-    # Filter low-degree nodes
-    nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
-    G = G.subgraph(nodes_to_keep).copy()
-    
-    if G.number_of_edges() == 0:
-        return {'nodes': [], 'edges': [], 'message': 'No significant connections'}
-    
-    # Top N nodes
-    top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
-    top_node_names = [n for n, _ in top_nodes]
-    G_top = G.subgraph(top_node_names).copy()
-    
-    # Generate positions
-    if layout == 'circular':
-        pos = nx.circular_layout(G_top)
-    elif layout == 'kamada_kawai':
-        pos = nx.kamada_kawai_layout(G_top)
-    elif layout == 'spring':
-        pos = nx.spring_layout(G_top, k=0.6, iterations=50, seed=42)
-    else:
-        pos = nx.spring_layout(G_top, seed=42)
-    
-    # Build clean nodes
-    nodes = []
-    for node in G_top.nodes():
-        degree = G_top.degree(node)
-        # Search specifically for this cleaned username
-        node_posts = posts_queryset.filter(account_id__icontains=node)
-        post_count = node_posts.count()
-        
-        platforms = list(node_posts.values_list('platform', flat=True).distinct())
-        platform = platforms[0] if platforms else 'Unknown'
-        
-        # Get first valid URL properly
-        sample_url_obj = node_posts.exclude(url='').exclude(url__isnull=True).filter(url__icontains='http').first()
-        sample_url = sample_url_obj.url if sample_url_obj else None
-        
-        nodes.append({
-            'id': node,
-            'label': node,
-            'degree': degree,
-            'post_count': post_count,
-            'platform': platform,
-            'url': sample_url,         
-            'sample_url': sample_url,  
-            'x': float(pos[node][0]),
-            'y': float(pos[node][1]),
-            'size': max(15, degree * 3),
-            'color': _get_platform_color(platform)
-        })   
-    
-    # Build clean edges with URLs
-    edges = []
-    for u, v, data in G_top.edges(data=True):
-        if u in pos and v in pos:
-            sample_url = data.get('sample_url1') or data.get('sample_url2')
-            edges.append({
-                'source': u,
-                'target': v,
-                'weight': data.get('weight', 1),
-                'source_x': float(pos[u][0]),
-                'source_y': float(pos[u][1]),
-                'target_x': float(pos[v][0]),
-                'target_y': float(pos[v][1]),
-                'sample_url': sample_url
-            })
-    
-    return {
-        'nodes': nodes, 
-        'edges': edges,
-        'stats': {
-            'nodes': len(nodes),
-            'edges': len(edges),
-            'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
-        }
-    }
-    
-def _get_platform_color(platform):
-    """Get color hex code for platform"""
-    colors = {
-        'X': '#1DA1F2', 'Twitter': '#1DA1F2',
-        'Facebook': '#1877F2',
-        'TikTok': '#000000',
-        'Telegram': '#0088cc',
-        'Media': '#6B7280', 'News': '#6B7280',
-        'Unknown': '#9CA3AF'
-    }
-    return colors.get(platform, '#9CA3AF')
 
 
 # === CONFIG: Reuse your Ethiopia lexicon ===
@@ -1983,45 +1766,16 @@ class PEPsView(TemplateView):
         return context        
         
 class NetworksView(TemplateView):
+    """Simplified view: just renders the template. 
+    All data loading & graph rendering is handled client-side via JS APIs."""
     template_name = 'dashboard/networks.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        request = self.request
-        min_connections = int(request.GET.get('min_connections', 2))
-        top_n = int(request.GET.get('top_n', 30))  # Reduced default
-        layout_style = request.GET.get('layout', 'spring')
-        
-        # Use election-related posts only
-        posts = ProcessedPost.objects.filter(is_election_related=True)
-        
-        # Generate CLEAN network graph
-        graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
-        
-        # Get coordination groups with FIXED usernames and URLs
-        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
-        
-        # Analyze TTPs
-        ttps = analyze_ttps(coordination_groups, posts)
-        
         context.update({
             'active_tab': 'networks',
-            'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups,
-            'total_coordinated_groups': len(coordination_groups),
-            'total_coordinated_accounts': sum(g['account_count'] for g in coordination_groups),
-            'total_posts': posts.count(),
-            'max_group_size': max([g['account_count'] for g in coordination_groups]) if coordination_groups else 0,
-            # Controls
-            'min_connections': min_connections,
-            'top_n': top_n,
-            'layout_style': layout_style,
-            # TTPs
-            'ttps': ttps,
         })
-        return context
-        
+        return context        
 
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
@@ -2504,70 +2258,43 @@ def export_posts_api(request):
     
     return response
 
-
-def generate_network_graph(request):
-    """API endpoint to generate coordination network graph"""
-    # Get parameters
-    min_connections = int(request.GET.get('min_connections', 2))
-    top_n = int(request.GET.get('top_n', 50))
+def ttp_radar_data_api(request):
+    """Return election-related posts as JSON for the TTP Radar UI"""
+    from django.http import JsonResponse
+    from dashboard.models import ProcessedPost
     
-    # Build coordination graph
-    queryset = ProcessedPost.objects.filter(
+    # Get filter params
+    country = request.GET.get('country', 'Ethiopia')
+    limit = min(int(request.GET.get('limit', 100)), 500)  # Cap for performance
+    
+    # Query your PostgreSQL database
+    posts = ProcessedPost.objects.filter(
         is_election_related=True,
-        cluster__gte=0
+        target_country__iexact=country
+    ).order_by('-timestamp_share')[:limit].values(
+        'id', 'account_id', 'original_text', 'platform', 
+        'url', 'timestamp_share', 'target_country'
     )
     
-    G = nx.Graph()
-    
-    # Group by exact text to find coordination
-    for text_group in queryset.values('original_text').annotate(
-        accounts=Count('account_id', distinct=True)
-    ).filter(accounts__gte=2):
-        accounts = queryset.filter(original_text=text_group['original_text']).values_list('account_id', flat=True).distinct()
-        
-        if len(accounts) >= 2:
-            for i in range(len(accounts)):
-                for j in range(i+1, len(accounts)):
-                    if G.has_edge(accounts[i], accounts[j]):
-                        G[accounts[i]][accounts[j]]['weight'] += 1
-                    else:
-                        G.add_edge(accounts[i], accounts[j], weight=1)
-    
-    # Filter to nodes with minimum connections
-    nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
-    G = G.subgraph(nodes_to_keep).copy()
-    
-    if G.number_of_edges() == 0:
-        return JsonResponse({'nodes': [], 'edges': [], 'message': 'No coordination links found'})
-    
-    # Get top N nodes by degree
-    top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
-    top_node_names = [n for n, _ in top_nodes]
-    G_top = G.subgraph(top_node_names).copy()
-    
-    # Prepare node data
-    node_data = []
-    for node in G_top.nodes():
-        node_data.append({
-            'id': node,
-            'degree': G_top.degree(node),
-        })
-    
-    # Prepare edge data
-    edge_data = []
-    for u, v, data in G_top.edges(data=True):
-        edge_data.append({
-            'source': u,
-            'target': v,
-            'weight': data.get('weight', 1)
+    # Format for teammate's UI (matches their expected CSV structure)
+    formatted = []
+    for p in posts:
+        formatted.append({
+            'account_id': p['account_id'] or 'unknown',
+            'content_id': f"post_{p['id']}",
+            'object_id': p['original_text'] or '',
+            'URL': p['url'] or '',
+            'timestamp_share': p['timestamp_share'].isoformat() if p['timestamp_share'] else '',
+            'Platform': p['platform'] or 'Unknown',
+            'original_text': p['original_text'] or '',
+            'target_country': p['target_country'] or 'Ethiopia',
         })
     
     return JsonResponse({
-        'nodes': node_data,
-        'edges': edge_data,
-        'stats': {
-            'total_nodes': G_top.number_of_nodes(),
-            'total_edges': G_top.number_of_edges(),
-            'avg_degree': sum(d for _, d in G_top.degree()) / G_top.number_of_nodes() if G_top.number_of_nodes() > 0 else 0
-        }
+        'records': formatted,
+        'count': len(formatted),
+        'country': country,
+        'generated_at': timezone.now().isoformat()
     })
+
+
