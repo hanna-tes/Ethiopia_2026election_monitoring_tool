@@ -231,7 +231,7 @@ def assign_virality_tier(n):
     else: return "Tier 1: Limited"
 
 
-ef summarize_cluster_ethiopia(texts, urls, cluster_data, min_ts, max_ts):
+def summarize_cluster_ethiopia(texts, urls, cluster_data, min_ts, max_ts):
     """
     Generate structured IMI-style intelligence report for Ethiopia election narratives.
     Uses ONLY explicit claims from provided posts - no invention or assumption.
