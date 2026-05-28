@@ -45,6 +45,7 @@ from .utils.llm_detector import detect_hate_speech_llm
 from .models import ElectionOfficeholder
 from django.shortcuts import render, get_object_or_404
 from .models import MonitoringReport
+from dashboard.models import ProcessedPost  
 
 logger = logging.getLogger(__name__)
 
@@ -1775,7 +1776,75 @@ class NetworksView(TemplateView):
         context.update({
             'active_tab': 'networks',
         })
-        return context        
+        return context    
+
+
+class TTPProxyView(View):
+    """
+    Proxy requests from frontend to Gemma FastAPI server.
+    Optionally enrich prompts with live PostgreSQL data via SSH tunnel.
+    """
+    def post(self, request):
+        TTP_API_URL = os.getenv('TTP_API_URL', 'http://127.0.0.1:8505/v1/chat/completions')
+        TTP_API_KEY = os.getenv('TTP_API_KEY')
+        DB_TUNNEL_PORT = int(os.getenv('DB_TUNNEL_PORT', '5432'))
+        DB_PASSWORD = os.getenv('DB_PASSWORD')
+
+        
+        try:
+            body = json.loads(request.body)
+            messages = body.get('messages', [])
+            
+            # Optional: Enrich prompt with live PostgreSQL data via tunnel
+            for msg in messages:
+                content = msg.get('content', '')
+                if 'evidence_posts' in content or 'network_dossier' in content:
+                    try:
+                        import psycopg2
+                        conn = psycopg2.connect(
+                            host='localhost', port=DB_TUNNEL_PORT,
+                            database='ethiopia_election_db',
+                            user='ethiopia_user', password=DB_PASSWORD
+                        )
+                        cur = conn.cursor()
+                        cur.execute("""
+                            SELECT account_handle, platform, original_text, timestamp_share
+                            FROM dashboard_processedpost
+                            WHERE is_election_related = TRUE
+                            ORDER BY timestamp_share DESC LIMIT 8
+                        """)
+                        rows = cur.fetchall()
+                        cur.close(); conn.close()
+                        
+                        dossier = [{
+                            "account": r[0] or "unknown",
+                            "platform": r[1],
+                            "text": (r[2] or "")[:1500],
+                            "timestamp": str(r[3]) if r[3] else None
+                        } for r in rows]
+                        
+                        if '"evidence_posts": []' in content:
+                            msg['content'] = content.replace(
+                                '"evidence_posts": []',
+                                f'"evidence_posts": {json.dumps(dossier, ensure_ascii=False)}'
+                            )
+                    except Exception as e:
+                        logger.warning(f"DB enrichment skipped: {e}")
+            
+            # Forward to Gemma FastAPI server
+            resp = requests.post(TTP_API_URL, json=body, headers={
+                'Content-Type': 'application/json',
+                'x-api-key': TTP_API_KEY
+            }, timeout=120)
+            resp.raise_for_status()
+            return JsonResponse(resp.json())
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Gemma API error: {e}")
+            return JsonResponse({'error': f'Model API error: {str(e)}'}, status=502)
+        except Exception as e:
+            logger.error(f"Proxy error: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
 
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
