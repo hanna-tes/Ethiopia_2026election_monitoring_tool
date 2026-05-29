@@ -1,20 +1,25 @@
 # ttp_api/main.py
 import os
-import torch  #  ADDED: Required for device handling
+import sys
+import json
 import time
 import uuid
+import torch  
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from typing import List, Optional, Union, Literal
 
-# Config
+# Config - matches your project structure
 HOST = os.getenv('TTP_API_HOST', '127.0.0.1')
 PORT = int(os.getenv('TTP_API_PORT', '8002'))
 MODEL_PATH = os.getenv('TTP_MODEL_PATH', '/Users/hannateshager/Ethiopia_2026election_monitoring_tool/model_cache/gemma-disarm-phase3-ttp')
 API_KEY = os.getenv('TTP_API_KEY', 'ethiopia-ttp-dev-key')
 
-# 🔧 FIX: Removed underscores to match 'global model, tokenizer' in functions
+# 🔧 FIX: Define app EARLY so middleware and routes can use it
+app = FastAPI(title='Gemma DISARM TTP API')
+
+# Global model variables (unified names)
 model = None
 tokenizer = None
 
@@ -26,9 +31,7 @@ def get_model():
             from transformers import AutoTokenizer
             print(f"🔄 Loading Gemma model from {MODEL_PATH}...")
             
-            # 🔧 FIX: Use from_pretrained for inference loading if available, 
-            # or stick to for_inference if that's your specific Unsloth version method.
-            # 'for_inference' is often the standard for unsloth 2024+
+            # Load model for inference
             model = FastModel.for_inference(MODEL_PATH)
             tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
             print("✅ Model loaded!")
@@ -50,14 +53,14 @@ class ChatCompletionRequest(BaseModel):
     stream: Optional[bool] = False
 
 def flatten_content(content):
-    if isinstance(content, str): return content
+    if isinstance(content, str): 
+        return content
     if isinstance(content, list):
         return '\n'.join(item.get('text','') if isinstance(item,dict) and item.get('type')=='text' else str(item) for item in content)
     return str(content)
 
 def build_reply(messages, temperature=0.1, max_tokens=512):
     """Generate reply using the loaded Gemma model."""
-    # Use global model/tokenizer
     global model, tokenizer
     
     if model is None or tokenizer is None:
@@ -94,9 +97,7 @@ def build_reply(messages, temperature=0.1, max_tokens=512):
     completion = tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
     
     return completion, int(input_len), int(output_ids.shape[1] - input_len)
-    
 
-# Middleware
 @app.middleware("http")
 async def auth_middleware(request, call_next):
     if request.url.path in ["/health", "/v1/models", "/openapi.json"]:
@@ -135,9 +136,6 @@ def chat_completions(req: ChatCompletionRequest):
             'total_tokens': prompt_tokens + completion_tokens,
         }
     }
-
-# Initialize FastAPI app
-app = FastAPI(title='Gemma DISARM TTP API')
 
 if __name__ == '__main__':
     uvicorn.run(app, host=HOST, port=PORT, log_level='info')
