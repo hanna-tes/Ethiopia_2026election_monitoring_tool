@@ -24,7 +24,7 @@ _model = None
 _tokenizer = None
 
 def get_model():
-    """Load model on CPU (slower but reliable)."""
+    """Load Gemma model on CPU (reliable, no GPU required)."""
     global _model, _tokenizer
     if _model is None:
         try:
@@ -35,29 +35,50 @@ def get_model():
             
             print(f"🔄 Loading CPU model + adapter from: {MODEL_PATH}...")
             
-            # Use a smaller base model for CPU inference
+            # Verify adapter files exist
+            required = ['adapter_config.json', 'adapter_model.safetensors', 'tokenizer_config.json']
+            missing = [f for f in required if not os.path.exists(os.path.join(MODEL_PATH, f))]
+            if missing:
+                raise FileNotFoundError(f"Missing adapter files: {missing}")
+            
+            # 🔧 Use smaller base model for CPU inference (2B params vs 4B)
             base_model_name = "google/gemma-2b-it"
             
-            print(f"📦 Loading base model on CPU...")
+            print(f"📦 Loading base model on CPU: {base_model_name}...")
+            print("   ⏱️ This may take 2-5 minutes on first load (downloads ~5GB, then caches)")
+            
+            # Load model explicitly on CPU
             _model = AutoModelForCausalLM.from_pretrained(
                 base_model_name,
-                torch_dtype=torch.float32,  # CPU needs float32
-                device_map="cpu",
-                low_cpu_mem_usage=True,
+                torch_dtype=torch.float32,  # CPU requires float32
+                device_map="cpu",           # Force CPU
+                low_cpu_mem_usage=True,     # Reduce RAM during load
+                trust_remote_code=True,
             )
             
+            # Load tokenizer from your adapter folder (preserves chat template)
             _tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
             if _tokenizer.pad_token is None:
                 _tokenizer.pad_token = _tokenizer.eos_token
             
-            print(f"🔗 Applying LoRA adapter...")
+            # Apply your fine-tuned LoRA adapter
+            print(f"🔗 Applying LoRA adapter from {MODEL_PATH}...")
             _model = PeftModel.from_pretrained(_model, MODEL_PATH)
-            _model.eval()
+            _model.eval()  # Inference mode
             
-            print(f"✅ CPU model loaded! (Generation will be slower)")
+            print(f"✅ CPU model + adapter loaded successfully!")
+            print(f"   Type: {type(_model)}")
+            print(f"   Device: cpu")
+            print(f"   ⚠️ Generation will take ~30-60 seconds per request on CPU")
             
         except Exception as e:
-            print(f"❌ CPU load failed: {e}")
+            print(f"❌ Failed to load model: {e}")
+            print("💡 Tips for CPU loading:")
+            print("   1. Ensure you have ~8GB free RAM")
+            print("   2. First load downloads base model (~5GB), then caches")
+            print("   3. Subsequent loads will be faster (~1-2 minutes)")
+            import traceback
+            traceback.print_exc()
             raise e
             
     return _model, _tokenizer
