@@ -19,7 +19,7 @@
   .badge-topic { background: #dbeafe; color: #1e40af; }
   .badge-tone { background: #ede9fe; color: #5b21b6; }
   
-  /* CRITICAL: Force normal weight on content */
+  /* Content styling - NO bold on body text */
   .narrative-content { 
     font-weight: 400 !important; 
     color: #374151; 
@@ -79,20 +79,22 @@
     <div class="space-y-6">
         {% for summary in summaries %}
         <div class="narrative-card">
-            <!-- Header -->
+            <!-- Header with Clean Title -->
             <div class="flex items-start justify-between mb-4">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">#{{ summary.cluster_id }}</div>
                     <div>
+                        <!-- ✅ FIXED TITLE: No autoescape nesting, clean extraction -->
                         <h3 class="narrative-title">
                             {% if summary.Context %}
-                                {% autoescape off %}
-                                {% with lines=summary.Context|split:"\n" %}
-                                    {% for line in lines %}
-                                        {% if "Narrative Title:" in line %}
-                                            {{ line|cut:"Narrative Title:"|strip|cut:"Core Claim"|cut:"Originator"|cut:"Amplification"|cut:"First Detected"|cut:"Last Updated"|cut:"Language"|cut:"Primary Topics"|cut:"Sample Quotes"|truncatechars:100 }}
-                                        {% endif %}
-                                    {% endfor %}
+                                {% with first_line=summary.Context|split:"\n"|first %}
+                                    {% if "Narrative Title:" in first_line %}
+                                        {{ first_line|cut:"Narrative Title:"|strip|truncatechars:100 }}
+                                    {% elif "Core Claim(s):" in first_line %}
+                                        {{ summary.Narrative_Description|default:"Cluster #"|add:summary.cluster_id }}
+                                    {% else %}
+                                        {{ first_line|strip|truncatechars:100 }}
+                                    {% endif %}
                                 {% endwith %}
                             {% elif summary.Narrative_Description %}
                                 {{ summary.Narrative_Description }}
@@ -114,12 +116,10 @@
             </div>
             {% endif %}
             
-            <!-- Simple Content: Just line breaks, NO bold, NO duplication -->
+            <!-- Simple Content Display (NO complex parsing = NO duplication/bolding) -->
             {% if summary.Context %}
             <div class="narrative-content mt-4 space-y-2">
-                {% autoescape off %}
                 {{ summary.Context|linebreaksbr }}
-                {% endautoescape %}
             </div>
             {% endif %}
             
