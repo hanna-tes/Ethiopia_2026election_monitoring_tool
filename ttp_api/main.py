@@ -24,47 +24,59 @@ _model = None
 _tokenizer = None
 
 def get_model():
-    """Load Gemma model from LOCAL cache only (no downloading)."""
+    """Load Gemma base model + apply local LoRA adapter using PEFT."""
     global _model, _tokenizer
     if _model is None:
         try:
-            from unsloth import FastModel
-            from transformers import AutoTokenizer
+            import os
+            import torch
+            from peft import PeftModel
+            from transformers import AutoModelForCausalLM, AutoTokenizer
             
-            print(f"🔄 Loading Gemma model from LOCAL path: {MODEL_PATH}...")
+            print(f"🔄 Loading base model + applying local adapter from: {MODEL_PATH}...")
             
-            # 🔧 FIX: Use from_pretrained with local_files_only=True
-            # This prevents downloading and uses your cached adapter
-            _model = FastModel.from_pretrained(
-                model_name=MODEL_PATH,
+            # Verify adapter files exist
+            required = ['adapter_config.json', 'adapter_model.safetensors', 'tokenizer_config.json']
+            missing = [f for f in required if not os.path.exists(os.path.join(MODEL_PATH, f))]
+            if missing:
+                raise FileNotFoundError(f"Missing adapter files: {missing}")
+            
+            # 1. Load 4-bit base model (downloads ~2.5GB once, then caches)
+            base_model_name = "unsloth/gemma-4-e4b-it-unsloth-bnb-4bit"
+            print(f"📦 Loading base model: {base_model_name} (4-bit quantized)...")
+            
+            _model = AutoModelForCausalLM.from_pretrained(
+                base_model_name,
                 load_in_4bit=True,
-                use_gradient_checkpointing="unsloth",
-                local_files_only=True,  # 👈 CRITICAL: Don't download!
+                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                device_map="auto" if torch.cuda.is_available() else None,  # Auto GPU/CPU
+                trust_remote_code=True,
             )
             
-            _tokenizer = AutoTokenizer.from_pretrained(
-                MODEL_PATH,
-                local_files_only=True  # 👈 Use local cache only
-            )
-            
-            # Ensure tokenizer has pad/eos tokens
+            # 2. Load tokenizer from your adapter folder
+            _tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
             if _tokenizer.pad_token is None:
                 _tokenizer.pad_token = _tokenizer.eos_token
             
-            print(f"✅ Model loaded from local cache!")
+            # 3. Apply your fine-tuned LoRA adapter
+            print(f"🔗 Applying LoRA adapter from {MODEL_PATH}...")
+            _model = PeftModel.from_pretrained(_model, MODEL_PATH)
+            _model.eval()  # Inference mode
+            
+            print(f"✅ Model + adapter loaded successfully!")
             print(f"   Type: {type(_model)}")
             if hasattr(_model, 'device'):
                 print(f"   Device: {_model.device}")
+            print(f"   Trainable params: {sum(p.numel() for p in _model.parameters() if p.requires_grad):,}")
             
         except Exception as e:
             print(f"❌ Failed to load model: {e}")
-            print("💡 Tip: Make sure adapter files exist at:", MODEL_PATH)
+            print("💡 Try: pip install --upgrade peft transformers accelerate")
             import traceback
             traceback.print_exc()
             raise e
             
     return _model, _tokenizer
-
 
 class Message(BaseModel):
     role: Literal['system', 'user', 'assistant']
