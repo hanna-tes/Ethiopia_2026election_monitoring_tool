@@ -1825,7 +1825,7 @@ class NetworksView(TemplateView):
         })
         return context    
 
-
+@method_decorator(csrf_exempt, name='dispatch')
 class TTPProxyView(View):
     """
     Proxy requests from frontend to Gemma FastAPI server.
