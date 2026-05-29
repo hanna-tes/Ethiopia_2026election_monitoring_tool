@@ -24,43 +24,47 @@ _model = None
 _tokenizer = None
 
 def get_model():
-    """Lazy-load the Gemma model and tokenizer."""
+    """Load Gemma model from LOCAL cache only (no downloading)."""
     global _model, _tokenizer
     if _model is None:
         try:
             from unsloth import FastModel
             from transformers import AutoTokenizer
             
-            print(f"🔄 Loading Gemma model from {MODEL_PATH}...")
+            print(f"🔄 Loading Gemma model from LOCAL path: {MODEL_PATH}...")
             
-            # 🔧 FIX: FastModel methods often return (model, tokenizer) tuple
-            result = FastModel.from_pretrained(
+            # 🔧 FIX: Use from_pretrained with local_files_only=True
+            # This prevents downloading and uses your cached adapter
+            _model = FastModel.from_pretrained(
                 model_name=MODEL_PATH,
-                load_in_4bit=True,  # Reduce memory usage
+                load_in_4bit=True,
                 use_gradient_checkpointing="unsloth",
+                local_files_only=True,  # 👈 CRITICAL: Don't download!
             )
             
-            # Unpack tuple if needed
-            if isinstance(result, tuple) and len(result) == 2:
-                _model, _tokenizer = result
-            else:
-                # Fallback: assume it returned just the model
-                _model = result
-                _tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+            _tokenizer = AutoTokenizer.from_pretrained(
+                MODEL_PATH,
+                local_files_only=True  # 👈 Use local cache only
+            )
             
-            # Ensure tokenizer has pad/eos tokens set
+            # Ensure tokenizer has pad/eos tokens
             if _tokenizer.pad_token is None:
                 _tokenizer.pad_token = _tokenizer.eos_token
             
-            print(f"✅ Model loaded! Type: {type(_model)}, Device: {_model.device if hasattr(_model, 'device') else 'CPU'}")
+            print(f"✅ Model loaded from local cache!")
+            print(f"   Type: {type(_model)}")
+            if hasattr(_model, 'device'):
+                print(f"   Device: {_model.device}")
             
         except Exception as e:
             print(f"❌ Failed to load model: {e}")
+            print("💡 Tip: Make sure adapter files exist at:", MODEL_PATH)
             import traceback
             traceback.print_exc()
             raise e
             
     return _model, _tokenizer
+
 
 class Message(BaseModel):
     role: Literal['system', 'user', 'assistant']
