@@ -85,10 +85,17 @@
                     <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">#{{ summary.cluster_id }}</div>
                     <div>
                         <h3 class="narrative-title">
-                            {% if summary.Narrative_Description %}
+                            {% if summary.Context %}
+                                {% autoescape off %}
+                                {% with lines=summary.Context|split:"\n" %}
+                                    {% for line in lines %}
+                                        {% if "Narrative Title:" in line %}
+                                            {{ line|cut:"Narrative Title:"|strip|cut:"Core Claim"|cut:"Originator"|cut:"Amplification"|cut:"First Detected"|cut:"Last Updated"|cut:"Language"|cut:"Primary Topics"|cut:"Sample Quotes"|truncatechars:100 }}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endwith %}
+                            {% elif summary.Narrative_Description %}
                                 {{ summary.Narrative_Description }}
-                            {% elif summary.Context %}
-                                {{ summary.Context|truncatechars:100 }}
                             {% else %}
                                 Cluster #{{ summary.cluster_id }}
                             {% endif %}
