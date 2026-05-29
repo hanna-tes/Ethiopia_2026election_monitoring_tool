@@ -24,75 +24,44 @@ _model = None
 _tokenizer = None
 
 def get_model():
-    """Load Gemma base model (4-bit) + apply local LoRA adapter."""
+    """Load model on CPU (slower but reliable)."""
     global _model, _tokenizer
     if _model is None:
         try:
             import os
             import torch
             from peft import PeftModel
-            from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+            from transformers import AutoModelForCausalLM, AutoTokenizer
             
-            print(f"🔄 Loading base model + applying local adapter from: {MODEL_PATH}...")
+            print(f"🔄 Loading CPU model + adapter from: {MODEL_PATH}...")
             
-            # Verify adapter files exist
-            required = ['adapter_config.json', 'adapter_model.safetensors', 'tokenizer_config.json']
-            missing = [f for f in required if not os.path.exists(os.path.join(MODEL_PATH, f))]
-            if missing:
-                raise FileNotFoundError(f"Missing adapter files: {missing}")
+            # Use a smaller base model for CPU inference
+            base_model_name = "google/gemma-2b-it"
             
-            # 🔧 FIX: Use a verified 4-bit model ID that definitely exists
-            # Option A: Use Hugging Face's official 4-bit Gemma (if available)
-            # Option B: Use any base model + quantize on-the-fly with BitsAndBytes
-            base_model_name = "google/gemma-2b-it"  # Smaller, faster, reliable
-            
-            print(f"📦 Loading base model: {base_model_name} with 4-bit quantization...")
-            
-            # Configure 4-bit quantization
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                bnb_4bit_use_double_quant=True,
-            )
-            
-            # Load model with quantization
+            print(f"📦 Loading base model on CPU...")
             _model = AutoModelForCausalLM.from_pretrained(
                 base_model_name,
-                quantization_config=quantization_config,
-                device_map="auto" if torch.cuda.is_available() else None,
-                trust_remote_code=True,
-                low_cpu_mem_usage=True,  # Reduce RAM usage during load
+                torch_dtype=torch.float32,  # CPU needs float32
+                device_map="cpu",
+                low_cpu_mem_usage=True,
             )
             
-            # Load tokenizer from your adapter folder (preserves your chat template)
             _tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
             if _tokenizer.pad_token is None:
                 _tokenizer.pad_token = _tokenizer.eos_token
             
-            # Apply your fine-tuned LoRA adapter
-            print(f"🔗 Applying LoRA adapter from {MODEL_PATH}...")
+            print(f"🔗 Applying LoRA adapter...")
             _model = PeftModel.from_pretrained(_model, MODEL_PATH)
             _model.eval()
             
-            print(f"✅ Model + adapter loaded successfully!")
-            print(f"   Type: {type(_model)}")
-            if hasattr(_model, 'device'):
-                print(f"   Device: {_model.device}")
-            print(f"   Memory usage: ~{sum(p.numel() * p.element_size() for p in _model.parameters()) / 1024**3:.2f} GB")
+            print(f"✅ CPU model loaded! (Generation will be slower)")
             
         except Exception as e:
-            print(f"❌ Failed to load model: {e}")
-            print("💡 Quick fixes:")
-            print("   1. pip install --upgrade bitsandbytes peft transformers accelerate")
-            print("   2. Ensure you have ~8GB free RAM for 4-bit loading")
-            print("   3. Try CPU-only: remove 'device_map' and 'torch.cuda' checks")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ CPU load failed: {e}")
             raise e
             
     return _model, _tokenizer
-
+    
 class Message(BaseModel):
     role: Literal['system', 'user', 'assistant']
     content: Union[str, list]
