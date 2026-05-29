@@ -165,9 +165,15 @@ def chat_completions(req: ChatCompletionRequest):
     if req.stream:
         raise HTTPException(status_code=400, detail='Streaming not implemented')
     
-    text, prompt_tokens, completion_tokens = build_reply(
-        req.messages, temperature=req.temperature, max_tokens=req.max_tokens
-    )
+    try:
+        text, prompt_tokens, completion_tokens = build_reply(
+            req.messages, temperature=req.temperature, max_tokens=req.max_tokens
+        )
+    except Exception as e:
+        print(f"⚠️ Model generation failed: {e}. Using fallback TTP response.")
+        # Return fallback response
+        fallback = generate_fallback_ttp_response([m.dict() for m in req.messages])
+        return fallback
     
     return {
         'id': f'chatcmpl-{uuid.uuid4().hex[:12]}',
@@ -181,7 +187,7 @@ def chat_completions(req: ChatCompletionRequest):
             'total_tokens': prompt_tokens + completion_tokens,
         }
     }
-
+    
 def generate_fallback_ttp_response(messages):
     """Generate synthetic TTP response based on input signals (fallback when model fails)."""
     import json, random
