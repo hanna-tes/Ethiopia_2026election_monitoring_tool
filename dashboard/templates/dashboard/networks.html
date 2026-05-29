@@ -1,368 +1,186 @@
 {% extends 'dashboard/base.html' %}
 {% load static %}
+{% load custom_filters %}
 
-{% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
+{% block title %}Trending Narratives - Ethiopia Election Monitor{% endblock %}
 
 {% block extra_head %}
 {{ block.super }}
 <style>
-  /* Professional card-based layout */
-  .network-card { 
-    background: white; 
-    border-radius: 12px; 
-    padding: 1.5rem; 
-    margin-bottom: 1.5rem; 
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
-    border-left: 4px solid #3b82f6;
-    transition: transform 0.2s, box-shadow 0.2s;
+  .narrative-card { 
+    background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; 
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #3b82f6;
   }
-  .network-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  .narrative-title { 
+    font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0 0 0.5rem 0; line-height: 1.3;
   }
-  .network-header { 
-    display: flex; 
-    justify-content: space-between; 
-    align-items: flex-start; 
-    margin-bottom: 1rem; 
-  }
-  .network-title { 
-    font-size: 1.25rem; 
-    font-weight: 600; 
-    color: #1f2937; 
-    margin: 0; 
-  }
-  .risk-badge { 
-    padding: 0.25rem 0.75rem; 
-    border-radius: 9999px; 
-    font-size: 0.75rem; 
-    font-weight: 600; 
-  }
-  .risk-high { background: #fef2f2; color: #dc2626; }
-  .risk-medium { background: #fff7ed; color: #ea580c; }
-  .risk-low { background: #f0fdf4; color: #16a34a; }
+  .narrative-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; font-size: 0.875rem; color: #4b5563; }
+  .narrative-meta span { background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; }
+  .badge-topic { background: #dbeafe; color: #1e40af; }
+  .badge-tone { background: #ede9fe; color: #5b21b6; }
   
-  .metrics-grid { 
-    display: grid; 
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); 
-    gap: 0.75rem; 
-    margin: 1rem 0; 
-  }
-  .metric-item { 
-    text-align: center; 
-    padding: 0.5rem; 
-    background: #f8fafc; 
-    border-radius: 8px; 
-  }
-  .metric-value { 
-    font-size: 1.25rem; 
-    font-weight: 700; 
-    color: #3b82f6; 
-  }
-  .metric-label { 
-    font-size: 0.75rem; 
-    color: #64748b; 
+  .narrative-section { margin: 0.75rem 0; line-height: 1.6; }
+  .narrative-section strong { font-weight: 600; color: #374151; display: block; margin-bottom: 0.25rem; font-size: 0.95rem; }
+  .narrative-section p, .narrative-section li { font-weight: 400; color: #4b5563; font-size: 0.95rem; }
+  .narrative-section ul { margin: 0.25rem 0 0.5rem 1.25rem; padding: 0; list-style: disc; }
+  
+  .narrative-quote { 
+    background: #f9fafb; border-left: 3px solid #9ca3af; padding: 0.75rem 1rem; 
+    margin: 0.5rem 0; font-style: italic; color: #374151; font-size: 0.9rem; border-radius: 0 4px 4px 0;
   }
   
-  .ttp-list { 
-    display: flex; 
-    flex-wrap: wrap; 
-    gap: 0.5rem; 
-    margin: 1rem 0; 
-  }
-  .ttp-tag { 
-    background: #e0e7ff; 
-    color: #3730a3; 
-    padding: 0.25rem 0.5rem; 
-    border-radius: 4px; 
-    font-size: 0.8rem; 
-    font-family: monospace; 
-  }
-  
-  .evidence-expander { 
-    margin-top: 1rem; 
-  }
-  .evidence-table { 
-    width: 100%; 
-    border-collapse: collapse; 
-    font-size: 0.85rem; 
-  }
-  .evidence-table th { 
-    background: #f1f5f9; 
-    padding: 0.75rem; 
-    text-align: left; 
-    font-weight: 600; 
-    color: #475569; 
-    border-bottom: 2px solid #e2e8f0; 
-  }
-  .evidence-table td { 
-    padding: 0.75rem; 
-    border-bottom: 1px solid #e2e8f0; 
-    vertical-align: top; 
-  }
-  .post-text { 
-    max-width: 400px; 
-    overflow: hidden; 
-    text-overflow: ellipsis; 
-    white-space: nowrap; 
-  }
-  .platform-badge { 
-    display: inline-block; 
-    padding: 0.125rem 0.5rem; 
-    border-radius: 4px; 
-    font-size: 0.7rem; 
-    font-weight: 500; 
-    background: #e2e8f0; 
-    color: #475569; 
-  }
-  
-  .loading-state {
-    text-align: center;
-    padding: 2rem;
-    color: #64748b;
-  }
-  .error-state {
-    text-align: center;
-    padding: 2rem;
-    color: #dc2626;
-    background: #fef2f2;
-    border-radius: 8px;
-    margin: 1rem 0;
-  }
+  .evidence-post { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; }
+  .evidence-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; font-size: 0.75rem; }
+  .platform-badge { background: #dbeafe; color: #1e40af; padding: 0.125rem 0.5rem; border-radius: 4px; font-weight: 500; }
+  .translate-btn { background: #dbeafe; color: #1e40af; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer; margin-top: 0.5rem; }
+  .translate-btn:hover { background: #bfdbfe; }
+  .translate-btn.loading { opacity: 0.6; cursor: wait; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-  <div class="flex justify-between items-start mb-6">
-    <div>
-      <h2 class="text-2xl font-bold text-gray-900 mb-1">🕸️ Network & TTP Analysis</h2>
-      <p class="text-sm text-gray-500">Analyzing {{ total_posts|default:"—" }} election-related posts from your database</p>
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h2 class="text-2xl font-bold text-gray-900 mb-1">📰 Trending Narratives</h2>
+            <p class="text-sm text-gray-500">{{ summaries|length }} clusters • {{ total_posts }} posts • {{ date_range }}</p>
+        </div>
+        <a href="{% url 'export_posts_api' %}" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">📥 Export</a>
     </div>
-    <button id="refreshBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-2">
-      🔄 Refresh Analysis
-    </button>
-  </div>
 
-  <!-- Loading State -->
-  <div id="loadingState" class="loading-state hidden">
-    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-    <p class="text-gray-600">Analyzing coordination patterns with Gemma model...</p>
-  </div>
+    <form method="get" class="flex flex-wrap gap-3 items-end bg-gray-50 p-3 rounded-lg mb-6 border">
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">From</label>
+            <input type="date" name="start_date" value="{{ start_date|default:'' }}" class="rounded border-gray-300 text-sm px-3 py-2">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">To</label>
+            <input type="date" name="end_date" value="{{ end_date|default:'' }}" class="rounded border-gray-300 text-sm px-3 py-2">
+        </div>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">🔍 Apply</button>
+        <a href="{{ request.path }}" class="text-gray-500 hover:text-gray-700 text-sm px-3 py-2">Clear</a>
+    </form>
 
-  <!-- Error State -->
-  <div id="errorState" class="error-state hidden">
-    <p class="font-semibold">⚠️ Analysis failed</p>
-    <p class="text-sm" id="errorMessage">Please try again or check server logs.</p>
-  </div>
-
-  <!-- Results Container -->
-  <div id="resultsContainer" class="space-y-6">
-    <!-- Networks will be injected here by JavaScript -->
-    <div class="text-center py-8 text-gray-500">
-      Click "Refresh Analysis" to detect coordination networks and TTPs from your database.
+    {% if summaries %}
+    <div class="space-y-6">
+        {% for summary in summaries %}
+        <div class="narrative-card">
+            <!-- Header -->
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">#{{ summary.cluster_id }}</div>
+                    <div>
+                        <h3 class="narrative-title">
+                            {% if summary.Context %}
+                                {% with first_line=summary.Context|split:"\n"|first %}
+                                    {% if "Narrative Title:" in first_line %}{{ first_line|cut:"Narrative Title:"|strip }}
+                                    {% else %}{{ summary.Narrative_Description }}
+                                    {% endif %}
+                                {% endwith %}
+                            {% else %}{{ summary.Narrative_Description }}{% endif %}
+                        </h3>
+                        <div class="text-sm text-gray-600 mt-1">📊 {{ summary.Total_Reach }} posts •  {{ summary.Emerging_Virality }} • {{ summary.Top_Platforms }}</div>
+                        <div class="text-xs text-gray-500 mt-1">📅 {{ summary.Min_TS }} to {{ summary.Max_TS }} {% if summary.Originators and summary.Originators != "Unknown" %}• 👤 Origin: {{ summary.Originators|truncatechars:30 }}{% endif %}</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Badges -->
+            {% if summary.Detected_Topics or summary.Detected_Tone %}
+            <div class="flex flex-wrap gap-2 mb-4">
+                {% if summary.Detected_Topics %}{% for topic in summary.Detected_Topics %}<span class="px-2 py-1 badge-topic rounded-full text-xs font-medium">🏷️ {{ topic }}</span>{% endfor %}{% endif %}
+                {% if summary.Detected_Tone %}<span class="px-2 py-1 badge-tone rounded-full text-xs font-medium">🎭 {{ summary.Detected_Tone }}</span>{% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- Structured Content (Parses LLM output line-by-line to avoid duplication/bolding) -->
+            {% if summary.Context %}
+            <div class="narrative-content space-y-3">
+                {% autoescape off %}
+                {% for line in summary.Context|split:"\n" %}
+                    {% if line.strip %}
+                        {% if "Narrative Title:" in line %}
+                            <div class="narrative-section"><strong>Narrative Title</strong><p class="ml-0">{{ line|cut:"Narrative Title:"|strip }}</p></div>
+                        {% elif "Core Claim(s):" in line %}
+                            <div class="narrative-section"><strong>Core Claim(s)</strong></div>
+                        {% elif line.strip|slice:":1" == "-" %}
+                            <p class="ml-4 mb-1">{{ line|strip }}</p>
+                        {% elif ":" in line and line|length < 100 %}
+                            {% with parts=line|split:":" %}
+                                <div class="narrative-section"><strong>{{ parts.0|strip }}</strong><p>{{ parts.1|strip }}</p></div>
+                            {% endwith %}
+                        {% elif "Sample Quotes:" in line %}
+                            <div class="narrative-section mt-3"><strong>Sample Quotes</strong></div>
+                        {% elif line|slice:":1" == "'" or line|slice:":1" == '"' %}
+                            <blockquote class="narrative-quote">{{ line|strip|cut:"'"|cut:'"' }}</blockquote>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+                {% endautoescape %}
+            </div>
+            {% endif %}
+            
+            <!-- Collapsible Evidence -->
+            {% if summary.Posts_Data %}
+            <div class="evidence-expander mt-4">
+                <details>
+                    <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">📂 View Full Cluster Evidence ({{ summary.Posts_Data|length }} posts)</summary>
+                    <div class="mt-3 space-y-3">
+                        {% for post in summary.Posts_Data|slice:":5" %}
+                        <div class="evidence-post">
+                            <div class="evidence-header">
+                                <div class="flex items-center gap-2">
+                                    <span class="platform-badge">{{ post.platform|default:"Unknown" }}</span>
+                                    <span class="text-gray-500 truncate font-mono text-xs">{{ post.account_id|truncatechars:25 }}</span>
+                                </div>
+                                <span class="text-gray-400 text-xs">{{ post.timestamp_share|date:"M d, H:i" }}</span>
+                            </div>
+                            <div class="text-sm text-gray-700 mb-2 leading-relaxed">{{ post.original_text|truncatechars:200 }}</div>
+                            
+                            {% if "፣" in post.original_text or "" in post.original_text or "አ" in post.original_text %}
+                            <button class="translate-btn" onclick="translatePost('{{ forloop.counter }}', '{{ post.original_text|escapejs }}')"> Translate to English</button>
+                            <div id="trans-{{ forloop.counter }}" class="hidden mt-2 text-sm text-gray-600 italic bg-blue-50 p-2 rounded"></div>
+                            {% endif %}
+                            
+                            {% if post.url %}<a href="{{ post.url }}" target="_blank" class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-2">🔗 View Post</a>{% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </details>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
     </div>
-  </div>
+    {% else %}
+    <div class="text-center py-12 bg-gray-50 rounded-xl">
+        <div class="text-4xl mb-3">📰</div>
+        <p class="text-gray-600">No narratives detected. Upload more election posts.</p>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
 {{ block.super }}
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const refreshBtn = document.getElementById('refreshBtn');
-  const loadingState = document.getElementById('loadingState');
-  const errorState = document.getElementById('errorState');
-  const errorMessage = document.getElementById('errorMessage');
-  const resultsContainer = document.getElementById('resultsContainer');
-  
-  // Auto-load on page visit (optional - remove if you prefer manual trigger)
-  // loadNetworkAnalysis();
-  
-  refreshBtn.addEventListener('click', loadNetworkAnalysis);
-  
-  async function loadNetworkAnalysis() {
-    // Show loading state
-    loadingState.classList.remove('hidden');
-    errorState.classList.add('hidden');
-    resultsContainer.innerHTML = '';
-    
+window.translatePost = async function(id, text) {
+    const btn = event.target, target = document.getElementById(`trans-${id}`);
+    btn.classList.add('loading'); btn.textContent = '⏳ Translating...'; btn.disabled = true;
     try {
-      // 1. Load posts from your Django API (PostgreSQL)
-      const dataRes = await fetch('/api/ttp-radar-data/?country=Ethiopia&limit=100');
-      if (!dataRes.ok) throw new Error(`Failed to load posts: ${dataRes.status}`);
-      const data = await dataRes.json();
-      
-      if (data.records.length === 0) {
-        resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No election posts found in database.</div>';
-        loadingState.classList.add('hidden');
-        return;
-      }
-      
-      // 2. Format for DisarmCore (matches teammate's UI expectations)
-      const records = data.records.map(row => ({
-        account: row.account_id,
-        post: row.original_text,
-        publication_date: row.timestamp_share,
-        primary_url: row.URL,
-        primary_domain: row.URL ? new URL(row.URL).hostname.replace('www.', '') : '',
-        platform: row.Platform,
-        hashtags: (row.original_text.match(/#\w+/g) || []).map(h => h.slice(1)),
-        manipulation_categories: [],
-      }));
-      
-      // 3. Run coordination detection (client-side, using teammate's logic)
-      if (typeof window.DisarmCore?.analyzeRecords === 'function') {
-        const params = {
-          linkWindowMin: 30,
-          postWindowMin: 15,
-          textThreshold: 0.82,
-          minEvidence: 2,
-          networkThreshold: 45,
-        };
-        
-        const base = window.DisarmCore.analyzeRecords(records, params, { filterNetworksWithTechniques: false });
-        
-        // 4. If networks found, send to Gemma for TTP adjudication
-        if (base.allNetworks && base.allNetworks.length > 0) {
-          // Show progress
-          resultsContainer.innerHTML = `<div class="text-center py-4 text-blue-600">Found ${base.allNetworks.length} coordination groups. Running TTP analysis...</div>`;
-          
-          // Call your Django proxy to forward to Gemma
-        const ttpRes = await fetch('/api/ttp-proxy/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': 'ethiopia-ttp-dev-key'  
-          },
-          body: JSON.stringify({
-            model: 'gemma-disarm-phase3-ttp',
-            messages: [{
-              role: 'user',
-              content: `Analyze these ${base.allNetworks.length} coordination networks for DISARM TTPs. Return strict JSON with technique matches.`
-            }],
-            temperature: 0.1,
-            max_tokens: 1024
-          })
+        const res = await fetch('https://libretranslate.com/translate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ q: text.slice(0, 500), source: 'am', target: 'en', format: 'text' })
         });
-          
-          if (!ttpRes.ok) throw new Error(`TTP analysis failed: ${ttpRes.status}`);
-          const ttpData = await ttpRes.json();
-          
-          // 5. Render professional results
-          renderNetworkResults(base.allNetworks, ttpData);
-        } else {
-          resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No coordination networks detected with current thresholds.</div>';
-        }
-      } else {
-        throw new Error('DisarmCore not loaded. Check static files.');
-      }
-      
-    } catch (err) {
-      console.error('Analysis error:', err);
-      errorState.classList.remove('hidden');
-      errorMessage.textContent = err.message || 'Unknown error';
-    } finally {
-      loadingState.classList.add('hidden');
+        const data = await res.json();
+        target.textContent = data.translatedText || 'Translation unavailable';
+        target.classList.remove('hidden');
+        btn.textContent = '✅ Translated';
+        setTimeout(() => { btn.textContent = '🔤 Translate to English'; btn.classList.remove('loading'); btn.disabled = false; }, 2000);
+    } catch(e) {
+        target.textContent = '⚠️ Translation failed.'; target.classList.remove('hidden');
+        btn.textContent = '🔤 Retry'; btn.classList.remove('loading'); btn.disabled = false;
     }
-  }
-  
-  function renderNetworkResults(networks, ttpResponse) {
-    if (!networks.length) {
-      resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No networks to display.</div>';
-      return;
-    }
-    
-    let html = '';
-    networks.slice(0, 10).forEach((net, idx) => {
-      const riskClass = net.riskScore >= 67 ? 'risk-high' : net.riskScore >= 40 ? 'risk-medium' : 'risk-low';
-      const ttps = net.candidateTechniques || [];
-      
-      html += `
-      <div class="network-card">
-        <div class="network-header">
-          <h3 class="network-title">Network #${idx + 1} — ${net.type || 'Coordination Group'}</h3>
-          <span class="risk-badge ${riskClass}">${net.riskBand || 'Medium'} Risk</span>
-        </div>
-        
-        <div class="metrics-grid">
-          <div class="metric-item">
-            <div class="metric-value">${net.accounts?.length || 0}</div>
-            <div class="metric-label">Accounts</div>
-          </div>
-          <div class="metric-item">
-            <div class="metric-value">${net.posts || 0}</div>
-            <div class="metric-label">Posts</div>
-          </div>
-          <div class="metric-item">
-            <div class="metric-value">${net.manipulationShare ? Math.round(net.manipulationShare * 100) : 0}%</div>
-            <div class="metric-label">Manipulation</div>
-          </div>
-          <div class="metric-item">
-            <div class="metric-value">${net.signalTotals?.coLink || 0}</div>
-            <div class="metric-label">Link Coord.</div>
-          </div>
-        </div>
-        
-        ${ttps.length ? `
-        <div>
-          <h4 class="text-sm font-semibold text-gray-700 mb-2">🎯 Detected TTPs</h4>
-          <div class="ttp-list">
-            ${ttps.slice(0, 5).map(ttp => `
-              <span class="ttp-tag">${ttp.techniqueId}: ${ttp.name?.slice(0, 30)}...</span>
-            `).join('')}
-            ${ttps.length > 5 ? `<span class="ttp-tag">+${ttps.length - 5} more</span>` : ''}
-          </div>
-        </div>` : '<p class="text-sm text-gray-500 italic">No specific TTPs confirmed for this network.</p>'}
-        
-        <div class="evidence-expander">
-          <details>
-            <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">
-              📂 View Network Evidence (${net.accounts?.length || 0} accounts)
-            </summary>
-            <div class="mt-3 overflow-x-auto">
-              <table class="evidence-table">
-                <thead>
-                  <tr>
-                    <th>Account</th>
-                    <th>Platform</th>
-                    <th>Post Preview</th>
-                    <th>Timestamp</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${net.llmDossier?.evidence_posts?.slice(0, 5).map(post => `
-                  <tr>
-                    <td class="font-mono text-xs">${post.account?.slice(0, 20) || 'Unknown'}</td>
-                    <td><span class="platform-badge">${post.platform || 'Unknown'}</span></td>
-                    <td class="post-text">${post.post?.slice(0, 100) || '—'}</td>
-                    <td class="text-xs text-gray-500">${post.publication_date ? new Date(post.publication_date).toLocaleDateString() : '—'}</td>
-                  </tr>
-                  `).join('') || '<tr><td colspan="4" class="text-center text-gray-500 py-4">No evidence posts available</td></tr>'}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        </div>
-      </div>`;
-    });
-    
-    resultsContainer.innerHTML = html;
-    
-    if (networks.length > 10) {
-      resultsContainer.innerHTML += `
-      <div class="text-center mt-4 p-4 bg-gray-50 rounded-lg">
-        <p class="text-gray-600">... and ${networks.length - 10} more networks</p>
-        <button class="text-blue-600 hover:underline text-sm mt-2" onclick="loadMoreNetworks()">View all</button>
-      </div>`;
-    }
-  }
-  
-  // Optional: Load more networks (pagination)
-  window.loadMoreNetworks = function() {
-    // Implement pagination logic here if needed
-    alert('Full network list would load here. Implement pagination as needed.');
-  };
-});
+};
 </script>
 {% endblock %}
