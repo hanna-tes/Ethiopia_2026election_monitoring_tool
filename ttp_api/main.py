@@ -4,42 +4,63 @@ import sys
 import json
 import time
 import uuid
-import torch  
+import torch  # Required for device handling
 import uvicorn
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Union, Literal
 
-# Config - matches your project structure
+# Config
 HOST = os.getenv('TTP_API_HOST', '127.0.0.1')
 PORT = int(os.getenv('TTP_API_PORT', '8002'))
 MODEL_PATH = os.getenv('TTP_MODEL_PATH', '/Users/hannateshager/Ethiopia_2026election_monitoring_tool/model_cache/gemma-disarm-phase3-ttp')
 API_KEY = os.getenv('TTP_API_KEY', 'ethiopia-ttp-dev-key')
 
-# 🔧 FIX: Define app EARLY so middleware and routes can use it
+# Define app EARLY so middleware can use it
 app = FastAPI(title='Gemma DISARM TTP API')
 
-# Global model variables (unified names)
-model = None
-tokenizer = None
+# Global model variables
+_model = None
+_tokenizer = None
 
 def get_model():
-    global model, tokenizer
-    if model is None:
+    """Lazy-load the Gemma model and tokenizer."""
+    global _model, _tokenizer
+    if _model is None:
         try:
             from unsloth import FastModel
             from transformers import AutoTokenizer
+            
             print(f"🔄 Loading Gemma model from {MODEL_PATH}...")
             
-            # Load model for inference
-            model = FastModel.for_inference(MODEL_PATH)
-            tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-            print("✅ Model loaded!")
+            # 🔧 FIX: FastModel methods often return (model, tokenizer) tuple
+            result = FastModel.from_pretrained(
+                model_name=MODEL_PATH,
+                load_in_4bit=True,  # Reduce memory usage
+                use_gradient_checkpointing="unsloth",
+            )
+            
+            # Unpack tuple if needed
+            if isinstance(result, tuple) and len(result) == 2:
+                _model, _tokenizer = result
+            else:
+                # Fallback: assume it returned just the model
+                _model = result
+                _tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+            
+            # Ensure tokenizer has pad/eos tokens set
+            if _tokenizer.pad_token is None:
+                _tokenizer.pad_token = _tokenizer.eos_token
+            
+            print(f"✅ Model loaded! Type: {type(_model)}, Device: {_model.device if hasattr(_model, 'device') else 'CPU'}")
+            
         except Exception as e:
             print(f"❌ Failed to load model: {e}")
+            import traceback
+            traceback.print_exc()
             raise e
             
-    return model, tokenizer
+    return _model, _tokenizer
 
 class Message(BaseModel):
     role: Literal['system', 'user', 'assistant']
@@ -61,41 +82,47 @@ def flatten_content(content):
 
 def build_reply(messages, temperature=0.1, max_tokens=512):
     """Generate reply using the loaded Gemma model."""
-    global model, tokenizer
+    global _model, _tokenizer
     
-    if model is None or tokenizer is None:
-        model, tokenizer = get_model()
+    if _model is None or _tokenizer is None:
+        _model, _tokenizer = get_model()
+    
+    # Debug: Print what we're working with
+    print(f"🔍 build_reply: model type={type(_model)}, tokenizer type={type(_tokenizer)}")
     
     # Normalize messages
     normalized = [{'role': m.role, 'content': flatten_content(m.content)} for m in messages]
-    prompt = tokenizer.apply_chat_template(normalized, tokenize=False, add_generation_prompt=True)
+    prompt = _tokenizer.apply_chat_template(normalized, tokenize=False, add_generation_prompt=True)
     
     # Tokenize input
-    inputs = tokenizer(prompt, return_tensors="pt")
+    inputs = _tokenizer(prompt, return_tensors="pt")
     
-    # 🔧 FIX: Safely get device and move inputs
-    if hasattr(model, 'device'):
-        device = model.device
+    # Safely get device and move inputs
+    if hasattr(_model, 'device'):
+        device = _model.device
     else:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     inputs = {k: v.to(device) for k, v in inputs.items()}
     
     # Generate response
-    output_ids = model.generate(
-        **inputs, 
-        max_new_tokens=max_tokens,
-        temperature=float(temperature or 0.1),
-        do_sample=(float(temperature or 0.1) > 0),
-        use_cache=True,
-        pad_token_id=tokenizer.eos_token_id,
-        eos_token_id=tokenizer.eos_token_id
-    )
+    print(f"🤖 Generating with max_new_tokens={max_tokens}, temperature={temperature}...")
+    with torch.inference_mode():
+        output_ids = _model.generate(
+            **inputs, 
+            max_new_tokens=max_tokens,
+            temperature=float(temperature or 0.1),
+            do_sample=(float(temperature or 0.1) > 0),
+            use_cache=True,
+            pad_token_id=_tokenizer.eos_token_id,
+            eos_token_id=_tokenizer.eos_token_id
+        )
     
     # Decode response
     input_len = inputs["input_ids"].shape[1]
-    completion = tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
+    completion = _tokenizer.decode(output_ids[0][input_len:], skip_special_tokens=True).strip()
     
+    print(f"✅ Generated {len(completion)} chars")
     return completion, int(input_len), int(output_ids.shape[1] - input_len)
 
 @app.middleware("http")
@@ -109,7 +136,7 @@ async def auth_middleware(request, call_next):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "gemma-disarm-phase3-ttp", "loaded": model is not None}
+    return {"status": "ok", "model": "gemma-disarm-phase3-ttp", "loaded": _model is not None}
 
 @app.get('/v1/models')
 def list_models():
