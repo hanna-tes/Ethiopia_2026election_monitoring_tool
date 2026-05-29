@@ -80,106 +80,134 @@
 
 {% block extra_js %}
 {{ block.super }}
-<!-- Load DisarmCore from confirmed static path -->
 <script src="{% static 'dashboard/ttp_radar/shared-core.js' %}"></script>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('🕸️ Networks tab: DOM loaded');
+  
   const refreshBtn = document.getElementById('refreshBtn');
   const loadingState = document.getElementById('loadingState');
   const errorState = document.getElementById('errorState');
   const errorMessage = document.getElementById('errorMessage');
   const resultsContainer = document.getElementById('resultsContainer');
-  const filterStatus = document.getElementById('filterStatus');
   
-  // Parse URL parameters for date filters passed from Home tab
+  // Debug: Check if DisarmCore loaded
+  console.log('🔍 DisarmCore check:', {
+    exists: typeof window.DisarmCore !== 'undefined',
+    analyzeRecords: typeof window.DisarmCore?.analyzeRecords,
+    keys: Object.keys(window.DisarmCore || {}).slice(0, 10)
+  });
+  
+  // Auto-load if date params exist
   const urlParams = new URLSearchParams(window.location.search);
-  const startDate = urlParams.get('start_date');
-  const endDate = urlParams.get('end_date');
-
-  // Auto-load if filters exist
-  if (startDate && endDate) {
-    filterStatus.classList.remove('hidden');
-    filterStatus.innerHTML = `<span class="status-pill">📅 Analyzing: <strong>${startDate}</strong> to <strong>${endDate}</strong></span>`;
-    console.log(`📅 Date filters detected. Auto-loading analysis...`);
-    loadNetworkAnalysis();
-  } else {
-    console.log('ℹ️ No date filters in URL. Waiting for manual trigger.');
+  if (urlParams.has('start_date') && urlParams.has('end_date')) {
+    console.log('📅 Date filters detected, auto-loading...');
+    setTimeout(loadNetworkAnalysis, 500); // Small delay to ensure DOM is ready
   }
   
-  refreshBtn.addEventListener('click', loadNetworkAnalysis);
+  refreshBtn?.addEventListener('click', loadNetworkAnalysis);
   
   async function loadNetworkAnalysis() {
-    loadingState.classList.remove('hidden');
-    errorState.classList.add('hidden');
-    resultsContainer.innerHTML = '';
+    console.log('▶️ Starting analysis...');
+    loadingState?.classList.remove('hidden');
+    errorState?.classList.add('hidden');
+    if (resultsContainer) resultsContainer.innerHTML = '';
     
     try {
-      const currentParams = new URLSearchParams(window.location.search);
-      const start = currentParams.get('start_date') || '2025-10-01';
-      const end = currentParams.get('end_date') || new Date().toISOString().split('T')[0];
+      // 1. Fetch data
+      const start = urlParams.get('start_date') || '2025-10-01';
+      const end = urlParams.get('end_date') || new Date().toISOString().split('T')[0];
+      console.log(`📥 Fetching: /api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
       
-      console.log(`📥 Fetching posts (Date: ${start} to ${end})...`);
-      const dataRes = await fetch(`/api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
+      const res = await fetch(`/api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
+      console.log(`📡 Response status: ${res.status}`);
       
-      if (!dataRes.ok) throw new Error(`Failed to load posts: ${dataRes.status}`);
-      const data = await dataRes.json();
+      if (!res.ok) throw new Error(`API returned ${res.status}`);
       
-      if (data.records.length === 0) {
-        resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No election posts found for this date range.</div>';
-        loadingState.classList.add('hidden');
-        return;
+      const data = await res.json();
+      console.log(`✅ Data loaded: ${data.count} records`);
+      console.log('📋 First record sample:', data.records[0] ? {
+        account_id: data.records[0].account_id,
+        platform: data.records[0].Platform,
+        has_text: !!data.records[0].original_text
+      } : 'No records');
+      
+      if (!data.records?.length) {
+        throw new Error('No records returned from API');
       }
       
-      console.log(`✅ Loaded ${data.count} posts. Running coordination detection...`);
-      
-      const records = data.records.map(row => ({
-        account: row.account_id,
-        post: row.original_text,
-        publication_date: row.timestamp_share,
-        primary_url: row.URL,
-        primary_domain: row.URL ? new URL(row.URL).hostname.replace('www.', '') : '',
-        platform: row.Platform,
-        hashtags: (row.original_text.match(/#\w+/g) || []).map(h => h.slice(1)),
-        manipulation_categories: [],
-      }));
-      
-      if (typeof window.DisarmCore?.analyzeRecords === 'function') {
-        const params = {
-          linkWindowMin: 30, postWindowMin: 15, textThreshold: 0.82,
-          minEvidence: 2, networkThreshold: 45
+      // 2. Format for DisarmCore
+      console.log('🔄 Formatting records for DisarmCore...');
+      const records = data.records.map(row => {
+        const postText = row.original_text || '';
+        return {
+          account: row.account_id || 'unknown',
+          post: postText,
+          publication_date: row.timestamp_share,
+          primary_url: row.URL || '',
+          primary_domain: row.URL ? new URL(row.URL).hostname.replace('www.', '') : '',
+          platform: row.Platform || 'Unknown',
+          hashtags: (postText.match(/#\w+/g) || []).map(h => h.slice(1)),
+          manipulation_categories: [],
+          // Add fields DisarmCore expects
+          id: `post_${row.id || Math.random()}`,
+          timestamp: row.timestamp_share ? new Date(row.timestamp_share).getTime() : Date.now(),
+          normalizedText: postText.toLowerCase().replace(/[^\w\s]/g, ' ').trim(),
+          tokens: postText.toLowerCase().split(/\s+/).filter(w => w.length > 2),
+          hasManipulationCue: false,
+          manipulationScore: 0,
         };
-        
-        const base = window.DisarmCore.analyzeRecords(records, params, { filterNetworksWithTechniques: false });
-        
-        if (base.allNetworks && base.allNetworks.length > 0) {
-          console.log(`📊 Found ${base.allNetworks.length} coordination networks.`);
-          renderNetworkResults(base.allNetworks);
-        } else {
-          console.log('ℹ️ No coordination networks detected. Showing raw data fallback.');
-          renderRawPosts(data.records);
-        }
+      });
+      
+      console.log(`✅ Formatted ${records.length} records`);
+      
+      // 3. Run DisarmCore analysis
+      if (typeof window.DisarmCore?.analyzeRecords !== 'function') {
+        throw new Error('DisarmCore.analyzeRecords is not a function');
+      }
+      
+      console.log('🔍 Running DisarmCore.analyzeRecords...');
+      const params = {
+        linkWindowMin: 30,
+        postWindowMin: 15,
+        textThreshold: 0.82,
+        minEvidence: 2,
+        networkThreshold: 45
+      };
+      
+      const analysis = window.DisarmCore.analyzeRecords(records, params, { filterNetworksWithTechniques: false });
+      
+      console.log('📊 Analysis result:', {
+        allNetworks: analysis.allNetworks?.length || 0,
+        networks: analysis.networks?.length || 0,
+        dataset: analysis.dataset
+      });
+      
+      // 4. Render results
+      if (analysis.allNetworks?.length > 0) {
+        console.log(`🎨 Rendering ${analysis.allNetworks.length} networks...`);
+        renderNetworks(analysis.allNetworks);
       } else {
-        console.warn('⚠️ DisarmCore not loaded. Falling back to raw post table.');
-        renderRawPosts(data.records);
+        console.log('ℹ️ No networks found. Showing fallback table.');
+        renderFallbackTable(data.records);
       }
       
     } catch (err) {
-      console.error(' Analysis error:', err);
-      errorState.classList.remove('hidden');
-      errorMessage.textContent = err.message || 'Unknown error occurred.';
+      console.error('❌ Analysis failed:', err);
+      if (errorState) {
+        errorState.classList.remove('hidden');
+        errorMessage.textContent = `Error: ${err.message}. Check console (F12) for details.`;
+      }
     } finally {
-      loadingState.classList.add('hidden');
+      if (loadingState) loadingState.classList.add('hidden');
     }
   }
   
-  function renderNetworkResults(networks) {
-    if (!networks.length) {
-      resultsContainer.innerHTML = '<div class="text-center py-8 text-gray-500">No networks to display.</div>';
-      return;
-    }
-    
+  function renderNetworks(networks) {
+    console.log('🎨 Rendering networks...');
     let html = '';
+    
     networks.slice(0, 10).forEach((net, idx) => {
       const riskClass = net.riskScore >= 67 ? 'risk-high' : net.riskScore >= 40 ? 'risk-medium' : 'risk-low';
       
@@ -189,36 +217,28 @@ document.addEventListener('DOMContentLoaded', () => {
           <h3 class="network-title">Network #${idx + 1} — ${net.type || 'Coordination Group'}</h3>
           <span class="risk-badge ${riskClass}">${net.riskBand || 'Medium'} Risk</span>
         </div>
-        
         <div class="metrics-grid">
           <div class="metric-item"><div class="metric-value">${net.accounts?.length || 0}</div><div class="metric-label">Accounts</div></div>
           <div class="metric-item"><div class="metric-value">${net.posts || 0}</div><div class="metric-label">Posts</div></div>
           <div class="metric-item"><div class="metric-value">${net.manipulationShare ? Math.round(net.manipulationShare * 100) : 0}%</div><div class="metric-label">Manipulation</div></div>
         </div>
-        
-        <div class="evidence-expander">
-          <details>
-            <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">
-               View Network Evidence (${net.accounts?.length || 0} accounts)
-            </summary>
-            <div class="mt-3 text-sm text-gray-600">
-              <p><strong>Accounts:</strong> ${net.accounts?.slice(0, 5).join(', ') || 'Unknown'}</p>
-              <p class="mt-1"><strong>Signals:</strong> ${JSON.stringify(net.signalTotals || {})}</p>
-            </div>
-          </details>
-        </div>
+        <details class="evidence-expander">
+          <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">📂 View Evidence</summary>
+          <div class="mt-3 text-sm text-gray-600">
+            <p><strong>Accounts:</strong> ${net.accounts?.slice(0, 5).join(', ') || 'Unknown'}</p>
+            <p class="mt-1"><strong>Signals:</strong> ${JSON.stringify(net.signalTotals || {})}</p>
+          </div>
+        </details>
       </div>`;
     });
     
-    resultsContainer.innerHTML = html;
+    if (resultsContainer) resultsContainer.innerHTML = html;
   }
   
-  // Fallback renderer
-  function renderRawPosts(posts) {
-    let html = `<div class="text-center py-4 text-gray-500">Showing ${posts.length} recent election posts</div>`;
-    html += `<div class="overflow-x-auto mt-4"><table class="raw-table"><thead><tr>
-      <th>Account</th><th>Platform</th><th>Post Preview</th><th>Date</th>
-    </tr></thead><tbody>`;
+  function renderFallbackTable(posts) {
+    console.log('🎨 Rendering fallback table...');
+    let html = `<div class="text-center py-4 text-gray-500">Showing ${posts.length} recent posts (No coordination networks detected)</div>`;
+    html += `<div class="overflow-x-auto mt-4"><table class="raw-table"><thead><tr><th>Account</th><th>Platform</th><th>Post Preview</th><th>Date</th></tr></thead><tbody>`;
     
     posts.slice(0, 20).forEach(p => {
       html += `<tr class="bg-white border-b hover:bg-gray-50">
@@ -230,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     html += `</tbody></table></div>`;
-    resultsContainer.innerHTML = html;
+    if (resultsContainer) resultsContainer.innerHTML = html;
   }
 });
 </script>
