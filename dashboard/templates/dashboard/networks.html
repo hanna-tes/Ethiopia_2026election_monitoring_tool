@@ -92,18 +92,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorMessage = document.getElementById('errorMessage');
   const resultsContainer = document.getElementById('resultsContainer');
   
-  // Debug: Check if DisarmCore loaded
-  console.log('🔍 DisarmCore check:', {
-    exists: typeof window.DisarmCore !== 'undefined',
-    analyzeRecords: typeof window.DisarmCore?.analyzeRecords,
-    keys: Object.keys(window.DisarmCore || {}).slice(0, 10)
-  });
-  
   // Auto-load if date params exist
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.has('start_date') && urlParams.has('end_date')) {
     console.log('📅 Date filters detected, auto-loading...');
-    setTimeout(loadNetworkAnalysis, 500); // Small delay to ensure DOM is ready
+    setTimeout(loadNetworkAnalysis, 500);
   }
   
   refreshBtn?.addEventListener('click', loadNetworkAnalysis);
@@ -115,23 +108,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (resultsContainer) resultsContainer.innerHTML = '';
     
     try {
-      // 1. Fetch data
+      // 1. Fetch data from your Django API
       const start = urlParams.get('start_date') || '2025-10-01';
       const end = urlParams.get('end_date') || new Date().toISOString().split('T')[0];
       console.log(`📥 Fetching: /api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
       
-      const res = await fetch(`/api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
-      console.log(`📡 Response status: ${res.status}`);
+      const dataRes = await fetch(`/api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
+      if (!dataRes.ok) throw new Error(`API returned ${dataRes.status}`);
       
-      if (!res.ok) throw new Error(`API returned ${res.status}`);
-      
-      const data = await res.json();
+      const data = await dataRes.json();
       console.log(`✅ Data loaded: ${data.count} records`);
-      console.log('📋 First record sample:', data.records[0] ? {
-        account_id: data.records[0].account_id,
-        platform: data.records[0].Platform,
-        has_text: !!data.records[0].original_text
-      } : 'No records');
       
       if (!data.records?.length) {
         throw new Error('No records returned from API');
@@ -150,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
           platform: row.Platform || 'Unknown',
           hashtags: (postText.match(/#\w+/g) || []).map(h => h.slice(1)),
           manipulation_categories: [],
-          // Add fields DisarmCore expects
+          // Required fields for DisarmCore
           id: `post_${row.id || Math.random()}`,
           timestamp: row.timestamp_share ? new Date(row.timestamp_share).getTime() : Date.now(),
           normalizedText: postText.toLowerCase().replace(/[^\w\s]/g, ' ').trim(),
@@ -160,9 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
       });
       
-      console.log(`✅ Formatted ${records.length} records`);
-      
-      // 3. Run DisarmCore analysis
+      // 3. Run DisarmCore coordination detection
       if (typeof window.DisarmCore?.analyzeRecords !== 'function') {
         throw new Error('DisarmCore.analyzeRecords is not a function');
       }
@@ -177,21 +161,78 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       
       const analysis = window.DisarmCore.analyzeRecords(records, params, { filterNetworksWithTechniques: false });
+      console.log(`📊 Found ${analysis.allNetworks?.length || 0} networks`);
       
-      console.log('📊 Analysis result:', {
-        allNetworks: analysis.allNetworks?.length || 0,
-        networks: analysis.networks?.length || 0,
-        dataset: analysis.dataset
+      if (!analysis.allNetworks?.length) {
+        renderFallbackTable(data.records);
+        return;
+      }
+      
+      // 4. Send top networks to Gemma for TTP adjudication (via your Django proxy)
+      console.log('🤖 Sending networks to Gemma for TTP analysis...');
+      resultsContainer.innerHTML = `<div class="text-center py-4 text-blue-600">Found ${analysis.allNetworks.length} networks. Running TTP adjudication with Gemma...</div>`;
+      
+      // Prepare dossier for LLM (match your teammate's format)
+      const topNetworks = analysis.allNetworks.slice(0, 3); // Limit to top 3 for speed
+      const dossiers = topNetworks.map(net => ({
+        network_id: net.id,
+        network_type: net.type,
+        account_count: net.accounts?.length || 0,
+        signal_totals: net.signalTotals || {},
+        manipulation_share: net.manipulationShare || 0,
+        shared_manipulation_categories: net.sharedManipulationCategories || [],
+        top_domains: (net.topDomains || []).slice(0, 3),
+        top_urls: (net.topUrls || []).slice(0, 3),
+        top_hashtags: (net.topHashtags || []).slice(0, 3),
+        densest_burst: net.densestBurst || { window_minutes: 0, post_count: 0, unique_accounts: 0 },
+        median_link_delta_minutes: net.medianLinkDelta || 0,
+        median_post_delta_minutes: net.medianPostDelta || 0,
+        repeated_link_target: net.repeatedLinkTarget || '—',
+        evidence_posts: (net.llmDossier?.evidence_posts || []).slice(0, 8).map(p => ({
+          account: p.account,
+          display_name: p.display_name || '',
+          bio: p.bio || '',
+          title: p.title || '',
+          publication_date: p.publication_date,
+          primary_url: p.primary_url,
+          primary_domain: p.primary_domain,
+          hashtags: p.hashtags || [],
+          manipulation_categories: p.manipulation_categories || [],
+          post: p.post || ''
+        })),
+        allowed_techniques: ['T0049', 'T0049.002', 'T0049.003', 'T0049.005', 'T0016', 'T0060', 'T0097.202', 'T0143.003', 'T0119', 'T0119.001', 'T0119.002', 'T0097.102', 'T0143.002', 'T0149.003', 'T0084.002'],
+        instructions: 'Only return a TTP if the evidence supports both coordination and clear manipulation intent. Use raw observable cues from the dossier only. Return strict JSON only.'
+      }));
+      
+      // Call your Django TTP proxy
+      const ttpRes = await fetch('/api/ttp-proxy/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'ethiopia-ttp-dev-key' // Match your .env TTP_API_KEY
+        },
+        body: JSON.stringify({
+          model: 'gemma-disarm-phase3-ttp',
+          messages: [{
+            role: 'user',
+            content: `Analyze these ${dossiers.length} coordination networks for DISARM TTPs. Return strict JSON array with technique matches for each network.`
+          }],
+          // Note: NO temperature argument (fixed in views.py)
+          max_tokens: 2048
+        })
       });
       
-      // 4. Render results
-      if (analysis.allNetworks?.length > 0) {
-        console.log(`🎨 Rendering ${analysis.allNetworks.length} networks...`);
-        renderNetworks(analysis.allNetworks);
-      } else {
-        console.log('ℹ️ No networks found. Showing fallback table.');
-        renderFallbackTable(data.records);
+      if (!ttpRes.ok) {
+        console.warn(`⚠️ TTP proxy returned ${ttpRes.status}. Showing coordination results without TTP adjudication.`);
+        renderNetworksWithoutTTP(analysis.allNetworks);
+        return;
       }
+      
+      const ttpData = await ttpRes.json();
+      console.log('✅ TTP adjudication complete');
+      
+      // 5. Render rich TTP cards
+      renderRichTTPCards(analysis.allNetworks, ttpData);
       
     } catch (err) {
       console.error('❌ Analysis failed:', err);
@@ -204,8 +245,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
-  function renderNetworks(networks) {
-    console.log('🎨 Rendering networks...');
+  // Render basic network cards (fallback if TTP call fails)
+  function renderNetworksWithoutTTP(networks) {
+    console.log('🎨 Rendering basic network cards...');
     let html = '';
     
     networks.slice(0, 10).forEach((net, idx) => {
@@ -235,6 +277,78 @@ document.addEventListener('DOMContentLoaded', () => {
     if (resultsContainer) resultsContainer.innerHTML = html;
   }
   
+  // Render RICH TTP cards with technique matches (like your teammate's template)
+  function renderRichTTPCards(networks, ttpResponse) {
+    console.log('🎨 Rendering rich TTP cards...');
+    
+    // Parse TTP results (handle both array and object responses)
+    let ttpResults = [];
+    try {
+      if (ttpResponse?.choices?.[0]?.message?.content) {
+        const content = ttpResponse.choices[0].message.content.trim();
+        // Remove markdown code fences if present
+        const jsonStr = content.replace(/^```(?:json)?\n?|\n?```$/g, '');
+        ttpResults = JSON.parse(jsonStr);
+        if (!Array.isArray(ttpResults)) ttpResults = [ttpResults];
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not parse TTP response:', e);
+    }
+    
+    let html = '';
+    
+    networks.slice(0, 10).forEach((net, idx) => {
+      const riskClass = net.riskScore >= 67 ? 'risk-high' : net.riskScore >= 40 ? 'risk-medium' : 'risk-low';
+      const ttpMatches = ttpResults[idx]?.techniques || ttpResults[idx]?.candidateTechniques || [];
+      
+      html += `
+      <div class="network-card">
+        <div class="network-header">
+          <h3 class="network-title">Network #${idx + 1} — ${net.type || 'Coordination Group'}</h3>
+          <span class="risk-badge ${riskClass}">${net.riskBand || 'Medium'} Risk</span>
+        </div>
+        
+        <div class="metrics-grid">
+          <div class="metric-item"><div class="metric-value">${net.accounts?.length || 0}</div><div class="metric-label">Accounts</div></div>
+          <div class="metric-item"><div class="metric-value">${net.posts || 0}</div><div class="metric-label">Posts</div></div>
+          <div class="metric-item"><div class="metric-value">${net.manipulationShare ? Math.round(net.manipulationShare * 100) : 0}%</div><div class="metric-label">Manipulation</div></div>
+          <div class="metric-item"><div class="metric-value">${ttpMatches.length}</div><div class="metric-label">TTPs</div></div>
+        </div>
+        
+        ${ttpMatches.length ? `
+        <div class="mt-4">
+          <h4 class="text-sm font-semibold text-gray-700 mb-2">🎯 Confirmed TTPs</h4>
+          <div class="flex flex-wrap gap-2">
+            ${ttpMatches.slice(0, 5).map(ttp => `
+              <span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-200" title="${ttp.summary || ''}">
+                ${ttp.techniqueId}: ${ttp.name?.slice(0, 25)}${ttp.name?.length > 25 ? '...' : ''}
+              </span>
+            `).join('')}
+            ${ttpMatches.length > 5 ? `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">+${ttpMatches.length - 5} more</span>` : ''}
+          </div>
+        </div>` : '<p class="text-sm text-gray-500 italic mt-2">No specific TTPs confirmed for this network.</p>'}
+        
+        <details class="evidence-expander mt-4">
+          <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">📂 View Network Evidence</summary>
+          <div class="mt-3 space-y-3">
+            ${net.llmDossier?.evidence_posts?.slice(0, 3).map(post => `
+              <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div class="flex items-center justify-between mb-2 text-xs">
+                  <span class="font-mono">${post.account || 'Unknown'}</span>
+                  <span class="text-gray-400">${post.platform || ''}</span>
+                </div>
+                <p class="text-sm text-gray-700">${(post.post || '').slice(0, 150)}${(post.post || '').length > 150 ? '...' : ''}</p>
+              </div>
+            `).join('') || '<p class="text-sm text-gray-500">No evidence posts available</p>'}
+          </div>
+        </details>
+      </div>`;
+    });
+    
+    if (resultsContainer) resultsContainer.innerHTML = html;
+  }
+  
+  // Fallback: Show raw posts table
   function renderFallbackTable(posts) {
     console.log('🎨 Rendering fallback table...');
     let html = `<div class="text-center py-4 text-gray-500">Showing ${posts.length} recent posts (No coordination networks detected)</div>`;
