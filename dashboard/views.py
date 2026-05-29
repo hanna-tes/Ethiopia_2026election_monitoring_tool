@@ -488,7 +488,7 @@ Documents for analysis:
 """
             
             try:
-                response = safe_llm_call(prompt, temperature=0.2, max_tokens=2048)
+                response = safe_llm_call(prompt, max_tokens=2048)
                 raw_summary = response.strip() if response else ""
             except Exception as e:
                 logger.warning(f"LLM summary failed for cluster {cluster_id}: {e}")
