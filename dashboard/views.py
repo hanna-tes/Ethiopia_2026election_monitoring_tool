@@ -1940,21 +1940,16 @@ class NarrativesView(TemplateView):
 
         # Date range display
         if start_date and end_date:
-            context['date_range'] = (
-                f"{start_date.date()} to {end_date.date()}"
-            )
+            # Handle both datetime objects and string inputs
+            start_str = start_date.date().isoformat() if hasattr(start_date, 'date') else start_date
+            end_str = end_date.date().isoformat() if hasattr(end_date, 'date') else end_date
+            context['date_range'] = f"{start_str} to {end_str}"
         else:
             context['date_range'] = "Last 30 days (default)"
 
         # Form values
-        context['start_date'] = (
-            start_date.date().isoformat()
-            if start_date else ''
-        )
-        context['end_date'] = (
-            end_date.date().isoformat()
-            if end_date else ''
-        )
+        context['start_date'] = start_date.date().isoformat() if hasattr(start_date, 'date') else start_date
+        context['end_date'] = end_date.date().isoformat() if hasattr(end_date, 'date') else end_date
 
         # Monitoring reports
         context['monitoring_reports'] = (
