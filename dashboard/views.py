@@ -45,9 +45,6 @@ from .utils.llm_detector import detect_hate_speech_llm
 from .models import ElectionOfficeholder
 from django.shortcuts import render, get_object_or_404
 from .models import MonitoringReport
-from dashboard.models import ProcessedPost  
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -586,7 +583,146 @@ Sample Quotes:
         traceback.print_exc()
     
     return all_summaries[:max_clusters]
+    
+def extract_narrative_description(summary_text, sample_posts):
+    """Generate a specific, meaningful 1-sentence narrative description from actual cluster posts"""
+    
+    if not sample_posts:
+        return "Analyzing narrative content..."
+    
+    # Combine all posts in this cluster for analysis
+    all_text = ' '.join([p for p in sample_posts if p and isinstance(p, str)]).lower()
+    
+    # Define topic keywords for Ethiopia election context
+    topic_keywords = {
+        'election fraud': ['rigged', 'fraud', 'stolen', 'manipulated', 'fake results', 'cheating', 'ballot', 'marked cards', 'vote cards', 'nebe'],
+        'voter intimidation': ['intimidation', 'threat', 'forced', 'coerced', 'violence', 'fear', 'suppress', 'arrest'],
+        'ethnic tension': ['amhara', 'oromo', 'tigray', 'somali', 'afar', 'sidama', 'ethnic', 'tribal', 'discrimination'],
+        'political violence': ['kill', 'attack', 'war', 'conflict', 'militia', 'armed', 'bloodshed', 'massacre'],
+        'international observation': ['observer', 'international', 'AU', 'UN', 'monitor', 'transparency', 'legitimate', 'credible'],
+        'government criticism': ['government', 'authorities', 'regime', 'corrupt', 'failed', 'oppression', 'tyranny'],
+        'opposition support': ['opposition', 'protest', 'resistance', 'freedom', 'democracy', 'rights', 'liberation'],
+        'media manipulation': ['propaganda', 'fake news', 'disinformation', 'censorship', 'biased media', 'state media'],
+        'humanitarian crisis': ['displaced', 'refugee', 'hunger', 'famine', 'aid', 'crisis', 'suffering'],
+        'youth engagement': ['youth', 'young', 'students', 'next generation', 'future', 'university']
+    }
+    
+    # Count topic matches in THIS cluster's posts
+    topic_scores = {}
+    for topic, keywords in topic_keywords.items():
+        score = sum(1 for kw in keywords if kw in all_text)
+        if score > 0:
+            topic_scores[topic] = score
+    
+    # If we found topics, generate a specific description for THIS cluster
+    if topic_scores:
+        # Get top 3 topics by score for this cluster
+        top_topics = sorted(topic_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+        topic_list = [t[0] for t in top_topics]
         
+        # Format the description
+        if len(topic_list) == 1:
+            return f"Posts discussing {topic_list[0]}."
+        elif len(topic_list) == 2:
+            return f"Posts discussing {topic_list[0]} and {topic_list[1]}."
+        else:
+            return f"Posts discussing {topic_list[0]}, {topic_list[1]}, and {topic_list[2]}."
+    
+    # Fallback: Extract key phrase from the most representative post in THIS cluster
+    best_post = None
+    for post in sample_posts:
+        if post and isinstance(post, str) and len(post.strip()) > 50:
+            best_post = post
+            break
+    
+    if best_post:
+        # Clean and extract first meaningful sentence
+        clean = re.sub(r'http\S+|@\w+|#\w+', '', best_post).strip()
+        sentences = [s.strip() for s in clean.split('.') if len(s.strip()) > 30]
+        if sentences:
+            return sentences[0][:200] + ('...' if len(sentences[0]) > 200 else '')
+        return clean[:200] + ('...' if len(clean) > 200 else '')
+    
+    return "Analyzing narrative content from posts..."
+    
+def analyze_ttps(coordination_groups, posts):
+    """Analyze Tactics, Techniques, and Procedures from coordinated groups - FULLY FIXED"""
+    ttps = []
+    
+    if not coordination_groups:
+        return ttps
+    
+    # TTP 1: Coordinated Inauthentic Behavior (CIB)
+    cib_groups = [g for g in coordination_groups if g['account_count'] >= 5]
+    if cib_groups:
+        ttps.append({
+            'name': 'Coordinated Inauthentic Behavior (CIB)',
+            'description': f'Detected {len(cib_groups)} groups with 5+ accounts sharing identical content.',
+            'severity': 'High',
+            'evidence': f'{sum(g["post_count"] for g in cib_groups)} total posts across {sum(g["account_count"] for g in cib_groups)} accounts.'
+        })
+    
+    # TTP 2: Cross-Platform Amplification - FIXED for new data structure
+    cross_platform_groups = []
+    for g in coordination_groups:
+        # Extract platforms from sample_posts_with_urls
+        platforms = set(p['platform'] for p in g.get('sample_posts_with_urls', []) if p.get('platform'))
+        if len(platforms) > 1:
+            cross_platform_groups.append({
+                'group': g,
+                'platforms': list(platforms)
+            })
+    
+    if cross_platform_groups:
+        all_platforms = set(p['platforms'] for p in cross_platform_groups)
+        ttps.append({
+            'name': 'Cross-Platform Amplification',
+            'description': f'{len(cross_platform_groups)} groups operating across {len(all_platforms)} platforms.',
+            'severity': 'Medium',
+            'evidence': f"Platforms: {', '.join(sorted(all_platforms))}"
+        })
+    
+    # TTP 3: Rapid Response / Burst Posting
+    burst_groups = [g for g in coordination_groups if g['post_count'] > 10]
+    if burst_groups:
+        max_posts = max(g['post_count'] for g in burst_groups)
+        ttps.append({
+            'name': 'Rapid Response / Burst Posting',
+            'description': f'{len(burst_groups)} groups with high-volume posting (max: {max_posts} posts/group).',
+            'severity': 'Medium',
+            'evidence': f"Identical content bursts across {sum(g['account_count'] for g in burst_groups)} accounts."
+        })
+    
+    # TTP 4: Hashtag Manipulation (Simplified)
+    hashtag_groups = [g for g in coordination_groups if '#' in g['text_sample']]
+    if hashtag_groups:
+        hashtags = []
+        for g in hashtag_groups[:5]:  # Check top 5 groups
+            text = g['text_sample']
+            found = re.findall(r'#\w+', text, re.IGNORECASE)
+            hashtags.extend(found)
+        
+        if hashtags:
+            unique_hashtags = list(set(hashtags))[:5]
+            ttps.append({
+                'name': 'Hashtag Manipulation',
+                'description': f'Coordinated use of {len(unique_hashtags)} hashtags: {", ".join(unique_hashtags)}.',
+                'severity': 'Low',
+                'evidence': f'Found in {len(hashtag_groups)} coordination groups.'
+            })
+    
+    # TTP 5: URL Amplification (NEW - uses your URL data!)
+    url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
+    if url_groups:
+        total_unique_urls = sum(len(g.get('unique_urls', [])) for g in url_groups)
+        ttps.append({
+            'name': 'URL Amplification',
+            'description': f'{len(url_groups)} groups amplifying {total_unique_urls} URLs.',
+            'severity': 'Low',
+            'evidence': 'Multiple accounts sharing same external links.'
+        })
+    
+    return ttps
     
 def get_top_pairs(coordination_groups):
     """Get top coordinated account pairs"""
@@ -653,6 +789,145 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     
     return coordination[:max_groups]
 
+def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, layout='spring'):
+    """Generate cleaner network graph - FIXED usernames and platform info"""
+    G = nx.Graph()
+    
+    # Group by exact text to find coordination
+    text_groups = posts_queryset.values('original_text').annotate(
+        account_count=Count('account_id', distinct=True)
+    ).filter(account_count__gte=min_connections)
+    
+    for group in text_groups:
+        text = group['original_text']
+        # Get real account data with URLs
+        accounts_data = list(posts_queryset.filter(original_text=text).values(
+            'account_id', 'platform', 'url'
+        ).distinct())
+        
+        accounts = []
+        for acc_data in accounts_data:
+            # --- UPDATED CLEANING LOGIC ---
+            username = clean_username(acc_data['account_id'])
+            
+            # Filter out generic artifacts that aren't real usernames
+            if username and len(username) > 2 and username.lower() not in ['twitter', 'facebook', 'tiktok', 'source']:
+                accounts.append({
+                    'id': username,
+                    'platform': acc_data['platform'],
+                    'sample_url': acc_data['url'] if acc_data['url'] and acc_data['url'].startswith('http') else None
+                })
+        
+        # Create edges between coordinated accounts
+        for i in range(len(accounts)):
+            for j in range(i+1, len(accounts)):
+                u_id = accounts[i]['id']
+                v_id = accounts[j]['id']
+                
+                # Ensure we don't link an account to itself
+                if u_id == v_id:
+                    continue
+
+                if G.has_edge(u_id, v_id):
+                    G[u_id][v_id]['weight'] += 1
+                else:
+                    G.add_edge(u_id, v_id, weight=1, 
+                             platform1=accounts[i]['platform'], 
+                             platform2=accounts[j]['platform'],
+                             sample_url1=accounts[i]['sample_url'],
+                             sample_url2=accounts[j]['sample_url'])
+    
+    if G.number_of_edges() == 0:
+        return {'nodes': [], 'edges': [], 'message': 'No coordination detected'}
+    
+    # Filter low-degree nodes
+    nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
+    G = G.subgraph(nodes_to_keep).copy()
+    
+    if G.number_of_edges() == 0:
+        return {'nodes': [], 'edges': [], 'message': 'No significant connections'}
+    
+    # Top N nodes
+    top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
+    top_node_names = [n for n, _ in top_nodes]
+    G_top = G.subgraph(top_node_names).copy()
+    
+    # Generate positions
+    if layout == 'circular':
+        pos = nx.circular_layout(G_top)
+    elif layout == 'kamada_kawai':
+        pos = nx.kamada_kawai_layout(G_top)
+    elif layout == 'spring':
+        pos = nx.spring_layout(G_top, k=0.6, iterations=50, seed=42)
+    else:
+        pos = nx.spring_layout(G_top, seed=42)
+    
+    # Build clean nodes
+    nodes = []
+    for node in G_top.nodes():
+        degree = G_top.degree(node)
+        # Search specifically for this cleaned username
+        node_posts = posts_queryset.filter(account_id__icontains=node)
+        post_count = node_posts.count()
+        
+        platforms = list(node_posts.values_list('platform', flat=True).distinct())
+        platform = platforms[0] if platforms else 'Unknown'
+        
+        # Get first valid URL properly
+        sample_url_obj = node_posts.exclude(url='').exclude(url__isnull=True).filter(url__icontains='http').first()
+        sample_url = sample_url_obj.url if sample_url_obj else None
+        
+        nodes.append({
+            'id': node,
+            'label': node,
+            'degree': degree,
+            'post_count': post_count,
+            'platform': platform,
+            'url': sample_url,         
+            'sample_url': sample_url,  
+            'x': float(pos[node][0]),
+            'y': float(pos[node][1]),
+            'size': max(15, degree * 3),
+            'color': _get_platform_color(platform)
+        })   
+    
+    # Build clean edges with URLs
+    edges = []
+    for u, v, data in G_top.edges(data=True):
+        if u in pos and v in pos:
+            sample_url = data.get('sample_url1') or data.get('sample_url2')
+            edges.append({
+                'source': u,
+                'target': v,
+                'weight': data.get('weight', 1),
+                'source_x': float(pos[u][0]),
+                'source_y': float(pos[u][1]),
+                'target_x': float(pos[v][0]),
+                'target_y': float(pos[v][1]),
+                'sample_url': sample_url
+            })
+    
+    return {
+        'nodes': nodes, 
+        'edges': edges,
+        'stats': {
+            'nodes': len(nodes),
+            'edges': len(edges),
+            'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
+        }
+    }
+    
+def _get_platform_color(platform):
+    """Get color hex code for platform"""
+    colors = {
+        'X': '#1DA1F2', 'Twitter': '#1DA1F2',
+        'Facebook': '#1877F2',
+        'TikTok': '#000000',
+        'Telegram': '#0088cc',
+        'Media': '#6B7280', 'News': '#6B7280',
+        'Unknown': '#9CA3AF'
+    }
+    return colors.get(platform, '#9CA3AF')
 
 
 # === CONFIG: Reuse your Ethiopia lexicon ===
@@ -1016,43 +1291,31 @@ def preprocess_dataframe(df):
     
 def get_election_posts_queryset(request):
     """
-    Get election-filtered posts with date range filtering
-    Reuses your Streamlit date filtering logic
+    Centralized date filtering helper.
     """
-    # Get date range from query params or default to last 30 days
-    start_date_str = request.GET.get('start_date')
-    end_date_str = request.GET.get('end_date')
-    
-    if start_date_str and end_date_str:
-        try:
-            start_date = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
-            end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00')) + timedelta(days=1)
-        except:
-            # Fallback to defaults
-            end_date = timezone.now()
-            start_date = end_date - timedelta(days=30)
-    else:
-        end_date = timezone.now()
-        start_date = end_date - timedelta(days=30)
-    
-    # Base queryset: election-related posts only
-    queryset = ProcessedPost.objects.filter(
-        is_election_related=True,
-        timestamp_share__range=[start_date, end_date]
-    )
-    
-    # Platform filter
-    platform = request.GET.get('platform')
-    if platform and platform != 'all':
-        queryset = queryset.filter(platform=platform)
-    
-    # Risk level filter
-    risk_level = request.GET.get('risk_level')
-    if risk_level and risk_level != 'all':
-        queryset = queryset.filter(risk_level=risk_level)
-    
-    return queryset, start_date, end_date
 
+    queryset = ProcessedPost.objects.all()
+
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    if start_date and end_date:
+        queryset = queryset.filter(
+            timestamp_share__date__range=[start_date, end_date]
+        )
+    else:
+        end_dt = timezone.now()
+        start_dt = end_dt - timedelta(days=30)
+
+        queryset = queryset.filter(
+            timestamp_share__gte=start_dt
+        )
+
+        start_date = start_dt
+        end_date = end_dt
+
+    return queryset.order_by('-timestamp_share'), start_date, end_date
+    
 def get_risk_actors_insight(posts_queryset, limit=8):
     """
     Identify risk actors based on:
@@ -1585,31 +1848,44 @@ class HomeView(BaseTabMixin, TemplateView):
         
 class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # Reuse your date-filtering helper
-        queryset, start_date, end_date = get_election_posts_queryset(self.request)
-        
-        # Generate narratives from FILTERED data
+
+        # Reuse date filtering helper
+        queryset, start_date, end_date = get_election_posts_queryset(
+            self.request
+        )
+
+        # Generate narratives from filtered data
         context['summaries'] = get_ethiopia_summaries(queryset)
         context['total_posts'] = queryset.count()
-        
-        # Format date range for display
+
+        # Date range display
         if start_date and end_date:
-            context['date_range'] = f"{start_date.date()} to {end_date.date()}"
+            context['date_range'] = (
+                f"{start_date.date()} to {end_date.date()}"
+            )
         else:
             context['date_range'] = "Last 30 days (default)"
-        
-        # Pass dates for form pre-fill
-        context['start_date'] = start_date.date().isoformat() if start_date else ''
-        context['end_date'] = end_date.date().isoformat() if end_date else ''
-        
-        # Pass monitoring reports to template
-        from dashboard.models import MonitoringReport
-        context['monitoring_reports'] = MonitoringReport.objects.all().order_by('-uploaded_at')[:12]
-        
+
+        # Form values
+        context['start_date'] = (
+            start_date.date().isoformat()
+            if start_date else ''
+        )
+        context['end_date'] = (
+            end_date.date().isoformat()
+            if end_date else ''
+        )
+
+        # Monitoring reports
+        context['monitoring_reports'] = (
+            MonitoringReport.objects
+            .all()
+            .order_by('-uploaded_at')[:12]
+        )
+
         return context
 
 class LexiconsView(TemplateView):
@@ -1816,99 +2092,46 @@ class PEPsView(TemplateView):
         return context        
         
 class NetworksView(TemplateView):
-    """Simplified view: just renders the template. 
-    All data loading & graph rendering is handled client-side via JS APIs."""
     template_name = 'dashboard/networks.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        request = self.request
+        min_connections = int(request.GET.get('min_connections', 2))
+        top_n = int(request.GET.get('top_n', 30))  # Reduced default
+        layout_style = request.GET.get('layout', 'spring')
+        
+        # Use election-related posts only
+        posts = ProcessedPost.objects.filter(is_election_related=True)
+        
+        # Generate CLEAN network graph
+        graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
+        
+        # Get coordination groups with FIXED usernames and URLs
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+        
+        # Analyze TTPs
+        ttps = analyze_ttps(coordination_groups, posts)
+        
         context.update({
             'active_tab': 'networks',
+            'network_graph_json': json.dumps(graph_data, default=str),
+            'coordination_groups': coordination_groups,
+            'total_coordinated_groups': len(coordination_groups),
+            'total_coordinated_accounts': sum(g['account_count'] for g in coordination_groups),
+            'total_posts': posts.count(),
+            'max_group_size': max([g['account_count'] for g in coordination_groups]) if coordination_groups else 0,
+            # Controls
+            'min_connections': min_connections,
+            'top_n': top_n,
+            'layout_style': layout_style,
+            # TTPs
+            'ttps': ttps,
         })
-        return context    
+        return context
+        
 
-@method_decorator(csrf_exempt, name='dispatch')
-class TTPProxyView(View):
-    """
-    Proxy requests from frontend to Gemma FastAPI server.
-    Optionally enrich prompts with live PostgreSQL data via SSH tunnel.
-    """
-    def post(self, request):
-        # Load config from environment
-        TTP_API_URL = os.getenv('TTP_API_URL', 'http://127.0.0.1:8002/v1/chat/completions')
-        TTP_API_KEY = os.getenv('TTP_API_KEY')
-        DB_TUNNEL_PORT = int(os.getenv('DB_TUNNEL_PORT', '5433'))
-        DB_PASSWORD = os.getenv('DB_PASSWORD')
-        
-        # Fail fast if secrets are missing
-        if not TTP_API_KEY:
-            from django.core.exceptions import ImproperlyConfigured
-            raise ImproperlyConfigured("TTP_API_KEY environment variable is required.")
-        if not DB_PASSWORD:
-            from django.core.exceptions import ImproperlyConfigured
-            raise ImproperlyConfigured("DB_PASSWORD environment variable is required.")
-        
-        try:
-            body = json.loads(request.body)
-            messages = body.get('messages', [])
-            
-            # Optional: Enrich prompt with live PostgreSQL data via tunnel
-            for msg in messages:
-                content = msg.get('content', '')
-                if 'evidence_posts' in content or 'network_dossier' in content:
-                    try:
-                        import psycopg2
-                        conn = psycopg2.connect(
-                            host='localhost', port=DB_TUNNEL_PORT,
-                            database='ethiopia_election_db',
-                            user='ethiopia_user', password=DB_PASSWORD
-                        )
-                        cur = conn.cursor()
-                        cur.execute("""
-                            SELECT account_handle, platform, original_text, timestamp_share
-                            FROM dashboard_processedpost
-                            WHERE is_election_related = TRUE
-                            ORDER BY timestamp_share DESC LIMIT 8
-                        """)
-                        rows = cur.fetchall()
-                        cur.close()
-                        conn.close()
-                        
-                        dossier = [{
-                            "account": r[0] or "unknown",
-                            "platform": r[1],
-                            "text": (r[2] or "")[:1500],
-                            "timestamp": str(r[3]) if r[3] else None
-                        } for r in rows]
-                        
-                        if '"evidence_posts": []' in content:
-                            msg['content'] = content.replace(
-                                '"evidence_posts": []',
-                                f'"evidence_posts": {json.dumps(dossier, ensure_ascii=False)}'
-                            )
-                    except Exception as e:
-                        logger.warning(f"DB enrichment skipped: {e}")
-            
-            # Forward to Gemma FastAPI server
-            resp = requests.post(
-                TTP_API_URL,
-                json=body,
-                headers={
-                    'Content-Type': 'application/json',
-                    'x-api-key': TTP_API_KEY
-                },
-                timeout=120
-            )
-            resp.raise_for_status()
-            return JsonResponse(resp.json())
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Gemma API error: {e}")
-            return JsonResponse({'error': f'Model API error: {str(e)}'}, status=502)
-        except Exception as e:
-            logger.error(f"Proxy error: {e}")
-            return JsonResponse({'error': str(e)}, status=500)
-            
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
     
@@ -2390,44 +2613,70 @@ def export_posts_api(request):
     
     return response
 
-def ttp_radar_data_api(request):
-    """Return election-related posts as JSON for the TTP Radar UI"""
-    from django.http import JsonResponse
-    from dashboard.models import ProcessedPost
-    from django.utils import timezone
+
+def generate_network_graph(request):
+    """API endpoint to generate coordination network graph"""
+    # Get parameters
+    min_connections = int(request.GET.get('min_connections', 2))
+    top_n = int(request.GET.get('top_n', 50))
     
-    try:
-        country = request.GET.get('country', 'Ethiopia')
-        limit = min(int(request.GET.get('limit', 100)), 500)
+    # Build coordination graph
+    queryset = ProcessedPost.objects.filter(
+        is_election_related=True,
+        cluster__gte=0
+    )
+    
+    G = nx.Graph()
+    
+    # Group by exact text to find coordination
+    for text_group in queryset.values('original_text').annotate(
+        accounts=Count('account_id', distinct=True)
+    ).filter(accounts__gte=2):
+        accounts = queryset.filter(original_text=text_group['original_text']).values_list('account_id', flat=True).distinct()
         
-        posts = ProcessedPost.objects.filter(
-            is_election_related=True
-        ).order_by('-timestamp_share')[:limit]
-        
-        formatted = []
-        for p in posts:
-            formatted.append({
-                'account_id': p.account_id or 'unknown',
-                'content_id': f"post_{p.id}",
-                'original_text': p.original_text or '',
-                'URL': p.url or '',
-                'timestamp_share': p.timestamp_share.isoformat() if p.timestamp_share else None,
-                'Platform': p.platform or 'Unknown',
-                'target_country': getattr(p, 'target_country', 'Ethiopia') or 'Ethiopia',
-            })
-        
-        return JsonResponse({
-            'records': formatted,
-            'count': len(formatted),
-            'country': country,
-            'generated_at': timezone.now().isoformat()
+        if len(accounts) >= 2:
+            for i in range(len(accounts)):
+                for j in range(i+1, len(accounts)):
+                    if G.has_edge(accounts[i], accounts[j]):
+                        G[accounts[i]][accounts[j]]['weight'] += 1
+                    else:
+                        G.add_edge(accounts[i], accounts[j], weight=1)
+    
+    # Filter to nodes with minimum connections
+    nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
+    G = G.subgraph(nodes_to_keep).copy()
+    
+    if G.number_of_edges() == 0:
+        return JsonResponse({'nodes': [], 'edges': [], 'message': 'No coordination links found'})
+    
+    # Get top N nodes by degree
+    top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
+    top_node_names = [n for n, _ in top_nodes]
+    G_top = G.subgraph(top_node_names).copy()
+    
+    # Prepare node data
+    node_data = []
+    for node in G_top.nodes():
+        node_data.append({
+            'id': node,
+            'degree': G_top.degree(node),
         })
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"ttp_radar_data_api error: {e}", exc_info=True)
-        return JsonResponse({
-            'error': str(e),
-            'records': [],
-            'count': 0
-        }, status=500)
+    
+    # Prepare edge data
+    edge_data = []
+    for u, v, data in G_top.edges(data=True):
+        edge_data.append({
+            'source': u,
+            'target': v,
+            'weight': data.get('weight', 1)
+        })
+    
+    return JsonResponse({
+        'nodes': node_data,
+        'edges': edge_data,
+        'stats': {
+            'total_nodes': G_top.number_of_nodes(),
+            'total_edges': G_top.number_of_edges(),
+            'avg_degree': sum(d for _, d in G_top.degree()) / G_top.number_of_nodes() if G_top.number_of_nodes() > 0 else 0
+        }
+    })
