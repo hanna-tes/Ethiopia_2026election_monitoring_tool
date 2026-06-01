@@ -32,6 +32,9 @@ urlpatterns = [
 
     path('api/network-graph/', views.generate_network_graph, name='generate_network_graph'),
     #path('api/ttp-proxy/v1/chat/completions', views.TTPProxyView.as_view(), name='ttp_proxy_api'),
+
     #path('api/ttp-radar-data/', views.ttp_radar_data_api, name='ttp_radar_data_api'),
+
+    path('api/ttp-radar-data/', views.ttp_radar_data_api, name='ttp_radar_data_api'),
 
 ]
