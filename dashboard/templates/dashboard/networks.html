@@ -1,371 +1,288 @@
 {% extends 'dashboard/base.html' %}
-{% load static %}
-
 {% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
 
 {% block extra_head %}
-{{ block.super }}
 <style>
-  /* Professional card-based layout */
-  .network-card { 
-    background: white; 
-    border-radius: 12px; 
-    padding: 1.5rem; 
-    margin-bottom: 1.5rem; 
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
-    border-left: 4px solid #3b82f6;
-    transition: transform 0.2s, box-shadow 0.2s;
-  }
-  .network-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-  .network-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
-  .network-title { font-size: 1.25rem; font-weight: 600; color: #1f2937; margin: 0; }
-  .risk-badge { padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-  .risk-high { background: #fef2f2; color: #dc2626; }
-  .risk-medium { background: #fff7ed; color: #ea580c; }
-  .risk-low { background: #f0fdf4; color: #16a34a; }
-  
-  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
-  .metric-item { text-align: center; padding: 0.5rem; background: #f8fafc; border-radius: 8px; }
-  .metric-value { font-size: 1.25rem; font-weight: 700; color: #3b82f6; }
-  .metric-label { font-size: 0.75rem; color: #64748b; }
-  
-  .evidence-expander { margin-top: 1rem; }
-  .evidence-expander summary { cursor: pointer; font-weight: 600; color: #2563eb; }
-  
-  .loading-state { text-align: center; padding: 2rem; color: #64748b; }
-  .error-state { text-align: center; padding: 2rem; color: #dc2626; background: #fef2f2; border-radius: 8px; margin: 1rem 0; }
-  
-  .raw-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  .raw-table th { background: #f1f5f9; padding: 0.75rem; text-align: left; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
-  .raw-table td { padding: 0.75rem; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-  .status-pill { display: inline-block; padding: 0.5rem 1rem; background: #eff6ff; color: #1e40af; border-radius: 8px; font-size: 0.9rem; margin-bottom: 1rem; }
+    .network-container { background: #0f172a; border-radius: 12px; padding: 1rem; }
+    .control-panel { background: #1e293b; border-radius: 8px; padding: 1rem; }
+    .stat-card { background: #1e293b; border-radius: 8px; padding: 1rem; }
+    .ttp-card { background: #334155; border-radius: 8px; padding: 1rem; border-left: 4px solid #3b82f6; }
+    input[type="range"] { width: 100%; accent-color: #3b82f6; }
+    select, input[type="number"] { background: #475569; color: white; border: none; border-radius: 6px; padding: 0.5rem; }
+    .account-table { background: #1e293b; border-radius: 8px; overflow: hidden; }
+    .account-table th { background: #334155; color: #94a3b8; font-weight: 600; }
+    .account-table td { border-bottom: 1px solid #334155; }
+    .account-table tr:hover { background: #334155; }
+    .coordination-card { background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .coordination-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .coordination-stats { display: flex; gap: 2rem; margin-bottom: 1rem; }
+    .stat-item { text-align: center; }
+    .stat-value { font-size: 1.5rem; font-weight: bold; color: #3b82f6; }
+    .stat-label { font-size: 0.875rem; color: #64748b; }
+    .text-sample { background: #f8fafc; padding: 1rem; border-radius: 8px; margin: 1rem 0; font-style: italic; color: #475569; }
+    .post-link { @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors mr-2 mb-2; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
-  <div class="flex justify-between items-start mb-6">
+    <h2 class="text-2xl font-bold text-gray-900 mb-2">🕸️ Account Coordination Network</h2>
+    <p class="text-gray-600 mb-6">Visualizing accounts sharing identical election messages. <strong>Node size = connections, edge thickness = coordination strength.</strong></p>
+    
+    <!-- Controls -->
+    <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 control-panel">
+        <div>
+            <label class="text-sm text-gray-300 mb-1 block">Min connections</label>
+            <input type="range" name="min_connections" min="1" max="10" value="{{ min_connections }}" 
+                   oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
+            <output class="text-sm text-blue-400">{{ min_connections }}</output>
+        </div>
+        <div>
+            <label class="text-sm text-gray-300 mb-1 block">Top N accounts</label>
+            <input type="range" name="top_n" min="10" max="100" step="10" value="{{ top_n }}" 
+                   oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
+            <output class="text-sm text-blue-400">{{ top_n }}</output>
+        </div>
+        <div>
+            <label class="text-sm text-gray-300 mb-1 block">Layout</label>
+            <select name="layout" onchange="this.form.submit()">
+                <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
+                <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
+                <option value="kamada_kawai" {% if layout_style == 'kamada_kawai' %}selected{% endif %}>Kamada-Kawai</option>
+            </select>
+        </div>
+        <div class="flex items-end">
+            <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                🔄 Update View
+            </button>
+        </div>
+    </form>
+    
+    <!-- Network Graph -->
+    <div class="network-container mb-6">
+        <div id="network-graph" class="w-full h-[600px]"></div>
+        {% if network_graph_json.stats.nodes == 0 %}
+        <div class="text-center py-12 text-gray-400">
+            <p class="text-xl mb-2">📊 No coordination detected</p>
+            <p>Try lowering "Min connections" or check your data upload</p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Updated Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-blue-400">{{ total_coordinated_groups }}</div>
+            <div class="text-sm text-gray-400">Coordination Groups</div>
+        </div>
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-green-400">{{ total_coordinated_accounts }}</div>
+            <div class="text-sm text-gray-400">Coordinated Accounts</div>
+        </div>
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-purple-400">{{ max_group_size }}</div>
+            <div class="text-sm text-gray-400">Largest Group</div>
+        </div>
+        <div class="stat-card text-center">
+            <div class="text-3xl font-bold text-orange-400">{{ total_posts }}</div>
+            <div class="text-sm text-gray-400">Election Posts</div>
+        </div>
+    </div>
+    
+    <!-- TTPs Section -->
+    {% if ttps %}
+    <div class="mb-8">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">🎯 Detected Tactics & Procedures</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {% for ttp in ttps %}
+            <div class="ttp-card">
+                <div class="flex justify-between items-start mb-2">
+                    <h4 class="font-semibold text-white">{{ ttp.name }}</h4>
+                    <span class="px-2 py-1 rounded text-xs font-medium
+                        {% if ttp.severity == 'High' %}bg-red-500
+                        {% elif ttp.severity == 'Medium' %}bg-yellow-500
+                        {% else %}bg-blue-500{% endif %} text-white">
+                        {{ ttp.severity }}
+                    </span>
+                </div>
+                <p class="text-sm text-gray-200 mb-2">{{ ttp.description }}</p>
+                <p class="text-xs text-gray-400">📊 {{ ttp.evidence }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Coordination Groups - FIXED for new data structure -->
+    {% if coordination_groups %}
     <div>
-      <h2 class="text-2xl font-bold text-gray-900 mb-1">🕸️ Network & TTP Analysis</h2>
-      <p class="text-sm text-gray-500">Detecting coordination patterns & manipulation tactics</p>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">📊 Top Coordination Groups</h3>
+        {% for group in coordination_groups|slice:":6" %}
+        <div class="coordination-card">
+            <div class="coordination-header">
+                <div class="flex items-center gap-4">
+                    <div class="bg-gradient-to-r from-blue-500 to-purple-600 text-white w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shadow-lg">
+                        #{{ group.id }}
+                    </div>
+                    <div>
+                        <h4 class="text-xl font-bold text-gray-900 mb-1">Group #{{ group.id }}</h4>
+                        <div class="flex items-center gap-4 text-sm text-gray-600">
+                            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-red-500 rounded-full"></span>{{ group.account_count }} accounts</span>
+                            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-blue-500 rounded-full"></span>{{ group.post_count }} identical posts</span>
+                            {% if group.unique_urls %}
+                            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-green-500 rounded-full"></span>{{ group.unique_urls|length }} URLs</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Message Sample -->
+            <div class="text-sample mb-6">
+                <strong>Identical Message:</strong><br>
+                "{{ group.text_sample }}"
+            </div>
+            
+            <!-- NEW: Sample Posts with URLs - THE KEY FIX! -->
+            {% if group.sample_posts_with_urls %}
+            <div class="mb-6">
+                <h5 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                    🔗 Sample Posts ({{ group.sample_posts_with_urls|length }})
+                </h5>
+                <div class="space-y-3">
+                    {% for post in group.sample_posts_with_urls %}
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start mb-2">
+                            <div class="flex items-center gap-3">
+                                <span class="font-mono text-sm font-semibold text-gray-900">{{ post.username|truncatechars:25 }}</span>
+                                <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                                    {{ post.platform|default:"Unknown"|title }}
+                                </span>
+                            </div>
+                            <span class="text-xs text-gray-500">{{ post.timestamp }}</span>
+                        </div>
+                        <p class="text-sm text-gray-700 mb-3">{{ post.text_preview }}</p>
+                        {% if post.url %}
+                        <a href="{{ post.url }}" target="_blank" rel="noopener noreferrer" 
+                           class="post-link inline-flex items-center gap-1 text-xs font-medium hover:shadow-sm">
+                            🔗 Open Post
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                            </svg>
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Top Accounts -->
+            {% if group.accounts %}
+            <div>
+                <h5 class="font-semibold text-gray-800 mb-3">👥 Top Accounts ({{ group.accounts|length }})</h5>
+                <div class="flex flex-wrap gap-2">
+                    {% for account in group.accounts|slice:":12" %}
+                    <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-mono hover:bg-blue-200 cursor-pointer transition-colors">
+                        {{ account|truncatechars:20 }}
+                    </span>
+                    {% endfor %}
+                    {% if group.account_count > 12 %}
+                    <span class="px-3 py-1 bg-gray-200 text-gray-600 rounded-full text-sm font-medium">+{{ group.account_count|add:"-12" }} more</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        
+        {% if coordination_groups|length > 6 %}
+        <div class="text-center mt-6 p-6 bg-gray-50 rounded-xl">
+            <p class="text-gray-600 mb-2">... and {{ coordination_groups|length|add:"-6" }} more groups</p>
+            <a href="?min_connections=1&top_n=100" class="text-blue-600 hover:underline font-medium">View all groups →</a>
+        </div>
+        {% endif %}
     </div>
-    <button id="refreshBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm flex items-center gap-2 transition-colors">
-       Refresh Analysis
-    </button>
-  </div>
-
-  <!-- Date Filter Status Pill -->
-  <div id="filterStatus" class="hidden mb-4"></div>
-
-  <!-- Loading State -->
-  <div id="loadingState" class="loading-state hidden">
-    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-    <p class="text-gray-600">Analyzing coordination patterns with Gemma model...</p>
-  </div>
-
-  <!-- Error State -->
-  <div id="errorState" class="error-state hidden">
-    <p class="font-semibold">⚠️ Analysis failed</p>
-    <p class="text-sm" id="errorMessage">Please try again or check server logs.</p>
-  </div>
-
-  <!-- Results Container -->
-  <div id="resultsContainer" class="space-y-6">
-    <div class="text-center py-8 text-gray-500">
-      Select a date range on the Home tab to begin analysis, or click "Refresh Analysis".
+    {% else %}
+    <div class="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+        <div class="text-4xl mb-4">🕸️</div>
+        <h3 class="text-xl font-semibold text-gray-700 mb-2">No Coordination Detected</h3>
+        <p class="text-gray-500 mb-4">Try lowering minimum connections or upload more election data</p>
+        <a href="{% url 'upload_data' %}" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+            📤 Upload Data
+        </a>
     </div>
-  </div>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
-{{ block.super }}
-<script src="{% static 'dashboard/ttp_radar/shared-core.js' %}"></script>
-
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('🕸️ Networks tab: DOM loaded');
-  
-  const refreshBtn = document.getElementById('refreshBtn');
-  const loadingState = document.getElementById('loadingState');
-  const errorState = document.getElementById('errorState');
-  const errorMessage = document.getElementById('errorMessage');
-  const resultsContainer = document.getElementById('resultsContainer');
-  
-  // Auto-load if date params exist
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.has('start_date') && urlParams.has('end_date')) {
-    console.log('📅 Date filters detected, auto-loading...');
-    setTimeout(loadNetworkAnalysis, 500);
-  }
-  
-  refreshBtn?.addEventListener('click', loadNetworkAnalysis);
-  
-  async function loadNetworkAnalysis() {
-    console.log('▶️ Starting analysis...');
-    loadingState?.classList.remove('hidden');
-    errorState?.classList.add('hidden');
-    if (resultsContainer) resultsContainer.innerHTML = '';
+    const graphData = {{ network_graph_json|safe }};
     
-    try {
-      // 1. Fetch data from your Django API
-      const start = urlParams.get('start_date') || '2025-10-01';
-      const end = urlParams.get('end_date') || new Date().toISOString().split('T')[0];
-      console.log(`📥 Fetching: /api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
-      
-      const dataRes = await fetch(`/api/ttp-radar-data/?country=Ethiopia&limit=100&start_date=${start}&end_date=${end}`);
-      if (!dataRes.ok) throw new Error(`API returned ${dataRes.status}`);
-      
-      const data = await dataRes.json();
-      console.log(`✅ Data loaded: ${data.count} records`);
-      
-      if (!data.records?.length) {
-        throw new Error('No records returned from API');
-      }
-      
-      // 2. Format for DisarmCore
-      console.log('🔄 Formatting records for DisarmCore...');
-      const records = data.records.map(row => {
-        const postText = row.original_text || '';
-        return {
-          account: row.account_id || 'unknown',
-          post: postText,
-          publication_date: row.timestamp_share,
-          primary_url: row.URL || '',
-          primary_domain: row.URL ? new URL(row.URL).hostname.replace('www.', '') : '',
-          platform: row.Platform || 'Unknown',
-          hashtags: (postText.match(/#\w+/g) || []).map(h => h.slice(1)),
-          manipulation_categories: [],
-          // Required fields for DisarmCore
-          id: `post_${row.id || Math.random()}`,
-          timestamp: row.timestamp_share ? new Date(row.timestamp_share).getTime() : Date.now(),
-          normalizedText: postText.toLowerCase().replace(/[^\w\s]/g, ' ').trim(),
-          tokens: postText.toLowerCase().split(/\s+/).filter(w => w.length > 2),
-          hasManipulationCue: false,
-          manipulationScore: 0,
+    if (graphData && graphData.nodes && graphData.nodes.length > 0) {
+        // Edges
+        const edgeTraces = graphData.edges.map(edge => ({
+            x: [edge.source_x, edge.target_x, null],
+            y: [edge.source_y, edge.target_y, null],
+            mode: 'lines',
+            line: { 
+                width: Math.max(2, edge.weight * 3), 
+                color: 'rgba(59, 130, 246, 0.4)' 
+            },
+            hoverinfo: 'none',
+            showlegend: false,
+            type: 'scatter'
+        }));
+        
+        // Nodes
+        const nodeTrace = {
+            x: graphData.nodes.map(n => n.x),
+            y: graphData.nodes.map(n => n.y),
+            mode: 'markers+text',
+            marker: {
+                size: graphData.nodes.map(n => n.size),
+                color: graphData.nodes.map(n => n.color),
+                line: { width: 2, color: 'white' }
+            },
+            text: graphData.nodes.map(n => n.label),
+            textposition: 'middle center',
+            textfont: { 
+                family: 'monospace', 
+                size: 10, 
+                color: '#ffffff',
+                weight: 'bold'
+            },
+            hovertemplate: 
+                '<b>%{text}</b><br>' +
+                'Connections: %{marker.size}<br>' +
+                'Posts: %{customdata}<br>' +
+                '<extra></extra>',
+            customdata: graphData.nodes.map(n => n.post_count),
+            name: 'Accounts',
+            hoverlabel: { bgcolor: 'rgba(0,0,0,0.8)', font: {color: 'white'} }
         };
-      });
-      
-      // 3. Run DisarmCore coordination detection
-      if (typeof window.DisarmCore?.analyzeRecords !== 'function') {
-        throw new Error('DisarmCore.analyzeRecords is not a function');
-      }
-      
-      console.log('🔍 Running DisarmCore.analyzeRecords...');
-      const params = {
-        linkWindowMin: 30,
-        postWindowMin: 15,
-        textThreshold: 0.82,
-        minEvidence: 2,
-        networkThreshold: 45
-      };
-      
-      const analysis = window.DisarmCore.analyzeRecords(records, params, { filterNetworksWithTechniques: false });
-      console.log(`📊 Found ${analysis.allNetworks?.length || 0} networks`);
-      
-      if (!analysis.allNetworks?.length) {
-        renderFallbackTable(data.records);
-        return;
-      }
-      
-      // 4. Send top networks to Gemma for TTP adjudication (via your Django proxy)
-      console.log('🤖 Sending networks to Gemma for TTP analysis...');
-      resultsContainer.innerHTML = `<div class="text-center py-4 text-blue-600">Found ${analysis.allNetworks.length} networks. Running TTP adjudication with Gemma...</div>`;
-      
-      // Prepare dossier for LLM (match your teammate's format)
-      const topNetworks = analysis.allNetworks.slice(0, 3); // Limit to top 3 for speed
-      const dossiers = topNetworks.map(net => ({
-        network_id: net.id,
-        network_type: net.type,
-        account_count: net.accounts?.length || 0,
-        signal_totals: net.signalTotals || {},
-        manipulation_share: net.manipulationShare || 0,
-        shared_manipulation_categories: net.sharedManipulationCategories || [],
-        top_domains: (net.topDomains || []).slice(0, 3),
-        top_urls: (net.topUrls || []).slice(0, 3),
-        top_hashtags: (net.topHashtags || []).slice(0, 3),
-        densest_burst: net.densestBurst || { window_minutes: 0, post_count: 0, unique_accounts: 0 },
-        median_link_delta_minutes: net.medianLinkDelta || 0,
-        median_post_delta_minutes: net.medianPostDelta || 0,
-        repeated_link_target: net.repeatedLinkTarget || '—',
-        evidence_posts: (net.llmDossier?.evidence_posts || []).slice(0, 8).map(p => ({
-          account: p.account,
-          display_name: p.display_name || '',
-          bio: p.bio || '',
-          title: p.title || '',
-          publication_date: p.publication_date,
-          primary_url: p.primary_url,
-          primary_domain: p.primary_domain,
-          hashtags: p.hashtags || [],
-          manipulation_categories: p.manipulation_categories || [],
-          post: p.post || ''
-        })),
-        allowed_techniques: ['T0049', 'T0049.002', 'T0049.003', 'T0049.005', 'T0016', 'T0060', 'T0097.202', 'T0143.003', 'T0119', 'T0119.001', 'T0119.002', 'T0097.102', 'T0143.002', 'T0149.003', 'T0084.002'],
-        instructions: 'Only return a TTP if the evidence supports both coordination and clear manipulation intent. Use raw observable cues from the dossier only. Return strict JSON only.'
-      }));
-      
-      // Call your Django TTP proxy
-      const ttpRes = await fetch('/api/ttp-proxy/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': 'ethiopia-ttp-dev-key' // Match your .env TTP_API_KEY
-        },
-        body: JSON.stringify({
-          model: 'gemma-disarm-phase3-ttp',
-          messages: [{
-            role: 'user',
-            content: `Analyze these ${dossiers.length} coordination networks for DISARM TTPs. Return strict JSON array with technique matches for each network.`
-          }],
-          // Note: NO temperature argument (fixed in views.py)
-          max_tokens: 2048
-        })
-      });
-      
-      if (!ttpRes.ok) {
-        console.warn(`⚠️ TTP proxy returned ${ttpRes.status}. Showing coordination results without TTP adjudication.`);
-        renderNetworksWithoutTTP(analysis.allNetworks);
-        return;
-      }
-      
-      const ttpData = await ttpRes.json();
-      console.log('✅ TTP adjudication complete');
-      
-      // 5. Render rich TTP cards
-      renderRichTTPCards(analysis.allNetworks, ttpData);
-      
-    } catch (err) {
-      console.error('❌ Analysis failed:', err);
-      if (errorState) {
-        errorState.classList.remove('hidden');
-        errorMessage.textContent = `Error: ${err.message}. Check console (F12) for details.`;
-      }
-    } finally {
-      if (loadingState) loadingState.classList.add('hidden');
+        
+        const layout = {
+            title: {
+                text: `Network Graph (${graphData.stats.nodes} nodes, ${graphData.stats.edges} edges)`,
+                font: { size: 16, color: 'white' }
+            },
+            showlegend: false,
+            hovermode: 'closest',
+            margin: { t: 50, b: 20, l: 20, r: 20 },
+            xaxis: { showgrid: false, zeroline: false, showticklabels: false },
+            yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+            plot_bgcolor: '#0f172a',
+            paper_bgcolor: '#0f172a',
+            font: { color: 'white' }
+        };
+        
+        Plotly.newPlot('network-graph', [...edgeTraces, nodeTrace], layout, { 
+            responsive: true,
+            displayModeBar: true
+        });
     }
-  }
-  
-  // Render basic network cards (fallback if TTP call fails)
-  function renderNetworksWithoutTTP(networks) {
-    console.log('🎨 Rendering basic network cards...');
-    let html = '';
-    
-    networks.slice(0, 10).forEach((net, idx) => {
-      const riskClass = net.riskScore >= 67 ? 'risk-high' : net.riskScore >= 40 ? 'risk-medium' : 'risk-low';
-      
-      html += `
-      <div class="network-card">
-        <div class="network-header">
-          <h3 class="network-title">Network #${idx + 1} — ${net.type || 'Coordination Group'}</h3>
-          <span class="risk-badge ${riskClass}">${net.riskBand || 'Medium'} Risk</span>
-        </div>
-        <div class="metrics-grid">
-          <div class="metric-item"><div class="metric-value">${net.accounts?.length || 0}</div><div class="metric-label">Accounts</div></div>
-          <div class="metric-item"><div class="metric-value">${net.posts || 0}</div><div class="metric-label">Posts</div></div>
-          <div class="metric-item"><div class="metric-value">${net.manipulationShare ? Math.round(net.manipulationShare * 100) : 0}%</div><div class="metric-label">Manipulation</div></div>
-        </div>
-        <details class="evidence-expander">
-          <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">📂 View Evidence</summary>
-          <div class="mt-3 text-sm text-gray-600">
-            <p><strong>Accounts:</strong> ${net.accounts?.slice(0, 5).join(', ') || 'Unknown'}</p>
-            <p class="mt-1"><strong>Signals:</strong> ${JSON.stringify(net.signalTotals || {})}</p>
-          </div>
-        </details>
-      </div>`;
-    });
-    
-    if (resultsContainer) resultsContainer.innerHTML = html;
-  }
-  
-  // Render RICH TTP cards with technique matches (like your teammate's template)
-  function renderRichTTPCards(networks, ttpResponse) {
-    console.log('🎨 Rendering rich TTP cards...');
-    
-    // Parse TTP results (handle both array and object responses)
-    let ttpResults = [];
-    try {
-      if (ttpResponse?.choices?.[0]?.message?.content) {
-        const content = ttpResponse.choices[0].message.content.trim();
-        // Remove markdown code fences if present
-        const jsonStr = content.replace(/^```(?:json)?\n?|\n?```$/g, '');
-        ttpResults = JSON.parse(jsonStr);
-        if (!Array.isArray(ttpResults)) ttpResults = [ttpResults];
-      }
-    } catch (e) {
-      console.warn('⚠️ Could not parse TTP response:', e);
-    }
-    
-    let html = '';
-    
-    networks.slice(0, 10).forEach((net, idx) => {
-      const riskClass = net.riskScore >= 67 ? 'risk-high' : net.riskScore >= 40 ? 'risk-medium' : 'risk-low';
-      const ttpMatches = ttpResults[idx]?.techniques || ttpResults[idx]?.candidateTechniques || [];
-      
-      html += `
-      <div class="network-card">
-        <div class="network-header">
-          <h3 class="network-title">Network #${idx + 1} — ${net.type || 'Coordination Group'}</h3>
-          <span class="risk-badge ${riskClass}">${net.riskBand || 'Medium'} Risk</span>
-        </div>
-        
-        <div class="metrics-grid">
-          <div class="metric-item"><div class="metric-value">${net.accounts?.length || 0}</div><div class="metric-label">Accounts</div></div>
-          <div class="metric-item"><div class="metric-value">${net.posts || 0}</div><div class="metric-label">Posts</div></div>
-          <div class="metric-item"><div class="metric-value">${net.manipulationShare ? Math.round(net.manipulationShare * 100) : 0}%</div><div class="metric-label">Manipulation</div></div>
-          <div class="metric-item"><div class="metric-value">${ttpMatches.length}</div><div class="metric-label">TTPs</div></div>
-        </div>
-        
-        ${ttpMatches.length ? `
-        <div class="mt-4">
-          <h4 class="text-sm font-semibold text-gray-700 mb-2">🎯 Confirmed TTPs</h4>
-          <div class="flex flex-wrap gap-2">
-            ${ttpMatches.slice(0, 5).map(ttp => `
-              <span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-medium border border-purple-200" title="${ttp.summary || ''}">
-                ${ttp.techniqueId}: ${ttp.name?.slice(0, 25)}${ttp.name?.length > 25 ? '...' : ''}
-              </span>
-            `).join('')}
-            ${ttpMatches.length > 5 ? `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">+${ttpMatches.length - 5} more</span>` : ''}
-          </div>
-        </div>` : '<p class="text-sm text-gray-500 italic mt-2">No specific TTPs confirmed for this network.</p>'}
-        
-        <details class="evidence-expander mt-4">
-          <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">📂 View Network Evidence</summary>
-          <div class="mt-3 space-y-3">
-            ${net.llmDossier?.evidence_posts?.slice(0, 3).map(post => `
-              <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <div class="flex items-center justify-between mb-2 text-xs">
-                  <span class="font-mono">${post.account || 'Unknown'}</span>
-                  <span class="text-gray-400">${post.platform || ''}</span>
-                </div>
-                <p class="text-sm text-gray-700">${(post.post || '').slice(0, 150)}${(post.post || '').length > 150 ? '...' : ''}</p>
-              </div>
-            `).join('') || '<p class="text-sm text-gray-500">No evidence posts available</p>'}
-          </div>
-        </details>
-      </div>`;
-    });
-    
-    if (resultsContainer) resultsContainer.innerHTML = html;
-  }
-  
-  // Fallback: Show raw posts table
-  function renderFallbackTable(posts) {
-    console.log('🎨 Rendering fallback table...');
-    let html = `<div class="text-center py-4 text-gray-500">Showing ${posts.length} recent posts (No coordination networks detected)</div>`;
-    html += `<div class="overflow-x-auto mt-4"><table class="raw-table"><thead><tr><th>Account</th><th>Platform</th><th>Post Preview</th><th>Date</th></tr></thead><tbody>`;
-    
-    posts.slice(0, 20).forEach(p => {
-      html += `<tr class="bg-white border-b hover:bg-gray-50">
-        <td class="font-mono text-xs">${p.account_id || '—'}</td>
-        <td><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${p.Platform || '—'}</span></td>
-        <td class="max-w-xs truncate">${(p.original_text || '').substring(0, 80)}...</td>
-        <td class="text-xs">${p.timestamp_share ? p.timestamp_share.split('T')[0] : '—'}</td>
-      </tr>`;
-    });
-    
-    html += `</tbody></table></div>`;
-    if (resultsContainer) resultsContainer.innerHTML = html;
-  }
-});
 </script>
 {% endblock %}
