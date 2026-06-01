@@ -2680,3 +2680,45 @@ def generate_network_graph(request):
             'avg_degree': sum(d for _, d in G_top.degree()) / G_top.number_of_nodes() if G_top.number_of_nodes() > 0 else 0
         }
     })
+
+def ttp_radar_data_api(request):
+    """Return election-related posts as JSON for the TTP Radar UI"""
+    from django.http import JsonResponse
+    from dashboard.models import ProcessedPost
+    from django.utils import timezone
+    
+    try:
+        country = request.GET.get('country', 'Ethiopia')
+        limit = min(int(request.GET.get('limit', 100)), 500)
+        
+        posts = ProcessedPost.objects.filter(
+            is_election_related=True
+        ).order_by('-timestamp_share')[:limit]
+        
+        formatted = []
+        for p in posts:
+            formatted.append({
+                'account_id': p.account_id or 'unknown',
+                'content_id': f"post_{p.id}",
+                'original_text': p.original_text or '',
+                'URL': p.url or '',
+                'timestamp_share': p.timestamp_share.isoformat() if p.timestamp_share else None,
+                'Platform': p.platform or 'Unknown',
+                'target_country': getattr(p, 'target_country', 'Ethiopia') or 'Ethiopia',
+            })
+        
+        return JsonResponse({
+            'records': formatted,
+            'count': len(formatted),
+            'country': country,
+            'generated_at': timezone.now().isoformat()
+        })
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"ttp_radar_data_api error: {e}", exc_info=True)
+        return JsonResponse({
+            'error': str(e),
+            'records': [],
+            'count': 0
+        }, status=500)
