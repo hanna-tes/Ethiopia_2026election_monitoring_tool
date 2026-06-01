@@ -50,6 +50,45 @@ logger = logging.getLogger(__name__)
 
 #  HELPER FUNCTIONS
 
+ETHIOPIA_PATTERNS = [
+    r"\bethiopia\b",
+    r"\bethiopian\b",
+    r"\babiy\b",
+    r"\bfano\b",
+    r"\btplf\b",
+    r"\bamhara\b",
+    r"\boromia\b",
+    r"\btigray\b",
+    r"\baddis\b",
+    r"\bnebe\b",
+    r"\bprosperity party\b",
+]
+
+def calculate_ethiopia_relevance(text):
+    """
+    Returns score between 0 and 1.
+    Measures whether Ethiopia is a central topic
+    rather than a passing mention.
+    """
+
+    text = str(text).lower()
+
+    ethiopia_mentions = 0
+
+    for pattern in ETHIOPIA_PATTERNS:
+        ethiopia_mentions += len(
+            re.findall(pattern, text)
+        )
+
+    words = len(text.split())
+
+    if words == 0:
+        return 0
+
+    density = ethiopia_mentions / max(words, 1)
+
+    return density
+
 def clean_username(raw_name):
     if not raw_name or pd.isna(raw_name):
         return "Unknown"
@@ -801,6 +840,10 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
     for group in text_groups:
         text = group['original_text']
         # Get real account data with URLs
+        relevance = calculate_ethiopia_relevance(text)
+
+        if relevance < 2:
+            continue
         accounts_data = list(posts_queryset.filter(original_text=text).values(
             'account_id', 'platform', 'url'
         ).distinct())
@@ -916,7 +959,41 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
         }
     }
-    
+def calculate_ethiopia_relevance(text):
+    if not text:
+        return 0
+
+    text = str(text).lower()
+
+    ethiopia_entities = [
+        "ethiopia",
+        "ethiopian",
+        "abiy",
+        "fano",
+        "tplf",
+        "amhara",
+        "oromia",
+        "tigray",
+        "addis",
+        "nebe",
+        "prosperity party"
+    ]
+
+    matches = sum(
+        text.count(entity)
+        for entity in ethiopia_entities
+    )
+
+    unique_matches = sum(
+        1
+        for entity in ethiopia_entities
+        if entity in text
+    )
+
+    return (
+        matches * 0.4 +
+        unique_matches * 0.6
+    )    
 def _get_platform_color(platform):
     """Get color hex code for platform"""
     colors = {
