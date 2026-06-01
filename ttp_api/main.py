@@ -1,4 +1,4 @@
-# ttp_api/main.py - LOCAL CACHE + LOCAL ADAPTER SETUP
+# ttp_api/main.py - FIXED: Uses existing quantization from cache
 import os, json, time, uuid
 import torch
 from fastapi import FastAPI, HTTPException
@@ -9,8 +9,6 @@ import uvicorn
 HOST = os.getenv('TTP_API_HOST', '127.0.0.1')
 PORT = int(os.getenv('TTP_API_PORT', '8002'))
 API_KEY = os.getenv('TTP_API_KEY', 'ethiopia-ttp-dev-key')
-
-# PATH TO YOUR ADAPTER (Downloaded from Drive)
 ADAPTER_PATH = '/Users/hannateshager/Ethiopia_2026election_monitoring_tool/model_cache/gemma-disarm-phase3-ttp'
 
 app = FastAPI(title='Gemma DISARM TTP API')
@@ -28,13 +26,13 @@ def get_model():
 
             print("🔄 1. Loading Base Model from LOCAL Cache...")
             
-            # FORCE loading from local cache using the exact folder name you have
             BASE_MODEL_ID = "unsloth/gemma-4-e4b-it-unsloth-bnb-4bit"
             
+            # 🔧 FIX: Remove load_in_4bit - use existing quantization from cache
             _model, _tokenizer = FastModel.from_pretrained(
                 model_name=BASE_MODEL_ID,
-                load_in_4bit=True,
-                local_files_only=True,  # 👈 CRITICAL: Uses your cache, no download
+                local_files_only=True,  # Use cached files only
+                # load_in_4bit=True,  ← REMOVED: Model already has quantization
             )
 
             print("✅ Base model loaded from cache!")
@@ -75,7 +73,6 @@ def build_reply(messages, temperature=0.1, max_tokens=512):
     global _model, _tokenizer
     if _model is None: _model, _tokenizer = get_model()
 
-    # Use the exact system prompt from your teammate's Colab
     SYSTEM_PROMPT = "You are a fine-tuned DISARM TTP adjudicator. Consider only these techniques: T0049, T0049.002, T0049.003, T0049.005, T0016, T0060, T0097.202, T0143.003, T0119, T0119.001, T0119.002, T0097.102, T0143.002, T0149.003, T0084.002. Use only raw observable cues present in the dossier. Return strict JSON only. Prefer false negatives over false positives."
 
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
