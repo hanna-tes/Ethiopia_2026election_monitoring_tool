@@ -1,6 +1,5 @@
-# ttp_api/main.py - FIXED: Uses existing quantization from cache
+# ttp_api/main.py - Match Colab training setup
 import os, json, time, uuid
-import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal
@@ -22,35 +21,48 @@ def get_model():
         try:
             from unsloth import FastModel
             from unsloth.chat_templates import get_chat_template
-            from peft import PeftModel
-
-            print("🔄 1. Loading Base Model from LOCAL Cache...")
             
-            BASE_MODEL_ID = "unsloth/gemma-4-e4b-it-unsloth-bnb-4bit"
+            print(f"🔄 Loading from adapter path (matches Colab setup)...")
             
-            # 🔧 FIX: Remove load_in_4bit - use existing quantization from cache
+            # EXACT MATCH to Colab notebook loading
             _model, _tokenizer = FastModel.from_pretrained(
-                model_name=BASE_MODEL_ID,
-                local_files_only=True,  # Use cached files only
-                # load_in_4bit=True,  ← REMOVED: Model already has quantization
+                model_name=ADAPTER_PATH,  # Load from YOUR adapter folder
+                max_seq_length=4096,      # Match training config
+                load_in_4bit=True,        # Match training config
+                # Don't specify local_files_only - let Unsloth handle it
             )
-
-            print("✅ Base model loaded from cache!")
-            print("🔄 2. Applying Local Adapter...")
-
-            # Apply your teammate's adapter
-            _model = PeftModel.from_pretrained(_model, ADAPTER_PATH)
             
-            # Enable inference mode
+            # Enable inference mode (from Colab)
             FastModel.for_inference(_model)
+            
+            # Setup chat template (from Colab)
             _tokenizer = get_chat_template(_tokenizer, chat_template='gemma-4')
-
-            print("✅ Adapter applied! Model is ready.")
-
+            
+            print(f"✅ Model loaded successfully from adapter!")
+            
         except Exception as e:
-            print(f"❌ FAILED to load model: {e}")
-            print("💡 Check if adapter files exist at:", ADAPTER_PATH)
-            raise e
+            print(f"❌ Failed: {e}")
+            print("💡 Trying alternative: force_requantize...")
+            
+            # Fallback: try with force_requantize
+            try:
+                from unsloth import FastModel
+                from unsloth.chat_templates import get_chat_template
+                
+                _model, _tokenizer = FastModel.from_pretrained(
+                    model_name=ADAPTER_PATH,
+                    max_seq_length=4096,
+                    load_in_4bit=True,
+                    force_requantize=True,  # Force match quantization
+                )
+                
+                FastModel.for_inference(_model)
+                _tokenizer = get_chat_template(_tokenizer, chat_template='gemma-4')
+                print(f"✅ Model loaded with force_requantize!")
+                
+            except Exception as e2:
+                print(f"❌ Also failed: {e2}")
+                raise e2
             
     return _model, _tokenizer
 
@@ -72,11 +84,11 @@ def flatten_content(content):
 def build_reply(messages, temperature=0.1, max_tokens=512):
     global _model, _tokenizer
     if _model is None: _model, _tokenizer = get_model()
-
+    
     SYSTEM_PROMPT = "You are a fine-tuned DISARM TTP adjudicator. Consider only these techniques: T0049, T0049.002, T0049.003, T0049.005, T0016, T0060, T0097.202, T0143.003, T0119, T0119.001, T0119.002, T0097.102, T0143.002, T0149.003, T0084.002. Use only raw observable cues present in the dossier. Return strict JSON only. Prefer false negatives over false positives."
-
+    
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
-
+    
     normalized = [{'role': m['role'], 'content': flatten_content(m['content'])} for m in full_messages]
     prompt = _tokenizer.apply_chat_template(normalized, tokenize=False, add_generation_prompt=True)
     
@@ -97,7 +109,7 @@ def build_reply(messages, temperature=0.1, max_tokens=512):
 @app.post('/v1/chat/completions')
 def chat_completions(req: ChatCompletionRequest):
     try:
-        print("🤖 Generating TTP analysis...")
+        print("🤖 Generating TTP analysis with Gemma...")
         text, prompt_tokens, completion_tokens = build_reply(req.messages, req.temperature, req.max_tokens)
         
         return {
@@ -109,7 +121,7 @@ def chat_completions(req: ChatCompletionRequest):
             'usage': {'prompt_tokens': prompt_tokens, 'completion_tokens': completion_tokens, 'total_tokens': prompt_tokens + completion_tokens}
         }
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Generation error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
