@@ -1213,7 +1213,7 @@ def parse_timestamp_robust(timestamp):
     return pd.NaT
 
 
-def combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=None, openmeasures_df=None):
+def combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=None, openmeasures_df=None, brandwatch_df=None):
     """Combine different platform datasets into unified format (Streamlit logic)"""
     combined = []
     
@@ -1228,6 +1228,38 @@ def combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df
             if norm in df_cols:
                 return df[df.columns[df_cols.index(norm)]]
         return pd.Series([np.nan]*len(df), index=df.index)
+    
+    # === BRANDWATCH HANDLER  ===
+    if brandwatch_df is not None and not brandwatch_df.empty:
+        bw = pd.DataFrame()
+        
+        # Create unified Account column (matches your Colab logic)
+        bw['account_id'] = brandwatch_df.get('Weblog Title', pd.Series(dtype='object')).combine_first(
+            brandwatch_df.get('Author', pd.Series(dtype='object'))
+        ).combine_first(
+            brandwatch_df.get('Full Name', pd.Series(dtype='object'))
+        ).astype(str).str.strip().replace('nan', '')
+        
+        # Map core columns (matches your Colab renaming)
+        bw['original_text'] = brandwatch_df.get('Full Text', pd.Series(dtype='object')).astype(str).str.strip().replace('nan', '')
+        bw['URL'] = brandwatch_df.get('Url', pd.Series(dtype='object'))
+        bw['timestamp_share'] = brandwatch_df.get('Date', pd.Series(dtype='object'))
+        
+        # Platform inference from Page Type
+        page_type = brandwatch_df.get('Page Type', pd.Series(dtype='object')).astype(str).str.lower()
+        platform_map = {
+            'twitter': 'X', 'x': 'X', 'x.com': 'X', 't.co': 'X',
+            'facebook': 'Facebook', 'fb': 'Facebook', 'fb.watch': 'Facebook',
+            'instagram': 'Instagram', 'tiktok': 'TikTok',
+            'youtube': 'YouTube', 'telegram': 'Telegram', 't.me': 'Telegram'
+        }
+        bw['Platform'] = page_type.map(platform_map).fillna('Unknown')
+        
+        # Content ID fallback (use URL hash if missing)
+        bw['content_id'] = brandwatch_df.get('Resource Id', brandwatch_df.get('Mention Id', bw['URL']))
+        
+        bw['source_dataset'] = 'Brandwatch'
+        combined.append(bw)
     
     if meltwater_df is not None and not meltwater_df.empty:
         mw = pd.DataFrame()
@@ -2483,6 +2515,12 @@ class ProcessUploadView(View):
                     raise ValueError(f"Failed to load data from {original_name}")
                 
                 # Combine data based on source type
+                # === BRANDWATCH: Apply skiprows=6 like your Colab code ===
+                if data_type == 'brandwatch':
+                    # Re-read with skiprows=6 to skip Brandwatch metadata headers
+                    df = pd.read_csv(full_path, sep=',', low_memory=False, skiprows=6, on_bad_lines='skip')
+                
+                # Combine data based on source type
                 if data_type == 'meltwater':
                     combined_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
                 elif data_type == 'civicsignal':
@@ -2491,6 +2529,8 @@ class ProcessUploadView(View):
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
                 elif data_type == 'openmeasure':
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
+                elif data_type == 'brandwatch':  # 🔧 NEW HANDLER
+                    combined_df = combine_social_media_data(brandwatch_df=df)
                 else:
                     # Custom/unknown format
                     combined_df = preprocess_dataframe(df)
