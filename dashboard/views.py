@@ -2157,6 +2157,7 @@ class PEPsDataView(TemplateView):
         
         # Pre-align rows to match Excel column order
         column_order = page_obj[0].column_order if page_obj else []
+        column_order = [col for col in column_order if col.lower() != 'researcher']
         aligned_rows = [[row.raw_data.get(col) for col in column_order] for row in page_obj]
         
         context.update({
