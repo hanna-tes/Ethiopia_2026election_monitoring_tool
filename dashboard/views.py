@@ -1335,21 +1335,30 @@ def final_preprocess_and_map_columns(df, coordination_mode="Text Content"):
     if 'Sentiment' in dfp.columns:
         dfp = dfp[dfp['Sentiment'].isin(['Negative', 'Neutral'])]
     
-    # Filter to original posts only
+    # Filter to original posts only - ONLY if object_id exists
     if 'object_id' in dfp.columns:
         # ✅ Convert to string first to safely handle NaN/float values
         obj_str = dfp['object_id'].astype(str)
         mask = dfp['object_id'].apply(is_original_post) & (~obj_str.str.contains('🔁', na=False)) & (~obj_str.str.startswith('RT @', na=False))
         dfp = dfp[mask].copy()
+        
+        # Clean object_id
+        dfp['object_id'] = dfp['object_id'].astype(str).replace('nan','').fillna('')
+        dfp = dfp[dfp['object_id'].str.strip() != ""].reset_index(drop=True)
+        
+        # Extract original text
+        dfp['original_text'] = dfp['object_id'].apply(extract_original_text) if coordination_mode=="Text Content" else dfp['URL'].astype(str).replace('nan','')
+    else:
+        # Handle case where object_id doesn't exist - use text column instead
+        if 'text' in dfp.columns:
+            dfp['original_text'] = dfp['text'].apply(extract_original_text) if coordination_mode=="Text Content" else dfp['URL'].astype(str).replace('nan','')
+        elif 'original_text' not in dfp.columns:
+            # Create empty original_text if no text column exists
+            dfp['original_text'] = ''
     
-    # Clean object_id
-    dfp['object_id'] = dfp['object_id'].astype(str).replace('nan','').fillna('')
-    dfp = dfp[dfp['object_id'].str.strip() != ""]
-    
-    # Extract original text
-    dfp['original_text'] = dfp['object_id'].apply(extract_original_text) if coordination_mode=="Text Content" else dfp['URL'].astype(str).replace('nan','')
     dfp = dfp[dfp['original_text'].str.strip() != ""].reset_index(drop=True)
     
+    # Rest of the function remains the same...
     # Infer platform from URL
     dfp['Platform'] = dfp['URL'].apply(infer_platform_from_url)
     
@@ -1377,7 +1386,6 @@ def final_preprocess_and_map_columns(df, coordination_mode="Text Content"):
     # Return only needed columns
     cols = ['account_id','content_id','object_id','URL','timestamp_share','Platform','original_text','Outlet','Channel','cluster','source_dataset','Sentiment']
     return dfp[[c for c in cols if c in dfp.columns]].copy()
-
 
 def preprocess_dataframe(df):
     """Generic preprocessing for unknown/custom formats"""
