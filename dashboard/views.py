@@ -2100,10 +2100,8 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     
 class BaseTabMixin:
     """Adds consistent navigation tabs to any class-based view"""
-    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
         # Define tabs once, use everywhere
         context['tabs'] = [
             {'name': 'Home', 'url_name': 'home', 'icon': '🏠'},
@@ -2114,6 +2112,9 @@ class BaseTabMixin:
             {'name': 'Lexicon Management', 'url_name': 'lexicon_management', 'icon': '⚙️'},
             {'name': 'Reports', 'url_name': 'reports_landing', 'icon': '📑'},
         ]
+        # Set active_tab if not already set
+        if 'active_tab' not in context:
+            context['active_tab'] = self.request.resolver_match.url_name
         return context
 
 class HomeView(BaseTabMixin, TemplateView):
