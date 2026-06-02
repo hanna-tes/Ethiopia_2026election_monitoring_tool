@@ -128,8 +128,12 @@ def dashboard_view(request):
         
         for f in uploaded_files:
             try:
-                # Fix 2: Use the robust loader to handle UTF-16/Tabs for Meltwater
-                df = load_data_robustly(f) 
+                # Brandwatch needs specific handling (skiprows=6 for metadata)
+                if platform_type == 'brandwatch':
+                    df = pd.read_csv(f, sep=',', low_memory=False, skiprows=6, on_bad_lines='skip')
+                else:
+                    # Fix 2: Use the robust loader to handle UTF-16/Tabs for Meltwater/others
+                    df = load_data_robustly(f) 
                 
                 stats['total_rows'] += len(df)
                 
@@ -140,31 +144,37 @@ def dashboard_view(request):
                     processed_df = combine_social_media_data(tiktok_df=df)
                 elif platform_type == 'openmeasure':
                     processed_df = combine_social_media_data(openmeasures_df=df)
+                elif platform_type == 'brandwatch':
+                    processed_df = combine_social_media_data(brandwatch_df=df)
                 else:
                     processed_df = combine_social_media_data(civicsignals_df=df)
 
                 # ONE CLEAN LOOP
                 for _, row in processed_df.iterrows():
                     cid = row.get('content_id')
-                    if cid and not ProcessedPost.objects.filter(content_id=cid).exists():
+                    
+                    # Check for duplicates before saving
+                    if cid and ProcessedPost.objects.filter(content_id=cid).exists():
+                        stats['duplicates'] += 1
+                        continue
                         
-                        source_name = row.get('source_dataset', platform_type)
-                        source_obj, _ = DataSource.objects.get_or_create(name=source_name)
+                    source_name = row.get('source_dataset', platform_type)
+                    source_obj, _ = DataSource.objects.get_or_create(name=source_name)
+            
+                    ProcessedPost.objects.create(
+                        account_id=str(row.get('account_id', ''))[:100],
+                        content_id=cid,
+                        # Use 'original_text' which is the standardized column name
+                        original_text=str(row.get('original_text', '')),
+                        # Fix 3: Robust URL capture (checks both cases)
+                        url=row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '',
+                        platform=row.get('Platform', platform_type.title()),
+                        timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
+                        source_dataset=source_obj,
+                        is_election_related=is_election_related(str(row.get('original_text', '')))
+                    )
+                    stats['saved'] += 1
                 
-                        ProcessedPost.objects.create(
-                            account_id=str(row.get('account_id', ''))[:100],
-                            content_id=cid,
-                            original_text=str(row.get('object_id', '')),
-                            # Fix 3: Robust URL capture
-                            url=row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '',
-                            platform=row.get('Platform', platform_type.title()),
-                            timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
-                            source_dataset=source_obj,
-                            is_election_related=is_election_related(str(row.get('object_id', '')))
-                        )
-                        stats['saved'] += 1
-                    else:
-                        stats['duplicates'] += 1                
                 stats['files_count'] += 1
             except Exception as e:
                 logger.error(f"Upload error: {e}")
@@ -2496,14 +2506,18 @@ class ProcessUploadView(View):
                 # === STREAMLIT-STYLE DATA PROCESSING ===
                 data_type = upload.data_type
                 
-                # Load the CSV using robust loader
-                df = load_data_robustly(full_path)
+                # === BRANDWATCH: Load as standard CSV (NO skiprows) ===
+                if data_type == 'brandwatch':
+                    df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip')
+                else:
+                    # Load the CSV using robust loader for other formats
+                    df = load_data_robustly(full_path)
                 
                 # === DEBUG: Check original CSV columns ===
                 logger.info(f"📋 ORIGINAL CSV COLUMNS: {list(df.columns)}")
                 logger.info(f"📊 CSV Shape: {df.shape}")
                 
-                # Check for URL-like columns
+                # Check for URL-like columns (case-insensitive)
                 url_cols = [c for c in df.columns if 'url' in c.lower() or 'link' in c.lower()]
                 logger.info(f"🔍 URL-related columns in CSV: {url_cols}")
                 
@@ -2515,21 +2529,15 @@ class ProcessUploadView(View):
                     raise ValueError(f"Failed to load data from {original_name}")
                 
                 # Combine data based on source type
-                # === BRANDWATCH: Apply skiprows=6 like your Colab code ===
-                if data_type == 'brandwatch':
-                    # Re-read with skiprows=6 to skip Brandwatch metadata headers
-                    df = pd.read_csv(full_path, sep=',', low_memory=False, skiprows=6, on_bad_lines='skip')
-                
-                # Combine data based on source type
                 if data_type == 'meltwater':
                     combined_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
-                elif data_type == 'civicsignal':
+                elif data_type == 'civicsignals':
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=df)
                 elif data_type == 'tiktok':
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
                 elif data_type == 'openmeasure':
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
-                elif data_type == 'brandwatch':  # 🔧 NEW HANDLER
+                elif data_type == 'brandwatch':  # 🔧 Brandwatch handler
                     combined_df = combine_social_media_data(brandwatch_df=df)
                 else:
                     # Custom/unknown format
