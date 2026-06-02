@@ -570,8 +570,20 @@ Sample Quotes:
             # Assign virality tier
             virality = assign_virality_tier(total_reach)
             
+            title_match = re.search(r'Narrative Title:\s*(.*?)(?:\n|Core Claim)', cleaned_summary, re.IGNORECASE | re.DOTALL)
+            if title_match:
+                narrative_title = title_match.group(1).strip()
+            else:
+                # Fallback: take the first line if "Narrative Title:" is missing
+                first_line = cleaned_summary.split('\n')[0].strip()
+                narrative_title = first_line if first_line and len(first_line) < 100 else f"Cluster #{int(cluster_id) + 1}"
+            
+            # Final cleanup: remove any trailing punctuation or labels that slipped through
+            narrative_title = re.sub(r'\s*Core Claim.*$', '', narrative_title, flags=re.IGNORECASE).strip()
+
             all_summaries.append({
                 'cluster_id': int(cluster_id) + 1,
+                'Narrative_Title': narrative_title,  
                 'Context': cleaned_summary,
                 'Originators': ", ".join(originators),
                 'Amplifiers_Count': unique_accounts,
@@ -580,7 +592,7 @@ Sample Quotes:
                 'Top_Platforms': top_platforms,
                 'Min_TS': min_ts_str,
                 'Max_TS': max_ts_str,
-                'Posts_Data': cluster_data,  # Keep for evidence table
+                'Posts_Data': cluster_data,
                 'Platform_Diversity': len(platform_counts),
                 'Detected_Topics': detected_topics,
                 'Detected_Tone': detected_tone,
