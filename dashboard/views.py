@@ -2467,6 +2467,7 @@ class ProcessUploadView(View):
     def post(self, request):
         import os
         import uuid
+        import hashlib
         from django.utils import timezone
         
         logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
@@ -2506,29 +2507,22 @@ class ProcessUploadView(View):
                 # === STREAMLIT-STYLE DATA PROCESSING ===
                 data_type = upload.data_type
                 
-                # === BRANDWATCH: Load as standard CSV (NO skiprows) ===
+                # === LOAD CSV WITH APPROPRIATE HANDLING ===
                 if data_type == 'brandwatch':
-                    df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip')
+                    # Brandwatch: standard CSV load (NO skiprows), flexible encoding
+                    df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore')
                 else:
-                    # Load the CSV using robust loader for other formats
+                    # Other formats: use robust loader
                     df = load_data_robustly(full_path)
                 
                 # === DEBUG: Check original CSV columns ===
-                logger.info(f"📋 ORIGINAL CSV COLUMNS: {list(df.columns)}")
+                logger.info(f"📋 ORIGINAL CSV COLUMNS: {list(df.columns)[:15]}{'...' if len(df.columns) > 15 else ''}")
                 logger.info(f"📊 CSV Shape: {df.shape}")
-                
-                # Check for URL-like columns (case-insensitive)
-                url_cols = [c for c in df.columns if 'url' in c.lower() or 'link' in c.lower()]
-                logger.info(f"🔍 URL-related columns in CSV: {url_cols}")
-                
-                # Show sample URL values
-                for col in url_cols:
-                    logger.info(f"🔗 Sample values from '{col}': {df[col].head(3).tolist()}")
                 
                 if df.empty:
                     raise ValueError(f"Failed to load data from {original_name}")
                 
-                # Combine data based on source type
+                # === COMBINE/MAP DATA BASED ON SOURCE TYPE ===
                 if data_type == 'meltwater':
                     combined_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
                 elif data_type == 'civicsignals':
@@ -2537,66 +2531,140 @@ class ProcessUploadView(View):
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
                 elif data_type == 'openmeasure':
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
-                elif data_type == 'brandwatch':  # 🔧 Brandwatch handler
-                    combined_df = combine_social_media_data(brandwatch_df=df)
+                elif data_type == 'brandwatch':
+                    # === BRANDWATCH-SPECIFIC MAPPING ===
+                    logger.info(f"🔄 Mapping Brandwatch columns for {original_name}")
+                    
+                    # Case-insensitive column lookup
+                    df_cols_lower = {c.lower().strip(): c for c in df.columns}
+                    
+                    combined_df = pd.DataFrame()
+                    
+                    # 1. Account ID
+                    acc_col = None
+                    for col in ['author', 'full name', 'weblog title', 'account', 'username']:
+                        if col in df_cols_lower:
+                            acc_col = df_cols_lower[col]
+                            break
+                    combined_df['account_id'] = df[acc_col].astype(str).str.strip().replace('nan', '') if acc_col else 'Unknown'
+                        
+                    # 2. Original Text (CRITICAL)
+                    text_col = None
+                    for col in ['full text', 'text', 'content', 'title', 'hit sentence', 'opening text']:
+                        if col in df_cols_lower:
+                            text_col = df_cols_lower[col]
+                            break
+                    combined_df['original_text'] = df[text_col].astype(str).str.strip() if text_col else ''
+                    
+                    # 3. URL (ensure column exists)
+                    url_col = None
+                    for col in ['url', 'link', 'post url', 'permalink']:
+                        if col in df_cols_lower:
+                            url_col = df_cols_lower[col]
+                            break
+                    combined_df['URL'] = df[url_col] if url_col else ''
+                    
+                    # 4. Timestamp
+                    ts_col = None
+                    for col in ['date', 'timestamp', 'created at', 'publish date']:
+                        if col in df_cols_lower:
+                            ts_col = df_cols_lower[col]
+                            break
+                    combined_df['timestamp_share'] = df[ts_col] if ts_col else pd.NaT
+                    
+                    # 5. Platform inference
+                    pt_col = None
+                    for col in ['page type', 'platform', 'source']:
+                        if col in df_cols_lower:
+                            pt_col = df_cols_lower[col]
+                            break
+                    pt_map = {
+                        'twitter': 'X', 'x': 'X', 'x.com': 'X', 't.co': 'X',
+                        'facebook': 'Facebook', 'fb': 'Facebook', 'fb.watch': 'Facebook',
+                        'instagram': 'Instagram', 'tiktok': 'TikTok',
+                        'youtube': 'YouTube', 'telegram': 'Telegram', 't.me': 'Telegram'
+                    }
+                    if pt_col:
+                        combined_df['Platform'] = df[pt_col].astype(str).str.lower().map(pt_map).fillna('Brandwatch')
+                    else:
+                        combined_df['Platform'] = 'Brandwatch'
+                    
+                    # 6. Content ID (generate if missing)
+                    cid_col = None
+                    for col in ['resource id', 'mention id', 'post id', 'id']:
+                        if col in df_cols_lower:
+                            cid_col = df_cols_lower[col]
+                            break
+                    if cid_col:
+                        combined_df['content_id'] = df[cid_col].astype(str).str.strip()
+                    else:
+                        # Generate hash-based ID
+                        combined_df['content_id'] = combined_df.apply(
+                            lambda r: hashlib.md5(f"{r['original_text'][:50]}_{r['URL']}".encode()).hexdigest()[:16], 
+                            axis=1
+                        )
+                    
+                    combined_df['source_dataset'] = 'Brandwatch'
+                    
+                    # Filter: keep only rows with substantial text
+                    initial_count = len(combined_df)
+                    combined_df = combined_df[combined_df['original_text'].str.len() > 20]
+                    logger.info(f"✅ Brandwatch: filtered {initial_count} → {len(combined_df)} valid rows")
+                    
                 else:
                     # Custom/unknown format
                     combined_df = preprocess_dataframe(df)
                 
                 # === DEBUG: Check combined data ===
                 logger.info(f"📊 COMBINED DATA COLUMNS: {list(combined_df.columns)}")
-                if 'URL' in combined_df.columns:
-                    logger.info(f"🔗 URL column exists! Sample values: {combined_df['URL'].head(3).tolist()}")
-                    logger.info(f"🔗 URL column type: {combined_df['URL'].dtype}")
-                    logger.info(f"🔗 URL null count: {combined_df['URL'].isna().sum()}")
-                else:
+                if 'URL' not in combined_df.columns:
                     logger.error("❌ URL COLUMN NOT FOUND after combining!")
+                    combined_df['URL'] = ''  # Safety fallback
                 
-                # Final preprocessing and column mapping
+                # === FINAL PREPROCESSING ===
                 processed_df = final_preprocess_and_map_columns(combined_df)
                 
                 # === DEBUG: Check processed data ===
                 logger.info(f"📊 PROCESSED DATA COLUMNS: {list(processed_df.columns)}")
-                if 'URL' in processed_df.columns:
-                    logger.info(f"✅ URL in processed data!")
-                    logger.info(f"🔗 Sample URLs: {processed_df['URL'].head(3).tolist()}")
-                    logger.info(f"🔗 URL null count: {processed_df['URL'].isna().sum()}")
-                    logger.info(f"🔗 URL empty count: {(processed_df['URL'] == '').sum()}")
-                else:
+                if 'URL' not in processed_df.columns:
                     logger.error("❌ URL COLUMN MISSING after final processing!")
+                    processed_df['URL'] = ''
                 
                 # Parse timestamps
                 if 'timestamp_share' in processed_df.columns:
                     processed_df['timestamp_share'] = processed_df['timestamp_share'].apply(parse_timestamp_robust)
                 
-                # Save to database
+                # === SAVE TO DATABASE ===
                 count = 0
                 urls_saved = 0
                 for _, row in processed_df.iterrows():
                     # Skip if no content
-                    if not row.get('original_text') or pd.isna(row.get('original_text')):
+                    if not row.get('original_text') or pd.isna(row.get('original_text')) or str(row.get('original_text', '')).strip() == '':
                         continue
                     
                     # Check for duplicates
-                    if row.get('content_id') and ProcessedPost.objects.filter(content_id=row['content_id']).exists():
+                    cid = row.get('content_id')
+                    url_val = row.get('url') or row.get('URL')
+                    
+                    if cid and ProcessedPost.objects.filter(content_id=cid).exists():
                         continue
-                    if row.get('url') and ProcessedPost.objects.filter(url=row['url']).exists():
+                    if url_val and str(url_val).startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
                         continue
                     
-                    # Get or create DataSource instance
+                    # Get or create DataSource
                     source_name = str(row.get('source_dataset', data_type))
                     source_obj, _ = DataSource.objects.get_or_create(name=source_name)
                     
-                    # DEBUG: Check URL value before saving
-                    url_value = str(row.get('URL', ''))[:500] if row.get('URL') else None
-                    if url_value and url_value.startswith('http'):
+                    # Prepare URL value
+                    url_value = str(url_val).strip()[:500] if url_val and str(url_val).startswith('http') else None
+                    if url_value:
                         urls_saved += 1
                     
-                    # Create new post with the DataSource instance
+                    # Create post
                     ProcessedPost.objects.create(
                         account_id=str(row.get('account_id', ''))[:100],
-                        content_id=str(row.get('content_id', ''))[:100] if row.get('content_id') else None,
-                        original_text=str(row.get('original_text', '')),
+                        content_id=str(cid).strip()[:100] if cid else None,
+                        original_text=str(row.get('original_text', '')).strip(),
                         url=url_value,
                         platform=str(row.get('Platform', 'Unknown')),
                         timestamp_share=row.get('timestamp_share'),
@@ -2605,7 +2673,7 @@ class ProcessUploadView(View):
                     )
                     count += 1
                 
-                logger.info(f"✅ Saved {count} posts, {urls_saved} with URLs")
+                logger.info(f"✅ Saved {count} posts, {urls_saved} with URLs from {original_name}")
                 
                 # Update record
                 upload.status = 'completed'
@@ -2626,14 +2694,19 @@ class ProcessUploadView(View):
                 
                 results.append((uploaded_file.name, False, str(e), 0))
         
-        # Show summary
-        success_count = sum(1 for _, s, _, _ in results if s)
-        if success_count == len(uploaded_files):
-            messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully!")
-        elif success_count > 0:
-            messages.warning(request, f"⚠️ {success_count}/{len(uploaded_files)} succeeded. Check logs for errors.")
-        else:
+        # === SHOW SUMMARY (ONLY IF RECORDS WERE SAVED) ===
+        success_count = sum(1 for _, s, _, c in results if s and c > 0)
+        total_saved = sum(c for _, s, _, c in results if s)
+        
+        if total_saved > 0:
+            if success_count == len([r for r in results if r[1]]):
+                messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully! Saved {total_saved} posts.")
+            else:
+                messages.warning(request, f"⚠️ {success_count}/{len(uploaded_files)} files succeeded. Saved {total_saved} posts total.")
+        elif not any(s for _, s, _, _ in results):
             messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
+        else:
+            messages.info(request, "ℹ️ Upload completed. No new posts matched criteria (check logs for details).")
         
         return redirect('upload_data')
         
