@@ -43,9 +43,28 @@
 
 {% block content %}
 <!-- Header -->
-<div class="mb-8">
-    <h1 class="text-3xl font-bold text-gray-900 mb-2">🎯 PEP Mention & Narrative Analysis</h1>
-    <p class="text-gray-600">Advanced threat intelligence across {{ pep_analysis|length }} officials</p>
+<div class="mb-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">🎯 PEP Mention & Narrative Analysis</h1>
+            <p class="text-gray-600">Advanced threat intelligence across {{ pep_analysis|length }} analyzed officials.</p>
+        </div>
+        <a href="{% url 'peps' %}" class="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+            ← Back to PEPs Tracker
+        </a>
+    </div>
+    
+    <!-- NEW: Banner indicating RC Members inclusion -->
+    <div class="mt-4 bg-orange-50 border border-orange-200 rounded-lg p-4 flex items-start gap-3">
+        <span class="text-2xl">👥</span>
+        <div>
+            <h3 class="text-sm font-semibold text-orange-900">Enhanced with Regional Council (RC) Members</h3>
+            <p class="text-xs text-orange-800 mt-1">
+                This analysis automatically includes officials from the <strong>RC_Members.xlsx</strong> dataset alongside standard PEPs. 
+                Any mentions, narrative clusters, or bot activity targeting these regional officials will be flagged here.
+            </p>
+        </div>
+    </div>
 </div>
 
 <!-- Grid Layout -->

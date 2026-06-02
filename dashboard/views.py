@@ -1602,103 +1602,109 @@ def get_top_hashtags(posts_queryset, limit=10):
         if count >= 2  # Only show hashtags used 2+ times
     ]
 
-def get_pep_analysis_insights(posts_queryset, peps_queryset, limit=5):
+def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_list=None, limit=6):
     """
-    Analyze PEP mentions in posts to extract:
-    - Most mentioned officials
-    - Negative/critical narratives against them  
-    - Sample posts showing the claims
-    Returns structured data for UI display
+    Enhanced PEP analysis that now includes RC Members and other extra officials.
     """
     from collections import defaultdict, Counter
     import re
+
+    if not extra_officials_list:
+        extra_officials_list = []
+
+    # 1. Build a unified dictionary of names to scan: { 'lowercase_name': 'Display Name' }
+    officials_to_scan = {}
     
-    # Build PEP name mapping for fuzzy matching
-    pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset}
-    
-    # Track mentions per PEP
+    # Add standard PEPs
+    for pep in peps_queryset:
+        name_lower = pep.name.lower().strip()
+        if name_lower:
+            officials_to_scan[name_lower] = pep.name
+
+    # Add RC Members / Extra Officials
+    for name in extra_officials_list:
+        name_lower = name.lower().strip()
+        if name_lower and name_lower not in officials_to_scan:
+            officials_to_scan[name_lower] = name
+
     pep_mentions = defaultdict(lambda: {
         'count': 0,
-        'negative_posts': [],
-        'critical_narratives': [],
-        'sample_posts': []
+        'platforms': Counter(),
+        'hourly_distribution': Counter(),
+        'hashtags': Counter(),
+        'risk_score': 0,
+        'bot_probability': 0,
+        'is_rc_member': False,
+        'sample_posts': [],
+        'narrative_clusters': defaultdict(list),
     })
     
-    # Scan posts for PEP mentions + negative sentiment
-    for post in posts_queryset[:5000]:  # Limit for performance
+    # 2. Scan posts for mentions
+    for post in posts_queryset[:5000]:
         if not post.original_text:
             continue
             
         text_lower = post.original_text.lower()
         
-        # Check for PEP mentions (fuzzy match)
-        for pep_name, pep_obj in pep_names.items():
-            # Simple fuzzy match: check if PEP name appears in text
-            if pep_name in text_lower or pep_obj.name.lower() in text_lower:
-                pep_data = pep_mentions[pep_obj.name]
-                pep_data['count'] += 1
+        for scan_name, display_name in officials_to_scan.items():
+            if scan_name in text_lower:
+                data = pep_mentions[display_name]
+                data['count'] += 1
                 
-                # Check for negative/critical language using lexicon
-                if post.risk_level in ['high', 'critical'] or post.sentiment == 'Negative':
-                    # Extract narrative snippet (first 150 chars around PEP name)
-                    idx = text_lower.find(pep_name)
-                    if idx >= 0:
-                        start = max(0, idx - 100)
-                        end = min(len(post.original_text), idx + len(pep_name) + 100)
-                        snippet = post.original_text[start:end].strip()
-                        
-                        # Avoid duplicates
-                        if snippet not in [p['text'] for p in pep_data['sample_posts'][:3]]:
-                            pep_data['sample_posts'].append({
-                                'text': snippet[:200] + ('...' if len(snippet) > 200 else ''),
-                                'platform': post.platform,
-                                'timestamp': post.timestamp_share,
-                                'risk_level': post.risk_level,
-                                'url': post.url if hasattr(post, 'url') and post.url else None
-                            })
+                # Mark if it's an RC member (if it wasn't in the original PEP queryset)
+                is_pep = any(p.name == display_name for p in peps_queryset)
+                if not is_pep:
+                    data['is_rc_member'] = True
                 
-                # Extract critical narrative themes using keywords
-                critical_keywords = {
-                    'corruption': ['corrupt', 'bribe', 'embezzle', 'theft', 'fraud'],
-                    'abuse': ['abuse', 'tyranny', 'oppression', 'dictator', 'authoritarian'],
-                    'failure': ['failed', 'incompetent', 'mismanagement', 'crisis'],
-                    'ethnic_bias': ['ethnic', 'tribal', 'biased', 'discrimination', 'marginalize'],
-                    'election_rigging': ['rigged', 'stolen', 'fraud', 'manipulated', 'nebe']
-                }
+                platform = post.platform or 'Unknown'
+                data['platforms'][platform] += 1
                 
-                for theme, keywords in critical_keywords.items():
-                    if any(kw in text_lower for kw in keywords):
-                        narrative = {
-                            'theme': theme.replace('_', ' ').title(),
-                            'description': f"Posts allege {theme.replace('_', ' ')} involving {pep_obj.name}",
-                            'severity': 'high' if post.risk_level == 'critical' else 'medium',
-                            'sample_count': 1
-                        }
-                        # Avoid duplicate narratives
-                        if not any(n['theme'] == narrative['theme'] for n in pep_data['critical_narratives']):
-                            pep_data['critical_narratives'].append(narrative)
-    
-    # Build final structured results
+                if post.timestamp_share:
+                    data['hourly_distribution'][post.timestamp_share.hour] += 1
+                    
+                hashtags = re.findall(r'#(\w+)', post.original_text)
+                data['hashtags'].update(hashtags)
+                
+                # Narrative clustering
+                if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe']):
+                    data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
+                if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray']):
+                    data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
+                
+                if len(data['sample_posts']) < 3:
+                    data['sample_posts'].append({
+                        'text': post.original_text[:150],
+                        'platform': platform,
+                        'timestamp': post.timestamp_share,
+                        'risk_level': post.risk_level if hasattr(post, 'risk_level') else 'medium'
+                    })
+
+    # 3. Build final results
     results = []
-    for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
-        if data['count'] < 2:  # Skip rarely mentioned
+    for display_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
+        if data['count'] < 2:
             continue
             
-        # Calculate sentiment breakdown
-        negative_count = len(data['sample_posts'])
-        sentiment = '🔴 High Criticism' if negative_count >= 3 else '🟡 Some Criticism' if negative_count >= 1 else '🟢 Mostly Neutral'
+        total_posts = sum(data['platforms'].values())
+        platform_breakdown = [
+            {'name': plat, 'count': cnt, 'percent': round(cnt/total_posts*100)}
+            for plat, cnt in data['platforms'].most_common(3)
+        ]
+        
+        clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
         
         results.append({
-            'pep_name': pep_name,
+            'pep_name': display_name,
             'mention_count': data['count'],
-            'sentiment_badge': sentiment,
-            'critical_narratives': data['critical_narratives'][:3],  # Top 3 narratives
-            'sample_posts': data['sample_posts'][:3],  # Top 3 sample posts
-            'risk_score': min(10, negative_count * 2 + len(data['critical_narratives']))
+            'platform_breakdown': platform_breakdown,
+            'narrative_clusters': clusters,
+            'sample_posts': data['sample_posts'],
+            'is_rc_member': data['is_rc_member'],
+            'risk_score': min(10, data['count'] // 3 + len(clusters)),
         })
     
     return results
-
+    
 def reports_landing(request):
     """Landing page showing all report categories as cards"""
     baseline_reports = MonitoringReport.objects.filter(report_category='baseline').order_by('-uploaded_at')[:3]
@@ -2170,7 +2176,7 @@ class PEPsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Force sync if DB is empty 
+        # 1. Force sync standard PEPs if DB is empty (existing logic)
         if not PEP.objects.exists():
             github_url = getattr(settings, 'PEPS_CSV_URL', '')
             if github_url:
@@ -2201,25 +2207,54 @@ class PEPsView(TemplateView):
                 except Exception as e:
                     logger.error(f"PEP GitHub sync failed: {e}")
 
-        # 2. Query PEPs - Define variable BEFORE using it
+        # 2. Query Standard PEPs
         active_peps = PEP.objects.filter(is_active=True).order_by('name')
         
-        # 3. Get election-related posts for analysis
+        # 3. Extract RC Members Names from the newly uploaded Excel file
+        rc_member_names = []
+        
+        # Query ElectionOfficeholder for the RC_Members.xlsx file
+        rc_qs = ElectionOfficeholder.objects.filter(source_file__icontains='RC_Members')
+        
+        for member in rc_qs:
+            rd = member.raw_data or {}
+            # Smart extraction: look for any key containing 'name' (e.g., 'Name', 'Full Name', 'Member Name')
+            for key, val in rd.items():
+                if 'name' in key.lower() and val:
+                    name_val = str(val).strip()
+                    if len(name_val) > 2 and name_val.lower() not in ['nan', 'none', '']:
+                        rc_member_names.append(name_val)
+                        break
+                        
+        # Remove duplicates
+        rc_member_names = list(set(rc_member_names))
+        
+        # 4. Get election-related posts for analysis
         election_posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
         
-        # 4. Generate PEP analysis insights - Use the defined variable
-        pep_analysis_data = get_pep_analysis_insights(election_posts, active_peps, limit=6)
+        # 5. Generate PEP analysis insights - Pass RC members as extra officials
+        pep_analysis_data = get_pep_analysis_insights(
+            election_posts, 
+            active_peps, 
+            extra_officials_list=rc_member_names, 
+            limit=8  # Show top 8 mentioned officials
+        )
         
-        # 5. Build context
+        # 6. Build context for the template
         context.update({
             'total_candidates': ElectionOfficeholder.objects.count(),
             'peps': active_peps,  # For the officials table
             'total_peps': active_peps.count(),
+            
+            # NEW: RC Members data for the UI
+            'rc_members_count': len(rc_member_names),
+            'rc_members_list': rc_member_names[:20],  # Show first 20 in the UI
+            
             'verified_x_count': active_peps.filter(x_verified=True).count(),
             'verified_fb_count': active_peps.filter(facebook_verified=True).count(),
             'last_pep_sync': PEP.objects.aggregate(last=Max('last_updated'))['last'],
             'active_tab': 'peps',
-            'pep_analysis': pep_analysis_data,  # For the peps analysis tab
+            'pep_analysis': pep_analysis_data,  # For the PEPs analysis tab
         })
         
         return context        
