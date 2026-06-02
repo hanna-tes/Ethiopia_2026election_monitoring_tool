@@ -1950,8 +1950,8 @@ class HomeView(BaseTabMixin, TemplateView):
             'upload_summary': upload_summary,
             'risk_actors': get_risk_actors_insight(posts),
             'top_hashtags': get_top_hashtags(posts),
-            'start_date': start_date.date().isoformat() if start_date else '',
-            'end_date': end_date.date().isoformat() if end_date else '',
+            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
+            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
         return context
         
