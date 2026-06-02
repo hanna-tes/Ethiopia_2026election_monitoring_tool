@@ -2509,11 +2509,14 @@ class ProcessUploadView(View):
                 
                 # === LOAD CSV WITH APPROPRIATE HANDLING ===
                 if data_type == 'brandwatch':
-                    # Brandwatch: standard CSV load (NO skiprows), flexible encoding
                     df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore')
                 else:
-                    # Other formats: use robust loader
                     df = load_data_robustly(full_path)
+                
+                # 🗑️ DROP 'Sentiment' COLUMN IF PRESENT (aligns with original mapping/schema)
+                if 'Sentiment' in df.columns:
+                    df = df.drop(columns=['Sentiment'])
+                    logger.info(f"🗑️ Dropped 'Sentiment' column to match original processing schema.")
                 
                 # === DEBUG: Check original CSV columns ===
                 logger.info(f"📋 ORIGINAL CSV COLUMNS: {list(df.columns)[:15]}{'...' if len(df.columns) > 15 else ''}")
@@ -2534,23 +2537,21 @@ class ProcessUploadView(View):
                 elif data_type == 'brandwatch':
                     # === BRANDWATCH-SPECIFIC MAPPING ===
                     logger.info(f"🔄 Mapping Brandwatch columns for {original_name}")
-                    
                     # Case-insensitive column lookup
                     df_cols_lower = {c.lower().strip(): c for c in df.columns}
-                    
                     combined_df = pd.DataFrame()
                     
                     # 1. Account ID
                     acc_col = None
-                    for col in ['author', 'full name', 'weblog title', 'account', 'username']:
+                    for col in ['source', 'author', 'full name', 'weblog title', 'account', 'username']:
                         if col in df_cols_lower:
                             acc_col = df_cols_lower[col]
                             break
                     combined_df['account_id'] = df[acc_col].astype(str).str.strip().replace('nan', '') if acc_col else 'Unknown'
-                        
+                    
                     # 2. Original Text (CRITICAL)
                     text_col = None
-                    for col in ['full text', 'text', 'content', 'title', 'hit sentence', 'opening text']:
+                    for col in ['text', 'full text', 'content', 'title', 'hit sentence', 'opening text']:
                         if col in df_cols_lower:
                             text_col = df_cols_lower[col]
                             break
@@ -2566,7 +2567,7 @@ class ProcessUploadView(View):
                     
                     # 4. Timestamp
                     ts_col = None
-                    for col in ['date', 'timestamp', 'created at', 'publish date']:
+                    for col in ['timestamp', 'date', 'created at', 'publish date']:
                         if col in df_cols_lower:
                             ts_col = df_cols_lower[col]
                             break
@@ -2574,7 +2575,7 @@ class ProcessUploadView(View):
                     
                     # 5. Platform inference
                     pt_col = None
-                    for col in ['page type', 'platform', 'source']:
+                    for col in ['platform', 'page type', 'source']:
                         if col in df_cols_lower:
                             pt_col = df_cols_lower[col]
                             break
@@ -2591,26 +2592,24 @@ class ProcessUploadView(View):
                     
                     # 6. Content ID (generate if missing)
                     cid_col = None
-                    for col in ['resource id', 'mention id', 'post id', 'id']:
+                    for col in ['url', 'resource id', 'mention id', 'post id', 'id']:
                         if col in df_cols_lower:
                             cid_col = df_cols_lower[col]
                             break
                     if cid_col:
                         combined_df['content_id'] = df[cid_col].astype(str).str.strip()
                     else:
-                        # Generate hash-based ID
+                        # Generate hash-based ID from text + URL
                         combined_df['content_id'] = combined_df.apply(
-                            lambda r: hashlib.md5(f"{r['original_text'][:50]}_{r['URL']}".encode()).hexdigest()[:16], 
+                            lambda r: hashlib.md5(f"{r['original_text'][:50]}_{r['URL']}".encode()).hexdigest()[:16],
                             axis=1
                         )
                     
                     combined_df['source_dataset'] = 'Brandwatch'
-                    
                     # Filter: keep only rows with substantial text
                     initial_count = len(combined_df)
                     combined_df = combined_df[combined_df['original_text'].str.len() > 20]
                     logger.info(f"✅ Brandwatch: filtered {initial_count} → {len(combined_df)} valid rows")
-                    
                 else:
                     # Custom/unknown format
                     combined_df = preprocess_dataframe(df)
@@ -2645,7 +2644,6 @@ class ProcessUploadView(View):
                     # Check for duplicates
                     cid = row.get('content_id')
                     url_val = row.get('url') or row.get('URL')
-                    
                     if cid and ProcessedPost.objects.filter(content_id=cid).exists():
                         continue
                     if url_val and str(url_val).startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
@@ -2686,12 +2684,10 @@ class ProcessUploadView(View):
                 
             except Exception as e:
                 logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
-                
                 if 'upload' in locals():
                     upload.status = 'failed'
                     upload.processing_log = str(e)
                     upload.save()
-                
                 results.append((uploaded_file.name, False, str(e), 0))
         
         # === SHOW SUMMARY (ONLY IF RECORDS WERE SAVED) ===
@@ -2707,7 +2703,7 @@ class ProcessUploadView(View):
             messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
         else:
             messages.info(request, "ℹ️ Upload completed. No new posts matched criteria (check logs for details).")
-        
+            
         return redirect('upload_data')
         
 class ClearDataView(View):
