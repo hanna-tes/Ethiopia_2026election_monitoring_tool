@@ -50,45 +50,6 @@ logger = logging.getLogger(__name__)
 
 #  HELPER FUNCTIONS
 
-ETHIOPIA_PATTERNS = [
-    r"\bethiopia\b",
-    r"\bethiopian\b",
-    r"\babiy\b",
-    r"\bfano\b",
-    r"\btplf\b",
-    r"\bamhara\b",
-    r"\boromia\b",
-    r"\btigray\b",
-    r"\baddis\b",
-    r"\bnebe\b",
-    r"\bprosperity party\b",
-]
-
-def calculate_ethiopia_relevance(text):
-    """
-    Returns score between 0 and 1.
-    Measures whether Ethiopia is a central topic
-    rather than a passing mention.
-    """
-
-    text = str(text).lower()
-
-    ethiopia_mentions = 0
-
-    for pattern in ETHIOPIA_PATTERNS:
-        ethiopia_mentions += len(
-            re.findall(pattern, text)
-        )
-
-    words = len(text.split())
-
-    if words == 0:
-        return 0
-
-    density = ethiopia_mentions / max(words, 1)
-
-    return density
-
 def clean_username(raw_name):
     if not raw_name or pd.isna(raw_name):
         return "Unknown"
@@ -97,6 +58,8 @@ def clean_username(raw_name):
     # Remove common artifacts
     name = re.sub(r'(?i)(name|source|nan|none)$', '', name).strip()
     return name
+
+
     
 def get_queryset(self):
     qs = ProcessedPost.objects.all()
@@ -785,9 +748,56 @@ def get_top_pairs(coordination_groups):
                 'platforms': group['platforms']
             })
     return pairs[:10]
-    
-# === IMPROVED NETWORK & COORDINATION FUNCTIONS ===
 
+# === IMPROVED NETWORK & COORDINATION FUNCTIONS ===
+def is_primarily_ethiopia_related(text: str) -> bool:
+    """
+    Fast keyword-based filter to check if post is PRIMARILY about Ethiopia.
+    Returns False for posts that only mention Ethiopia in passing.
+    """
+    if not text or len(text.strip()) < 20:
+        return False
+    
+    text_lower = text.lower()
+    
+    # Strong Ethiopia-specific signals (high confidence)
+    strong_signals = [
+        'ethiopia', 'ethiopian', 'abiy', 'abiy ahmed', 'fano', 'tplf',
+        'nebe', 'oromia', 'amhara', 'tigray', 'addis ababa', 'prosperity party',
+        'woreda', 'kebele', 'birr', 'habesha', 'federal government',
+        'igad', 'pretoria agreement', 'gerd', 'renaissance dam',
+        'mekelle', 'bahir dar', 'gondar', 'dessie', 'jimma', 'adama',
+        'hawassa', 'dire dawa', 'harar', 'axum', 'lalibela',
+        'eprdf', 'derg', 'haile selassie', 'menelik',
+        'eritrea', 'sudan', 'somalia', 'djibouti',  # neighbors in context
+    ]
+    
+    # Weak/passing mentions (low confidence - post might be about something else)
+    weak_signals = [
+        'ethiopia',  # could be "ambassador to Ethiopia"
+    ]
+    
+    # Count strong signals
+    strong_count = sum(1 for signal in strong_signals if signal in text_lower)
+    
+    # If 2+ strong signals, it's definitely about Ethiopia
+    if strong_count >= 2:
+        return True
+    
+    # If only 1 signal, check density (is it the main topic?)
+    if strong_count == 1:
+        words = len(text.split())
+        density = 1 / max(words, 1)
+        # Allow if post is short (likely focused) or signal appears multiple times
+        signal_count = text_lower.count('ethiopia') + text_lower.count('abiy') + text_lower.count('fano')
+        if signal_count >= 2:
+            return True
+        if words < 100:  # Short posts are more likely focused
+            return True
+        return False
+    
+    return False
+    
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     """Find accounts posting identical messages - FIXED to show real usernames and URLs"""
     coordination = []
@@ -801,6 +811,8 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     for group in text_groups:
         text = group['original_text']
         # Get DISTINCT accounts with their posts and URLs
+        if not is_primarily_ethiopia_related(text):
+            continue
         account_posts = posts_queryset.filter(original_text=text).values(
             'account_id', 'platform', 'url', 'timestamp_share'
         ).distinct()
@@ -850,10 +862,9 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
     for group in text_groups:
         text = group['original_text']
         # Get real account data with URLs
-        relevance = calculate_ethiopia_relevance(text)
-
-        if relevance < 2:
+        if not is_primarily_ethiopia_related(text):
             continue
+            
         accounts_data = list(posts_queryset.filter(original_text=text).values(
             'account_id', 'platform', 'url'
         ).distinct())
