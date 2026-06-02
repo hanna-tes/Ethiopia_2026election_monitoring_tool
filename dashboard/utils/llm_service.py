@@ -1,6 +1,8 @@
 import logging
 from groq import Groq
 from django.conf import settings
+from unsloth import FastLanguageModel
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,36 @@ def safe_llm_call(prompt, max_tokens=2048, model=None):
     except Exception as e:
         logger.error(f"❌ LLM call failed: {str(e)}")
         return None
+
+
+def load_ttp_detection_model():
+    """Load the fine-tuned Gemma model for TTP detection"""
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name="unsloth/gemma-4-E4B-it", 
+        max_seq_length=4096,
+        dtype=None,
+        load_in_4bit=True,  # Use 4-bit quantization to save memory
+    )
+    
+    # Load your fine-tuned adapter
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=16,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                       "gate_proj", "up_proj", "down_proj"],
+        lora_alpha=16,
+        lora_dropout=0,
+        bias="none",
+        use_gradient_checkpointing="unsloth",
+        random_state=3407,
+        use_rslora=False,
+        loftq_config=None,
+    )
+    
+    # Load adapter weights
+    model.load_adapter("/Users/hannateshager/Ethiopia_2026election_monitoring_tool/model_cache/gemma-disarm-phase3-ttp")
+    
+    return model, tokenizer
 
 def summarize_cluster_ethiopia(posts, cluster_id=None):
     """

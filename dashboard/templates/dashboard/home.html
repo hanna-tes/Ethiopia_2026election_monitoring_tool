@@ -1,5 +1,6 @@
 {% extends 'dashboard/base.html' %}
 {% block title %}Home - Ethiopia Election Monitor{% endblock %}
+{% block page_title %}📊 Executive Dashboard{% endblock %}
 
 {% block content %}
 <!-- Dashboard Intro -->
@@ -11,12 +12,11 @@
             <li><strong>Tracking Virality & Risk Patterns</strong></li>
             <li><strong>Providing Evidence for Decision Makers</strong></li>
         </ol>
-        <span class="text-sm text-gray-500 mt-2 block">Data last updated: <strong>{{ metrics.last_update }}</strong></span>
     </p>
 </div>
 
 <!-- DATE FILTER -->
-<form method="get" class="flex flex-wrap gap-3 items-end bg-gray-50 p-3 rounded-lg mb-6 border">
+<form method="get" class="flex flex-wrap gap-3 items-end bg-gray-50 p-4 rounded-lg mb-6 border">
     <div>
         <label class="block text-xs font-medium text-gray-600 mb-1">From</label>
         <input type="date" name="start_date" 
@@ -29,12 +29,12 @@
                value="{{ end_date|default:'' }}" 
                class="rounded border-gray-300 text-sm px-3 py-2">
     </div>
-    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">🔍 Apply</button>
-    <a href="{{ request.path }}" class="text-gray-500 hover:text-gray-700 text-sm px-3 py-2 hover:underline">Clear Filter</a>
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">🔍 Apply Filter</button>
+    <a href="{{ request.path }}" class="text-gray-500 hover:text-gray-700 text-sm px-3 py-2 hover:underline">Clear</a>
     
     {% if request.GET.start_date or request.GET.end_date %}
-    <span class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded ml-auto">
-        Showing: {{ request.GET.start_date|default:"..." }} → {{ request.GET.end_date|default:"..." }}
+    <span class="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded ml-auto">
+        📅 {{ request.GET.start_date|default:"..." }} → {{ request.GET.end_date|default:"..." }}
     </span>
     {% endif %}
 </form>
@@ -43,21 +43,21 @@
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
         <div class="text-3xl font-bold text-blue-600">{{ metrics.total_posts|default:0 }}</div>
-        <div class="text-sm text-gray-500">Posts Analyzed</div>
+        <div class="text-sm text-gray-500 mt-1">Posts Analyzed</div>
     </div>
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
         <div class="text-3xl font-bold text-purple-600">{{ metrics.unique_accounts|default:0 }}</div>
-        <div class="text-sm text-gray-500">Unique Accounts</div>
+        <div class="text-sm text-gray-500 mt-1">Unique Accounts</div>
     </div>
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
         <div class="text-3xl font-bold text-green-600">{{ metrics.top_platform }}</div>
-        <div class="text-sm text-gray-500">Top Platform</div>
+        <div class="text-sm text-gray-500 mt-1">Top Platform</div>
     </div>
     <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
         <div class="text-3xl font-bold {% if 'High' in metrics.alert_level %}text-red-600{% elif 'Medium' in metrics.alert_level %}text-yellow-600{% else %}text-green-600{% endif %}">
             {{ metrics.alert_level }}
         </div>
-        <div class="text-sm text-gray-500">Alert Level</div>
+        <div class="text-sm text-gray-500 mt-1">Alert Level</div>
     </div>
 </div>
 
@@ -95,7 +95,6 @@
 </div>
 {% endif %}
 
-<!-- ✅ NEW: Risk Actors Insight Card (Relaxed Criteria) -->
 <!-- High-Risk Actors Section -->
 {% if risk_actors %}
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100 mb-8">
@@ -176,8 +175,7 @@
 </div>
 {% endif %}
 
-
-<!-- ✅ NEW: Top Hashtags Insight Card -->
+<!-- Top Hashtags Insight Card -->
 <div class="bg-white rounded-xl shadow-sm p-6 border border-purple-100 mb-8">
     <div class="flex items-center gap-2 mb-4">
         <span class="text-2xl">#️⃣</span>
@@ -196,7 +194,7 @@
         {% endfor %}
     </div>
     {% else %}
-    <p class="text-gray-500 text-sm italic">No hashtags found in current dataset. Hashtags are extracted from post text (#Ethiopia, #Election2026, etc.).</p>
+    <p class="text-gray-500 text-sm italic">No hashtags found in current dataset.</p>
     {% endif %}
 </div>
 
