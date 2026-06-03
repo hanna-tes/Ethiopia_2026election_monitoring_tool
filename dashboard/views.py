@@ -1,6 +1,5 @@
 """
 Django views for Ethiopia Election Monitor
-Reuses your Streamlit app.py logic but queries database instead of CSVs
 """
 import json
 import logging
@@ -807,7 +806,7 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             tokenizer,
             prompt=prompt,
             max_tokens=1024,
-            temp=0.1
+            #temp=0.1
         )
 
         # === EXTRACT JSON FROM RESPONSE ===
