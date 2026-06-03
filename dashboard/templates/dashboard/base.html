@@ -5,88 +5,109 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Ethiopia Election Monitor{% endblock %}</title>
-    {% load static %}
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
-    {% block extra_css %}{% endblock %}
+    {% block extra_head %}{% endblock %}
 </head>
-<body>
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <div class="sidebar-brand">
-            <h5 class="mb-0 text-white">
-                <i class="fas fa-chart-line me-2"></i>Ethiopia Election Monitor
-            </h5>
+<body class="bg-gray-50 min-h-screen">
+    
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col items-center py-4 space-y-2">
+                <img src="https://opportunities.codeforafrica.org/wp-content/uploads/sites/5/2015/11/1-Zq7KnTAeKjBf6eENRsacSQ.png" 
+                     alt="Code for Africa Logo" 
+                     class="h-12 w-auto">
+                <h1 class="text-2xl font-bold text-gray-900 tracking-tight">
+                    🇪🇹 Ethiopia Election Monitoring Dashboard
+                </h1>
+                <p class="text-sm text-gray-500">Dataset-driven triggers • Amharic support • Lexicon management</p>
+            </div>
+            
+            <nav class="flex space-x-1 overflow-x-auto py-3 justify-center border-t border-gray-100">
+                {% for tab in tabs %}
+                <a href="{% url tab.url_name %}" 
+                   class="px-4 py-2 text-sm font-medium rounded-lg transition-all {% if active_tab == tab.url_name %}bg-blue-600 text-white shadow-md{% else %}text-gray-600 hover:text-gray-900 hover:bg-gray-100{% endif %}">
+                    {{ tab.icon }} {{ tab.name }}
+                </a>
+                {% endfor %}
+            </nav>
         </div>
-        
-        <div class="sidebar-menu">
-            <div class="sidebar-item">
-                <a href="{% url 'home' %}" class="sidebar-link {% if active_tab == 'home' %}active{% endif %}">
-                    <i class="fas fa-home"></i>
-                    <span>Home</span>
-                </a>
-            </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
             
-            <div class="sidebar-item">
-                <a href="{% url 'peps' %}" class="sidebar-link {% if active_tab == 'peps' %}active{% endif %}">
-                    <i class="fas fa-user-shield"></i>
-                    <span>PEPs/PIPs Tracker</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'lexicons' %}" class="sidebar-link {% if active_tab == 'lexicons' %}active{% endif %}">
-                    <i class="fas fa-book"></i>
-                    <span>Mapped Lexicons</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'narratives' %}" class="sidebar-link {% if active_tab == 'narratives' %}active{% endif %}">
-                    <i class="fas fa-newspaper"></i>
-                    <span>Trending Narratives</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'networks' %}" class="sidebar-link {% if active_tab == 'networks' %}active{% endif %}">
-                    <i class="fas fa-project-diagram"></i>
-                    <span>Networks & TTPs</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'lexicon_management' %}" class="sidebar-link {% if active_tab == 'lexicon_management' %}active{% endif %}">
-                    <i class="fas fa-cog"></i>
-                    <span>Lexicon Management</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'reports_landing' %}" class="sidebar-link {% if active_tab == 'reports' %}active{% endif %}">
-                    <i class="fas fa-file-alt"></i>
-                    <span>Reports</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-section-title">Data Management</div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'upload_data' %}" class="sidebar-link {% if active_tab == 'upload' %}active{% endif %}">
-                    <i class="fas fa-upload"></i>
-                    <span>Upload Data</span>
-                </a>
-            </div>
+            <aside class="md:col-span-1 space-y-4">
+                
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h3 class="font-bold text-gray-800 mb-3 flex items-center text-sm">
+                        <span class="mr-2">📂</span> Data Management
+                    </h3>
+                    
+                    <a href="{% url 'upload_data' %}" 
+                       class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition text-xs shadow-sm flex items-center justify-center gap-2">
+                        📤 Upload New Data
+                    </a>
+                    <p class="text-[10px] text-gray-400 mt-2 italic">Add Meltwater, TikTok, or Telegram CSVs here.</p>
+                </div>
+
+                <div class="bg-gray-800 p-4 rounded-xl text-white shadow-lg">
+                    <p class="text-gray-400 text-xs uppercase font-bold tracking-wider">Database Volume</p>
+                    <p class="text-2xl font-mono text-blue-400">{{ total_posts|default:"0" }}</p>
+                    <p class="text-[10px] text-gray-500 mt-1">Unique posts archived</p>
+
+                    <form method="GET" action="{{ request.path }}">
+                        <input type="hidden" name="refresh" value="true">
+                        <button type="submit" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white text-[11px] font-bold py-2 px-3 rounded-lg transition border border-gray-600 flex items-center justify-center gap-2">
+                            🔄 Refresh UI
+                        </button>
+                    </form>
+
+                    {% if user.is_superuser %}
+                    <form method="POST" action="{% url 'clear_data' %}">
+                        {% csrf_token %}
+                        <button type="submit" 
+                                onclick="return confirm('ADMIN WARNING: This will permanently delete ALL archived election data. This cannot be undone. Proceed?')"
+                                class="w-full mt-2 text-[9px] text-red-400 hover:text-red-300 underline uppercase font-bold text-center transition-colors">
+                            🗑️ Wipe Database (Admin)
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+
+                {% if messages %}
+                <div class="space-y-2">
+                    {% for message in messages %}
+                    <div class="p-3 rounded-xl text-[11px] leading-relaxed border shadow-sm
+                        {% if message.tags == 'success' %}bg-green-50 text-green-800 border-green-200
+                        {% elif message.tags == 'warning' %}bg-yellow-50 text-yellow-800 border-yellow-200
+                        {% else %}bg-blue-50 text-blue-800 border-blue-200{% endif %}">
+                        <div class="flex items-start gap-2">
+                            <span>{% if message.tags == 'success' %}📊{% else %}ℹ️{% endif %}</span>
+                            <div>{{ message|safe }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </aside>
+
+            <section class="md:col-span-3">
+                {% block content %}
+                {% endblock %}
+            </section>
+
         </div>
-    </div>
+    </main>
 
-    <!-- Main Content -->
-    <div class="main-content">
-        {% block content %}{% endblock %}
-    </div>
+    <footer class="bg-white border-t border-gray-200 mt-12 py-6">
+        <div class="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
+            Ethiopia Election Monitoring Dashboard • Code for Africa 2026
+        </div>
+    </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/dashboard.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>
