@@ -1,7 +1,6 @@
 import logging
 from groq import Groq
 from django.conf import settings
-from unsloth import FastLanguageModel
 import torch
 
 logger = logging.getLogger(__name__)
