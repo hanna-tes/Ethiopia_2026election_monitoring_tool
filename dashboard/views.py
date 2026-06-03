@@ -96,7 +96,7 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
             post_data = {
                 "account": post.get('username', ''),
                 "platform": post.get('platform', ''),
-                "post": post.get('text_preview', '')[:500], 
+                "post": post.get('text_preview', '')[:300], 
                 "primary_url": post.get('url', ''),
                 "publication_date": post.get('timestamp', ''),
                 "hashtags": [],  # Extract if available
@@ -129,7 +129,7 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
         "top_domains": [],
         "top_urls": [],
         "top_hashtags": [],
-        "evidence_posts": all_posts[:10],  # Limit to first 50 posts
+        "evidence_posts": all_posts[:5],  
         "allowed_techniques": [
             "T0049", "T0049.002", "T0049.003", "T0049.005",
             "T0016", "T0060",
@@ -805,6 +805,11 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
         
        # === Generate using MLX ===
         from mlx_lm import generate  
+
+        logger.info(f"Prompt length: {len(prompt)} characters")
+        if len(prompt) > 20000:
+            logger.warning("Prompt is very long! Model might not generate anything.")
+
         response_text = generate(
             model,
             tokenizer,
