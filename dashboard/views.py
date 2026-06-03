@@ -771,13 +771,11 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
     """
     logger.info(f"Starting Gemma TTP detection for {len(coordination_groups)} coordination groups")
     
-    # Fallback if no coordination groups
     if not coordination_groups:
         logger.info("No coordination groups provided, using fallback TTP analysis")
         return analyze_ttps([], [])
     
     try:
-        # Load model if not already loaded
         model, tokenizer = load_gemma_model()
         
         if model is None or tokenizer is None:
@@ -789,8 +787,7 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
         # Format input for the model
         input_data = format_ttp_input(coordination_groups)
         
-        # Build a SIMPLER prompt - MLX models work better with shorter prompts
-        # Include only essential information
+        # Simplified input (keep your good simplification logic)
         simplified_input = {
             "network_id": input_data.get("network_id", "ethiopia_election"),
             "case_title": input_data.get("case_title", "Coordination Detection"),
@@ -800,14 +797,27 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             "evidence_posts": input_data.get("evidence_posts", [])[:2] if input_data.get("evidence_posts") else [],
         }
         
-        # Short, direct prompt
-        prompt = f"""Analyze this coordination data and respond with JSON only.
-
-Data: {json.dumps(simplified_input)[:1500]}
-
-Output strictly: {{"qualifies": false or true, "techniques": [{{"technique_id": "TXXXX", "description": "...", "confidence": 0.0}}], "reason": "..."}}"""
+        # Use the chat template (CRITICAL for model behavior)
+        system_prompt = (
+            "You are a DISARM TTP adjudicator. Consider T0049, T0049.002, T0049.003, T0049.005, "
+            "T0016, T0060, T0119, T0119.001, T0119.002, T0097.102, T0097.202, T0143.002, "
+            "T0143.003, T0149.003, and T0084.002. Use only raw observable cues encoded in the dossier. "
+            "Output strict JSON only. Prefer false negatives over false positives."
+        )
         
-        # === CRITICAL: Check and truncate prompt to fit within token limits ===
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(simplified_input)}
+        ]
+        
+        # Apply chat template
+        prompt = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        
+        # Check and truncate if needed
         MAX_SEQ_LENGTH = 2048
         MAX_OUTPUT_TOKENS = 512
         
@@ -815,41 +825,25 @@ Output strictly: {{"qualifies": false or true, "techniques": [{{"technique_id": 
             prompt_tokens = tokenizer.encode(prompt)
             prompt_length = len(prompt_tokens)
             logger.info(f"Prompt length: {prompt_length} tokens")
-        except Exception as e:
-            logger.warning(f"Failed to tokenize prompt: {e}, using char-based estimate")
-            prompt_length = len(prompt) // 4
-        
-        # Truncate if too long
-        if prompt_length > MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS:
-            max_chars = (MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS) * 4
-            prompt = prompt[:max_chars] + "...\"}}"
-            logger.warning(f"Truncated prompt to {len(prompt)} chars")
-        
-        # === Generate using MLX - NO extra parameters ===
-        try:
-            from mlx_lm import generate
             
-            # MLX generate() only accepts these key parameters:
-            # - model
-            # - tokenizer  
-            # - prompt
-            # - max_tokens
-            # - cache (bool)
-            response_text = generate(
-                model,
-                tokenizer,
-                prompt=prompt,
-                max_tokens=MAX_OUTPUT_TOKENS,
-            )
-        except AttributeError as e:
-            # Fallback: try using tokenizer directly with model.generate
-            logger.warning(f"Using direct generate fallback: {e}")
-            input_ids = tokenizer.encode(prompt, return_tensors="np")
-            # Use model.generate without temp parameter
-            output = model.generate(input_ids, max_tokens=MAX_OUTPUT_TOKENS)
-            response_text = tokenizer.decode(output[0])
+            if prompt_length > MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS:
+                logger.warning(f"Prompt too long ({prompt_length} tokens), truncating evidence_posts")
+                simplified_input["evidence_posts"] = simplified_input["evidence_posts"][:1]
+                messages[1]["content"] = json.dumps(simplified_input)
+                prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        except Exception as e:
+            logger.warning(f"Failed to check prompt length: {e}")
         
-        # === DEBUGGING ===
+        # Generate using MLX
+        from mlx_lm import generate
+        
+        response_text = generate(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=MAX_OUTPUT_TOKENS,
+        )
+        
         logger.info(f"Raw Gemma response length: {len(response_text) if response_text else 0}")
         logger.info(f"Raw Gemma response preview: {response_text[:200] if response_text else 'EMPTY'}")
         
@@ -861,7 +855,6 @@ Output strictly: {{"qualifies": false or true, "techniques": [{{"technique_id": 
         try:
             response_clean = response_text.strip()
             
-            # Remove markdown code blocks
             if response_clean.startswith("```json"):
                 response_clean = response_clean.split("```json")[1].split("```")[0].strip()
             elif response_clean.startswith("```"):
@@ -870,7 +863,6 @@ Output strictly: {{"qualifies": false or true, "techniques": [{{"technique_id": 
             result = json.loads(response_clean)
             logger.info(f"Parsed Gemma response: {result}")
             
-            # Convert to the format expected by the view
             ttps = []
             
             if result.get('qualifies', False):
@@ -903,7 +895,6 @@ Output strictly: {{"qualifies": false or true, "techniques": [{{"technique_id": 
     except Exception as e:
         logger.error(f"Gemma TTP detection failed: {e}", exc_info=True)
     
-    # Fallback to old analyze_ttps function
     logger.info("Using fallback TTP analysis")
     return analyze_ttps(coordination_groups, [])
 
