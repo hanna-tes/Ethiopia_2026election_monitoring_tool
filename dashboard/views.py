@@ -53,6 +53,94 @@ logger = logging.getLogger(__name__)
 _GEMMA_MODEL = None
 _GEMMA_TOKENIZER = None
 
+def load_gemma_model():
+    """Load the fine-tuned Gemma model from cache using MLX"""
+    global _GEMMA_MODEL, _GEMMA_TOKENIZER
+    if _GEMMA_MODEL is not None and _GEMMA_TOKENIZER is not None:
+        return _GEMMA_MODEL, _GEMMA_TOKENIZER
+    try:
+        # Point to your newly fused MLX model
+        model_path = getattr(settings, 'GEMMA_TTP_MODEL_PATH', './model_cache/gemma-merged')
+        logger.info(f"Loading Gemma TTP model from {model_path} using MLX...")
+        
+        # Load model and tokenizer using MLX
+        from mlx_lm import load
+        _GEMMA_MODEL, _GEMMA_TOKENIZER = load(model_path)
+        
+        logger.info("Gemma TTP model loaded successfully via MLX")
+        return _GEMMA_MODEL, _GEMMA_TOKENIZER
+    except Exception as e:
+        logger.error(f"Failed to load Gemma model: {e}")
+        raise
+
+
+def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Format coordination groups into the input structure expected by the Gemma model
+    Following the Phase 3 schema from the notebook
+    """
+    # Aggregate all posts from coordination groups
+    all_posts = []
+    platforms = set()
+    account_ids = set()
+    
+    for group in coordination_groups:
+        platforms.update(group.get('platforms', []))
+        account_ids.update(group.get('accounts', []))
+        
+        # Extract sample posts if available
+        sample_posts = group.get('sample_posts_with_urls', [])
+        for post in sample_posts:
+            post_data = {
+                "account": post.get('username', ''),
+                "platform": post.get('platform', ''),
+                "post": post.get('text_preview', ''),
+                "primary_url": post.get('url', ''),
+                "publication_date": post.get('timestamp', ''),
+                "hashtags": [],  # Extract if available
+                "domain": "",  # Extract from URL if needed
+            }
+            all_posts.append(post_data)
+    
+    # Build the input structure matching Phase 3 schema
+    input_data = {
+        "network_id": "ethiopia_election_monitor",
+        "case_title": "Coordination Detection",
+        "source_organization": "Ethiopia Election Monitor",
+        "geography": ["Ethiopia"],
+        "account_count": len(account_ids),
+        "platforms": list(platforms),
+        "signal_totals": {
+            "coLink": 0,
+            "coText": len(coordination_groups),
+            "nearPosting": 0,
+            "domainBurst": 0,
+            "lexicalFlood": 0,
+            "crossPost": 0,
+            "personaCue": 0,
+            "plagiarism": 0,
+            "replyTarget": 0,
+            "repostChain": 0
+        },
+        "manipulation_share": 0.0,
+        "shared_manipulation_categories": [],
+        "top_domains": [],
+        "top_urls": [],
+        "top_hashtags": [],
+        "evidence_posts": all_posts[:50],  # Limit to first 50 posts
+        "allowed_techniques": [
+            "T0049", "T0049.002", "T0049.003", "T0049.005",
+            "T0016", "T0060",
+            "T0119", "T0119.001", "T0119.002",
+            "T0097.102", "T0097.202",
+            "T0143.002", "T0143.003",
+            "T0149.003",
+            "T0084.002"
+        ]
+    }
+    
+    return input_data
+
 #  HELPER FUNCTIONS
 
 def clean_username(raw_name):
@@ -674,102 +762,6 @@ def extract_narrative_description(summary_text, sample_posts):
     
     return "Analyzing narrative content from posts..."
     
-def load_gemma_model():
-    """Load the fine-tuned Gemma model from cache"""
-    global _GEMMA_MODEL, _GEMMA_TOKENIZER
-    
-    if _GEMMA_MODEL is not None and _GEMMA_TOKENIZER is not None:
-        return _GEMMA_MODEL, _GEMMA_TOKENIZER
-    
-    try:
-        model_path = getattr(settings, 'GEMMA_TTP_MODEL_PATH', 'models_cache/gemma-disarm-phase3-ttp')
-        
-        logger.info(f"Loading Gemma TTP model from {model_path}...")
-        
-        # Load model and tokenizer using Unsloth for optimized inference
-        _GEMMA_MODEL, _GEMMA_TOKENIZER = FastModel.from_pretrained(
-            model_name=model_path,
-            max_seq_length=4096,
-            load_in_4bit=True,
-        )
-        
-        # Enable inference mode
-        FastModel.for_inference(_GEMMA_MODEL)
-        
-        logger.info("Gemma TTP model loaded successfully")
-        return _GEMMA_MODEL, _GEMMA_TOKENIZER
-        
-    except Exception as e:
-        logger.error(f"Failed to load Gemma model: {e}")
-        raise
-
-def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Format coordination groups into the input structure expected by the Gemma model
-    Following the Phase 3 schema from the notebook
-    """
-    # Aggregate all posts from coordination groups
-    all_posts = []
-    platforms = set()
-    account_ids = set()
-    
-    for group in coordination_groups:
-        platforms.update(group.get('platforms', []))
-        account_ids.update(group.get('accounts', []))
-        
-        # Extract sample posts if available
-        sample_posts = group.get('sample_posts_with_urls', [])
-        for post in sample_posts:
-            post_data = {
-                "account": post.get('username', ''),
-                "platform": post.get('platform', ''),
-                "post": post.get('text_preview', ''),
-                "primary_url": post.get('url', ''),
-                "publication_date": post.get('timestamp', ''),
-                "hashtags": [],  # Extract if available
-                "domain": "",  # Extract from URL if needed
-            }
-            all_posts.append(post_data)
-    
-    # Build the input structure matching Phase 3 schema
-    input_data = {
-        "network_id": "ethiopia_election_monitor",
-        "case_title": "Coordination Detection",
-        "source_organization": "Ethiopia Election Monitor",
-        "geography": ["Ethiopia"],
-        "account_count": len(account_ids),
-        "platforms": list(platforms),
-        "signal_totals": {
-            "coLink": 0,
-            "coText": len(coordination_groups),
-            "nearPosting": 0,
-            "domainBurst": 0,
-            "lexicalFlood": 0,
-            "crossPost": 0,
-            "personaCue": 0,
-            "plagiarism": 0,
-            "replyTarget": 0,
-            "repostChain": 0
-        },
-        "manipulation_share": 0.0,
-        "shared_manipulation_categories": [],
-        "top_domains": [],
-        "top_urls": [],
-        "top_hashtags": [],
-        "evidence_posts": all_posts[:50],  # Limit to first 50 posts
-        "allowed_techniques": [
-            "T0049", "T0049.002", "T0049.003", "T0049.005",
-            "T0016", "T0060",
-            "T0119", "T0119.001", "T0119.002",
-            "T0097.102", "T0097.202",
-            "T0143.002", "T0143.003",
-            "T0149.003",
-            "T0084.002"
-        ]
-    }
-    
-    return input_data
-
 def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Detect DISARM TTPs using the fine-tuned Gemma model.
@@ -809,25 +801,15 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             add_generation_prompt=True
         )
         
-        # Tokenize and generate
-        inputs = tokenizer(
-            text=[prompt],
-            return_tensors="pt",
-        ).to(model.device)
-        
-        # Generate response
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=1024,
-            use_cache=True,
-            temperature=0.1,
-            do_sample=False
+       # === Generate using MLX ===
+        from mlx_lm import generate
+        response_text = generate(
+            model, 
+            tokenizer, 
+            prompt=prompt, 
+            max_tokens=1024, 
+            temp=0.1
         )
-        
-        # Decode response
-        input_length = inputs["input_ids"].shape[1]
-        completion_ids = outputs[0][input_length:]
-        response_text = tokenizer.decode(completion_ids, skip_special_tokens=True).strip()
         
         # Parse JSON response
         try:
