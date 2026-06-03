@@ -764,8 +764,6 @@ def extract_narrative_description(summary_text, sample_posts):
     
     return "Analyzing narrative content from posts..."
     
-I suspect a json mismatch in the extraction part. Try this and let me know:
-
 import json
 from typing import List, Dict, Any
 
