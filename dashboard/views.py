@@ -96,7 +96,7 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
             post_data = {
                 "account": post.get('username', ''),
                 "platform": post.get('platform', ''),
-                "post": post.get('text_preview', ''),
+                "post": post.get('text_preview', '')[:500], 
                 "primary_url": post.get('url', ''),
                 "publication_date": post.get('timestamp', ''),
                 "hashtags": [],  # Extract if available
@@ -129,7 +129,7 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
         "top_domains": [],
         "top_urls": [],
         "top_hashtags": [],
-        "evidence_posts": all_posts[:50],  # Limit to first 50 posts
+        "evidence_posts": all_posts[:10],  # Limit to first 50 posts
         "allowed_techniques": [
             "T0049", "T0049.002", "T0049.003", "T0049.005",
             "T0016", "T0060",
@@ -811,6 +811,13 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             prompt=prompt,
             max_tokens=1024
         )
+
+        # === DEBUGGING ===
+        logger.info(f"Raw Gemma response length: {len(response_text)}")
+        if len(response_text) == 0:
+            logger.error("Model returned an empty string! Prompt might be too long or model is stuck.")
+        # =========================================
+        
         # Parse JSON response
         try:
             # Clean response - extract JSON if wrapped in markdown
