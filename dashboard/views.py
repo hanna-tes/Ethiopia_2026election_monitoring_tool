@@ -803,20 +803,15 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             model,
             tokenizer,
             prompt=prompt,
-            max_tokens=1024
+            max_tokens=1024,
+            temp=0.1
         )
         
-        # === CRITICAL FIX: Extract JSON from thinking output ===
-        # If response contains thinking channel, find the JSON part
-        if '<|channel>thought' in response_text or 'Thinking Process:' in response_text:
-            # Find the first opening brace
-            json_start = response_text.find('{')
-            if json_start != -1:
-                # Find the last closing brace
-                json_end = response_text.rfind('}')
-                if json_end != -1 and json_end > json_start:
-                    response_text = response_text[json_start:json_end + 1]
-                    logger.info("Extracted JSON from thinking output")
+        # === EXTRACT JSON FROM RESPONSE ===
+        # Handle thinking/reasoning text before JSON
+        json_start = response_text.find('{')
+        if json_start != -1:
+            response_text = response_text[json_start:]
         
         # Parse JSON response
         try:
@@ -830,11 +825,9 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             
             # Convert to the format expected by the view
             ttps = []
-            
             if result.get('qualifies', False):
                 techniques = result.get('techniques', [])
                 reason = result.get('reason', '')
-                
                 for technique in techniques:
                     ttp_data = {
                         'name': technique.get('technique_id', ''),
@@ -845,24 +838,24 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
                         'model_source': 'gemma_finetuned'
                     }
                     ttps.append(ttp_data)
-            
-            if ttps:
-                logger.info(f"Gemma model detected {len(ttps)} TTPs")
-                return ttps
-            else:
-                logger.info("Gemma model found no TTPs, using fallback")
                 
+                if ttps:
+                    logger.info(f"Gemma model detected {len(ttps)} TTPs")
+                    return ttps
+                else:
+                    logger.info("Gemma model found no TTPs, using fallback")
+                    
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse Gemma response as JSON: {e}")
             logger.debug(f"Raw response: {response_text[:500]}")
-        
+            
     except Exception as e:
         logger.error(f"Gemma TTP detection failed: {e}", exc_info=True)
     
     # Fallback to old analyze_ttps function
     logger.info("Using fallback TTP analysis")
     return analyze_ttps(coordination_groups, [])
-
+    
 def _convert_techniques_to_ttp_format(techniques: List[Dict]) -> List[Dict]:
     """Convert Gemma-format techniques to view-compatible format"""
     ttps = []
