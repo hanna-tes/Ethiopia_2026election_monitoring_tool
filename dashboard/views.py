@@ -789,64 +789,68 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
         # Format input for the model
         input_data = format_ttp_input(coordination_groups)
         
-        # Build the prompt - SIMPLER FORMAT to avoid token issues
-        prompt = f"""You are a DISARM TTP detection expert. Analyze this coordination data and respond with valid JSON.
-
-Input data:
-{json.dumps(input_data, indent=2)[:2000]}
-
-Output format:
-{{"qualifies": true/false, "techniques": [{{"technique_id": "TXXXX", "description": "...", "confidence": 0.0}}], "reason": "..."}}
-
-Respond with JSON only: """
+        # Build a SIMPLER prompt - MLX models work better with shorter prompts
+        # Include only essential information
+        simplified_input = {
+            "network_id": input_data.get("network_id", "ethiopia_election"),
+            "case_title": input_data.get("case_title", "Coordination Detection"),
+            "account_count": input_data.get("account_count", 0),
+            "platforms": input_data.get("platforms", [])[:3],
+            "signal_totals": {k: v for k, v in input_data.get("signal_totals", {}).items() if v > 0},
+            "evidence_posts": input_data.get("evidence_posts", [])[:2] if input_data.get("evidence_posts") else [],
+        }
         
-        # === CRITICAL: Check and truncate prompt to fit within 2048 tokens (safer limit) ===
+        # Short, direct prompt
+        prompt = f"""Analyze this coordination data and respond with JSON only.
+
+Data: {json.dumps(simplified_input)[:1500]}
+
+Output strictly: {{"qualifies": false or true, "techniques": [{{"technique_id": "TXXXX", "description": "...", "confidence": 0.0}}], "reason": "..."}}"""
+        
+        # === CRITICAL: Check and truncate prompt to fit within token limits ===
         MAX_SEQ_LENGTH = 2048
-        MAX_OUTPUT_TOKENS = 512  # Reduced for faster generation
+        MAX_OUTPUT_TOKENS = 512
         
-        # Tokenize to check length
         try:
             prompt_tokens = tokenizer.encode(prompt)
             prompt_length = len(prompt_tokens)
             logger.info(f"Prompt length: {prompt_length} tokens")
         except Exception as e:
             logger.warning(f"Failed to tokenize prompt: {e}, using char-based estimate")
-            prompt_length = len(prompt) // 4  # Rough estimate
+            prompt_length = len(prompt) // 4
         
-        # If prompt is too long, create a simplified version
+        # Truncate if too long
         if prompt_length > MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS:
-            logger.warning(f"Prompt too long ({prompt_length} tokens). Using simplified input.")
-            simplified_input = {
-                "network_id": input_data.get("network_id"),
-                "case_title": input_data.get("case_title"),
-                "account_count": input_data.get("account_count"),
-                "platforms": input_data.get("platforms", [])[:3],
-                "signal_totals": {k: v for k, v in input_data.get("signal_totals", {}).items() if v > 0},
-                "evidence_posts": input_data.get("evidence_posts", [])[:2],
-            }
-            prompt = f"""Analyze this coordination data as JSON:
-{json.dumps(simplified_input)[:1500]}
-Respond with JSON only: {{"qualifies": false, "techniques": [], "reason": "insufficient evidence"}}"""
+            max_chars = (MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS) * 4
+            prompt = prompt[:max_chars] + "...\"}}"
+            logger.warning(f"Truncated prompt to {len(prompt)} chars")
         
-        # Generate using simpler approach without chat template
+        # === Generate using MLX - NO extra parameters ===
         try:
             from mlx_lm import generate
+            
+            # MLX generate() only accepts these key parameters:
+            # - model
+            # - tokenizer  
+            # - prompt
+            # - max_tokens
+            # - cache (bool)
             response_text = generate(
                 model,
                 tokenizer,
                 prompt=prompt,
                 max_tokens=MAX_OUTPUT_TOKENS,
-                temp=0.1,  # Lower temperature for more deterministic output
             )
-        except AttributeError:
-            # Fallback: try using tokenizer directly
-            logger.warning("Using tokenizer fallback for generation")
-            input_ids = tokenizer.encode(prompt, return_tensors="pt")
-            output = model.generate(input_ids, max_new_tokens=MAX_OUTPUT_TOKENS, do_sample=False)
-            response_text = tokenizer.decode(output[0], skip_special_tokens=True)
+        except AttributeError as e:
+            # Fallback: try using tokenizer directly with model.generate
+            logger.warning(f"Using direct generate fallback: {e}")
+            input_ids = tokenizer.encode(prompt, return_tensors="np")
+            # Use model.generate without temp parameter
+            output = model.generate(input_ids, max_tokens=MAX_OUTPUT_TOKENS)
+            response_text = tokenizer.decode(output[0])
         
         # === DEBUGGING ===
-        logger.info(f"Raw Gemma response length: {len(response_text)}")
+        logger.info(f"Raw Gemma response length: {len(response_text) if response_text else 0}")
         logger.info(f"Raw Gemma response preview: {response_text[:200] if response_text else 'EMPTY'}")
         
         if not response_text or len(response_text.strip()) == 0:
@@ -855,16 +859,14 @@ Respond with JSON only: {{"qualifies": false, "techniques": [], "reason": "insuf
         
         # Parse JSON response
         try:
-            # Clean response - handle various formats
             response_clean = response_text.strip()
             
-            # Remove markdown code blocks if present
+            # Remove markdown code blocks
             if response_clean.startswith("```json"):
                 response_clean = response_clean.split("```json")[1].split("```")[0].strip()
             elif response_clean.startswith("```"):
                 response_clean = response_clean.split("```")[1].split("```")[0].strip()
             
-            # Handle case where response is just the JSON (no extra text)
             result = json.loads(response_clean)
             logger.info(f"Parsed Gemma response: {result}")
             
@@ -895,18 +897,6 @@ Respond with JSON only: {{"qualifies": false, "techniques": [], "reason": "insuf
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse Gemma response as JSON: {e}")
             logger.warning(f"Raw response was: {response_text[:300]}")
-            # Try one more time with a more aggressive cleanup
-            try:
-                # Extract just the JSON portion
-                import re
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if json_match:
-                    result = json.loads(json_match.group())
-                    logger.info(f"Successfully extracted JSON on second try")
-                    if result.get('qualifies'):
-                        return _convert_techniques_to_ttp_format(result.get('techniques', []))
-            except:
-                pass
         
     except ImportError as e:
         logger.error(f"MLX not available: {e}")
@@ -916,7 +906,6 @@ Respond with JSON only: {{"qualifies": false, "techniques": [], "reason": "insuf
     # Fallback to old analyze_ttps function
     logger.info("Using fallback TTP analysis")
     return analyze_ttps(coordination_groups, [])
-
 
 def _convert_techniques_to_ttp_format(techniques: List[Dict]) -> List[Dict]:
     """Convert Gemma-format techniques to view-compatible format"""
