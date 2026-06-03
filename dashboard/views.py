@@ -804,11 +804,11 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
        # === Generate using MLX ===
         from mlx_lm import generate
         response_text = generate(
-            model, 
-            tokenizer, 
-            prompt=prompt, 
-            max_tokens=1024, 
-            temp=0.1
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=1024,
+            temperature=0.1  # Changed from 'temp' to 'temperature'
         )
         
         # Parse JSON response
