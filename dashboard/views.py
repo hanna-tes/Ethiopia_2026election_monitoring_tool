@@ -1659,29 +1659,32 @@ def preprocess_dataframe(df):
     
 def get_election_posts_queryset(request):
     """
-    Centralized date filtering helper.
+    Centralized date filtering helper with smart fallback for small datasets.
     """
-
     queryset = ProcessedPost.objects.all()
-
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-
+    
     if start_date and end_date:
         queryset = queryset.filter(
             timestamp_share__date__range=[start_date, end_date]
         )
     else:
         end_dt = timezone.now()
-        start_dt = end_dt - timedelta(days=30)
-
-        queryset = queryset.filter(
-            timestamp_share__gte=start_dt
-        )
-
+        # 1. Default to 90 days (3 months) to capture more data
+        start_dt = end_dt - timedelta(days=90)
+        
+        # 2. Smart Fallback: If 90 days is empty, find the earliest post in the DB
+        if not queryset.filter(timestamp_share__gte=start_dt).exists() and queryset.exists():
+            # Exclude null timestamps just in case, then order by oldest first
+            earliest_post = queryset.exclude(timestamp_share__isnull=True).order_by('timestamp_share').first()
+            if earliest_post and earliest_post.timestamp_share:
+                start_dt = earliest_post.timestamp_share
+                
+        queryset = queryset.filter(timestamp_share__gte=start_dt)
         start_date = start_dt
         end_date = end_dt
-
+        
     return queryset.order_by('-timestamp_share'), start_date, end_date
     
 def get_risk_actors_insight(posts_queryset, limit=8):
