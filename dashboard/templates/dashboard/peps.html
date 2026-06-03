@@ -11,49 +11,20 @@
         transform: translateY(-4px);
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
-    .metric-pill {
-        transition: all 0.2s ease;
-    }
-    .metric-pill:hover {
-        transform: scale(1.05);
-    }
-    .hashtag-tag {
-        transition: all 0.2s ease;
-    }
-    .hashtag-tag:hover {
-        background-color: #3b82f6;
-        color: white;
-    }
-    .cluster-badge {
-        animation: fadeIn 0.5s ease-in;
-    }
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    .velocity-indicator {
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
-    }
+    .metric-pill { transition: all 0.2s ease; }
+    .metric-pill:hover { transform: scale(1.05); }
+    .hashtag-tag { transition: all 0.2s ease; }
+    .hashtag-tag:hover { background-color: #3b82f6; color: white; }
+    .cluster-badge { animation: fadeIn 0.5s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    .velocity-indicator { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 </style>
 {% endblock %}
 
 {% block content %}
 
-<div class="mb-6">
-    <div class="border-b border-gray-200">
-        <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
-            <a href="{% url 'home' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🏠 Home</a>
-            <a href="{% url 'peps' %}" class="border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">👥 PIPs/PEPs Tracker</a>
-            <a href="{% url 'narratives' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">📰 Trending Narratives</a>
-            <a href="{% url 'networks' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🕸️ Network Analysis</a>
-            <a href="{% url 'lexicons' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🗣️ Lexicon Management</a>
-        </nav>
-    </div>
-</div>
+<!-- ✅ HORIZONTAL TABS REMOVED HERE -->
 
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
     <div class="flex items-center gap-2 mb-4">
@@ -64,8 +35,10 @@
         </span>
         {% endif %}
     </div>
+    
+    <!-- ✅ UPDATED: Added rc_members_count to total_peps -->
     <p class="text-gray-600 mb-6">
-        Total tracked officials: <span class="font-bold">{{ total_peps }}</span> | 
+        Total tracked officials: <span class="font-bold">{{ total_peps|add:rc_members_count }}</span> | 
         Election candidates: <span class="font-bold">{{ total_candidates|default:0 }}</span>
     </p>
 
@@ -123,7 +96,6 @@
     </div>
 
     <div id="content-candidates" class="tab-content hidden">
-        <!-- UPDATED: Changed to lg:grid-cols-4 to fit the new 4th card beautifully -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <a href="{% url 'peps_data' %}?file=HoPR_Candidates.xlsx" class="block bg-gradient-to-br from-blue-50 to-white p-6 rounded-lg border border-blue-200 hover:shadow-md transition-shadow">
                 <div class="flex items-center justify-between">
@@ -146,7 +118,6 @@
                 </div>
                 <p class="mt-2 text-sm text-gray-600">Executive branch officials & cabinet-level positions.</p>
             </a>
-            <!-- NEW: RC Members Card -->
             <a href="{% url 'peps_data' %}?file=RC_Members.xlsx" class="block bg-gradient-to-br from-orange-50 to-white p-6 rounded-lg border border-orange-200 hover:shadow-md transition-shadow">
                 <div class="flex items-center justify-between">
                     <h3 class="text-lg font-semibold text-gray-800">👥 RC Members</h3>
@@ -183,22 +154,14 @@
                         <div>
                             <h3 class="text-xl font-bold text-gray-900">{{ pep.pep_name }}</h3>
                             <div class="flex items-center gap-3 mt-1 text-sm text-gray-600">
-                                <span class="flex items-center gap-1">
-                                    💬 {{ pep.mention_count|default:"0" }} mentions
-                                </span>
+                                <span class="flex items-center gap-1">💬 {{ pep.mention_count|default:"0" }} mentions</span>
                                 <span class="text-gray-300">|</span>
                                 <span class="flex items-center gap-1">
                                     {% if pep.risk_score %}
-                                        {% if pep.risk_score <= 3 %}
-                                            <span class="text-green-600">🟢 Mostly Neutral</span>
-                                        {% elif pep.risk_score <= 6 %}
-                                            <span class="text-yellow-600">🟡 Some Criticism</span>
-                                        {% else %}
-                                            <span class="text-red-600">🔴 High Criticism</span>
-                                        {% endif %}
-                                    {% else %}
-                                        <span class="text-gray-400">Unassessed</span>
-                                    {% endif %}
+                                        {% if pep.risk_score <= 3 %}<span class="text-green-600">🟢 Mostly Neutral</span>
+                                        {% elif pep.risk_score <= 6 %}<span class="text-yellow-600">🟡 Some Criticism</span>
+                                        {% else %}<span class="text-red-600">🔴 High Criticism</span>{% endif %}
+                                    {% else %}<span class="text-gray-400">Unassessed</span>{% endif %}
                                 </span>
                             </div>
                         </div>
@@ -228,9 +191,7 @@
                             <div class="flex items-center gap-2 mb-1">
                                 <span class="text-lg">⚡</span>
                                 <span class="text-xs font-semibold text-gray-600">Velocity</span>
-                                {% if pep.velocity_alert %}
-                                <span class="velocity-indicator text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️</span>
-                                {% endif %}
+                                {% if pep.velocity_alert %}<span class="velocity-indicator text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">⚠️</span>{% endif %}
                             </div>
                             <div class="text-sm text-gray-700">
                                 Peak: {% if pep.peak_hour is not none %}<strong>{{ pep.peak_hour|stringformat:"02d" }}:00</strong>{% else %}<span class="text-gray-400 font-normal italic">—</span>{% endif %}
@@ -285,7 +246,6 @@
                                 </div>
                             </div>
                             {% endfor %}
-                            
                             {% for narrative in pep.critical_narratives %}
                             <div class="bg-red-50 border-l-4 border-red-400 p-3 rounded-r">
                                 <div class="flex justify-between items-start">
@@ -293,9 +253,7 @@
                                         <p class="text-sm font-semibold text-red-900">{{ narrative.theme }}</p>
                                         <p class="text-xs text-red-700 mt-1">{{ narrative.description }}</p>
                                     </div>
-                                    <span class="px-2 py-0.5 bg-red-100 text-red-800 text-xs font-bold rounded">
-                                        {{ narrative.severity|title }}
-                                    </span>
+                                    <span class="px-2 py-0.5 bg-red-100 text-red-800 text-xs font-bold rounded">{{ narrative.severity|title }}</span>
                                 </div>
                             </div>
                             {% endfor %}
@@ -313,14 +271,10 @@
                                     <span class="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded font-medium">{{ post.platform|default:"Social Post" }}</span>
                                     <span>•</span>
                                     <span>{{ post.timestamp|date:"M d, H:i" }}</span>
-                                    {% if post.risk_level == 'high' or post.risk_level == 'critical' or post.url %}
-                                    <span class="text-red-600 font-semibold">⚠️</span>
-                                    {% endif %}
+                                    {% if post.risk_level == 'high' or post.risk_level == 'critical' or post.url %}<span class="text-red-600 font-semibold">⚠️</span>{% endif %}
                                 </div>
                                 <p class="text-gray-800">{{ post.text|truncatechars:180 }}</p>
-                                {% if post.url %}
-                                <a href="{{ post.url }}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">🔗 View Original Post</a>
-                                {% endif %}
+                                {% if post.url %}<a href="{{ post.url }}" target="_blank" class="text-xs text-blue-600 hover:underline mt-1 inline-block">🔗 View Original Post</a>{% endif %}
                             </div>
                             {% endfor %}
                         </div>
