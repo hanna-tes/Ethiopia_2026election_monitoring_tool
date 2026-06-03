@@ -769,77 +769,104 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
     Detect DISARM TTPs using the fine-tuned Gemma model.
     Falls back to the old analyze_ttps function if model fails.
     """
+    logger.info(f"Starting Gemma TTP detection for {len(coordination_groups)} coordination groups")
+    
+    # Fallback if no coordination groups
+    if not coordination_groups:
+        logger.info("No coordination groups provided, using fallback TTP analysis")
+        return analyze_ttps([], [])
+    
     try:
         # Load model if not already loaded
         model, tokenizer = load_gemma_model()
         
+        if model is None or tokenizer is None:
+            logger.error("Model or tokenizer is None after loading")
+            return analyze_ttps(coordination_groups, [])
+        
+        logger.info("Model loaded successfully, formatting input")
+        
         # Format input for the model
         input_data = format_ttp_input(coordination_groups)
         
-        # Build the prompt following Phase 3 format
-        system_prompt = (
-            "You are a DISARM TTP adjudicator. Consider T0049, T0049.002, T0049.003, T0049.005, "
-            "T0016, T0060, T0119, T0119.001, T0119.002, T0097.102, T0097.202, T0143.002, "
-            "T0143.003, T0149.003, and T0084.002. Use only raw observable cues encoded in the dossier. "
-            "Output strict JSON only. Prefer false negatives over false positives."
-        )
+        # Build the prompt - SIMPLER FORMAT to avoid token issues
+        prompt = f"""You are a DISARM TTP detection expert. Analyze this coordination data and respond with valid JSON.
+
+Input data:
+{json.dumps(input_data, indent=2)[:2000]}
+
+Output format:
+{{"qualifies": true/false, "techniques": [{{"technique_id": "TXXXX", "description": "...", "confidence": 0.0}}], "reason": "..."}}
+
+Respond with JSON only: """
         
-        # Create chat messages
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(input_data)}
-        ]
-        
-        # Apply chat template
-        prompt = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        
-        # === CRITICAL: Check and truncate prompt to fit within 4096 tokens ===
-        MAX_SEQ_LENGTH = 4096
-        MAX_OUTPUT_TOKENS = 1024
-        MAX_INPUT_TOKENS = MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS  # Leave room for output
+        # === CRITICAL: Check and truncate prompt to fit within 2048 tokens (safer limit) ===
+        MAX_SEQ_LENGTH = 2048
+        MAX_OUTPUT_TOKENS = 512  # Reduced for faster generation
         
         # Tokenize to check length
-        prompt_tokens = tokenizer.encode(prompt)
-        prompt_length = len(prompt_tokens)
+        try:
+            prompt_tokens = tokenizer.encode(prompt)
+            prompt_length = len(prompt_tokens)
+            logger.info(f"Prompt length: {prompt_length} tokens")
+        except Exception as e:
+            logger.warning(f"Failed to tokenize prompt: {e}, using char-based estimate")
+            prompt_length = len(prompt) // 4  # Rough estimate
         
-        logger.info(f"Prompt length: {prompt_length} tokens")
+        # If prompt is too long, create a simplified version
+        if prompt_length > MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS:
+            logger.warning(f"Prompt too long ({prompt_length} tokens). Using simplified input.")
+            simplified_input = {
+                "network_id": input_data.get("network_id"),
+                "case_title": input_data.get("case_title"),
+                "account_count": input_data.get("account_count"),
+                "platforms": input_data.get("platforms", [])[:3],
+                "signal_totals": {k: v for k, v in input_data.get("signal_totals", {}).items() if v > 0},
+                "evidence_posts": input_data.get("evidence_posts", [])[:2],
+            }
+            prompt = f"""Analyze this coordination data as JSON:
+{json.dumps(simplified_input)[:1500]}
+Respond with JSON only: {{"qualifies": false, "techniques": [], "reason": "insufficient evidence"}}"""
         
-        # If prompt is too long, truncate it
-        if prompt_length > MAX_INPUT_TOKENS:
-            logger.warning(f"Prompt too long ({prompt_length} tokens). Truncating to {MAX_INPUT_TOKENS} tokens.")
-            # Truncate the tokenized prompt
-            prompt_tokens = prompt_tokens[:MAX_INPUT_TOKENS]
-            # Decode back to text (this preserves the structure)
-            prompt = tokenizer.decode(prompt_tokens, skip_special_tokens=True)
-        
-        # === Generate using MLX ===
-        from mlx_lm import generate
-        response_text = generate(
-            model,
-            tokenizer,
-            prompt=prompt,
-            max_tokens=MAX_OUTPUT_TOKENS
-        )
+        # Generate using simpler approach without chat template
+        try:
+            from mlx_lm import generate
+            response_text = generate(
+                model,
+                tokenizer,
+                prompt=prompt,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                temp=0.1,  # Lower temperature for more deterministic output
+            )
+        except AttributeError:
+            # Fallback: try using tokenizer directly
+            logger.warning("Using tokenizer fallback for generation")
+            input_ids = tokenizer.encode(prompt, return_tensors="pt")
+            output = model.generate(input_ids, max_new_tokens=MAX_OUTPUT_TOKENS, do_sample=False)
+            response_text = tokenizer.decode(output[0], skip_special_tokens=True)
         
         # === DEBUGGING ===
         logger.info(f"Raw Gemma response length: {len(response_text)}")
-        if len(response_text) == 0:
+        logger.info(f"Raw Gemma response preview: {response_text[:200] if response_text else 'EMPTY'}")
+        
+        if not response_text or len(response_text.strip()) == 0:
             logger.error("Model returned an empty string!")
-        # =========================================
+            return analyze_ttps(coordination_groups, [])
         
         # Parse JSON response
         try:
-            # Clean response - extract JSON if wrapped in markdown
-            if response_text.startswith("```json"):
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif response_text.startswith("```"):
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+            # Clean response - handle various formats
+            response_clean = response_text.strip()
             
-            result = json.loads(response_text)
+            # Remove markdown code blocks if present
+            if response_clean.startswith("```json"):
+                response_clean = response_clean.split("```json")[1].split("```")[0].strip()
+            elif response_clean.startswith("```"):
+                response_clean = response_clean.split("```")[1].split("```")[0].strip()
+            
+            # Handle case where response is just the JSON (no extra text)
+            result = json.loads(response_clean)
+            logger.info(f"Parsed Gemma response: {result}")
             
             # Convert to the format expected by the view
             ttps = []
@@ -853,7 +880,7 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
                         'name': technique.get('technique_id', ''),
                         'description': technique.get('description', reason),
                         'severity': _get_ttp_severity(technique.get('technique_id', '')),
-                        'evidence': f"Detected via Gemma model analysis. {technique.get('evidence', '')}",
+                        'evidence': f"Detected via Gemma model. {technique.get('evidence', '')}",
                         'confidence': technique.get('confidence', 0.8),
                         'model_source': 'gemma_finetuned'
                     }
@@ -867,14 +894,44 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
                 
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse Gemma response as JSON: {e}")
-            logger.debug(f"Raw response: {response_text[:500]}")
+            logger.warning(f"Raw response was: {response_text[:300]}")
+            # Try one more time with a more aggressive cleanup
+            try:
+                # Extract just the JSON portion
+                import re
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    result = json.loads(json_match.group())
+                    logger.info(f"Successfully extracted JSON on second try")
+                    if result.get('qualifies'):
+                        return _convert_techniques_to_ttp_format(result.get('techniques', []))
+            except:
+                pass
         
+    except ImportError as e:
+        logger.error(f"MLX not available: {e}")
     except Exception as e:
         logger.error(f"Gemma TTP detection failed: {e}", exc_info=True)
     
     # Fallback to old analyze_ttps function
     logger.info("Using fallback TTP analysis")
     return analyze_ttps(coordination_groups, [])
+
+
+def _convert_techniques_to_ttp_format(techniques: List[Dict]) -> List[Dict]:
+    """Convert Gemma-format techniques to view-compatible format"""
+    ttps = []
+    for technique in techniques:
+        ttp_data = {
+            'name': technique.get('technique_id', ''),
+            'description': technique.get('description', ''),
+            'severity': _get_ttp_severity(technique.get('technique_id', '')),
+            'evidence': f"Detected via Gemma model. {technique.get('evidence', '')}",
+            'confidence': technique.get('confidence', 0.8),
+            'model_source': 'gemma_finetuned'
+        }
+        ttps.append(ttp_data)
+    return ttps
     
 def _get_ttp_severity(technique_id: str) -> str:
     """Map technique IDs to severity levels"""
