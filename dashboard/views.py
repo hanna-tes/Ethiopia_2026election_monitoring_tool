@@ -96,7 +96,7 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
             post_data = {
                 "account": post.get('username', ''),
                 "platform": post.get('platform', ''),
-                "post": post.get('text_preview', '')[:300], 
+                "post": post.get('text_preview', '')[:200], 
                 "primary_url": post.get('url', ''),
                 "publication_date": post.get('timestamp', ''),
                 "hashtags": [],  # Extract if available
@@ -129,7 +129,7 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
         "top_domains": [],
         "top_urls": [],
         "top_hashtags": [],
-        "evidence_posts": all_posts[:5],  
+        "evidence_posts": all_posts[:3],  
         "allowed_techniques": [
             "T0049", "T0049.002", "T0049.003", "T0049.005",
             "T0016", "T0060",
@@ -768,12 +768,6 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
     """
     Detect DISARM TTPs using the fine-tuned Gemma model.
     Falls back to the old analyze_ttps function if model fails.
-    
-    Args:
-        coordination_groups: List of coordination group dictionaries
-        
-    Returns:
-        List of detected TTPs with metadata
     """
     try:
         # Load model if not already loaded
@@ -803,24 +797,38 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             add_generation_prompt=True
         )
         
-       # === Generate using MLX ===
-        from mlx_lm import generate  
-
-        logger.info(f"Prompt length: {len(prompt)} characters")
-        if len(prompt) > 20000:
-            logger.warning("Prompt is very long! Model might not generate anything.")
-
+        # === CRITICAL: Check and truncate prompt to fit within 4096 tokens ===
+        MAX_SEQ_LENGTH = 4096
+        MAX_OUTPUT_TOKENS = 1024
+        MAX_INPUT_TOKENS = MAX_SEQ_LENGTH - MAX_OUTPUT_TOKENS  # Leave room for output
+        
+        # Tokenize to check length
+        prompt_tokens = tokenizer.encode(prompt)
+        prompt_length = len(prompt_tokens)
+        
+        logger.info(f"Prompt length: {prompt_length} tokens")
+        
+        # If prompt is too long, truncate it
+        if prompt_length > MAX_INPUT_TOKENS:
+            logger.warning(f"Prompt too long ({prompt_length} tokens). Truncating to {MAX_INPUT_TOKENS} tokens.")
+            # Truncate the tokenized prompt
+            prompt_tokens = prompt_tokens[:MAX_INPUT_TOKENS]
+            # Decode back to text (this preserves the structure)
+            prompt = tokenizer.decode(prompt_tokens, skip_special_tokens=True)
+        
+        # === Generate using MLX ===
+        from mlx_lm import generate
         response_text = generate(
             model,
             tokenizer,
             prompt=prompt,
-            max_tokens=1024
+            max_tokens=MAX_OUTPUT_TOKENS
         )
-
+        
         # === DEBUGGING ===
         logger.info(f"Raw Gemma response length: {len(response_text)}")
         if len(response_text) == 0:
-            logger.error("Model returned an empty string! Prompt might be too long or model is stuck.")
+            logger.error("Model returned an empty string!")
         # =========================================
         
         # Parse JSON response
@@ -867,7 +875,7 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
     # Fallback to old analyze_ttps function
     logger.info("Using fallback TTP analysis")
     return analyze_ttps(coordination_groups, [])
-
+    
 def _get_ttp_severity(technique_id: str) -> str:
     """Map technique IDs to severity levels"""
     high_severity = ['T0049', 'T0049.002', 'T0049.003', 'T0049.005']  # Coordinated behavior
