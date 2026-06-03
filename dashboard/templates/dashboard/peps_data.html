@@ -1,19 +1,7 @@
 {% extends 'dashboard/base.html' %}
 {% block title %}{{ selected_file }} - Election Data{% endblock %}
-{% block content %}
 
-<!--  Top Navigation Tabs -->
-<div class="mb-6">
-    <div class="border-b border-gray-200">
-        <nav class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
-            <a href="{% url 'home' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🏠 Home</a>
-            <a href="{% url 'peps' %}" class="{% if active_tab == 'peps' %}border-blue-500 text-blue-600{% else %}border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300{% endif %} whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">👥 PIPs/PEPs Tracker</a>
-            <a href="{% url 'narratives' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">📰 Trending Narratives</a>
-            <a href="{% url 'networks' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🕸️ Network Analaysis</a>
-            <a href="{% url 'lexicons' %}" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">🗣️ Lexicon Managment</a>
-        </nav>
-    </div>
-</div>
+{% block content %}
 
 <div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
     <div class="flex items-center justify-between mb-4">
