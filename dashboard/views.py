@@ -46,6 +46,8 @@ from .models import ElectionOfficeholder
 from django.shortcuts import render, get_object_or_404
 from .models import MonitoringReport
 from typing import List, Dict, Any, Optional
+from mlx_lm import generate
+from mlx_lm.generate import GenerationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -802,13 +804,19 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
         )
         
        # === Generate using MLX ===
-        from mlx_lm import generate
+        # Create generation config with temperature
+        gen_config = GenerationConfig(
+            max_tokens=1024,
+            temperature=0.1,
+            top_p=0.9,
+            repetition_penalty=1.0,
+        )
+        
         response_text = generate(
             model,
             tokenizer,
             prompt=prompt,
-            max_tokens=1024,
-            temperature=0.1  # Changed from 'temp' to 'temperature'
+            generation_config=gen_config
         )
         
         # Parse JSON response
