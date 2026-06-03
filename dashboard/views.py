@@ -45,7 +45,6 @@ from .utils.llm_detector import detect_hate_speech_llm
 from .models import ElectionOfficeholder
 from django.shortcuts import render, get_object_or_404
 from .models import MonitoringReport
-from unsloth import FastModel
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
