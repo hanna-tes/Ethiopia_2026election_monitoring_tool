@@ -764,6 +764,11 @@ def extract_narrative_description(summary_text, sample_posts):
     
     return "Analyzing narrative content from posts..."
     
+I suspect a json mismatch in the extraction part. Try this and let me know:
+
+import json
+from typing import List, Dict, Any
+
 def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Detect DISARM TTPs using the fine-tuned Gemma model.
@@ -772,10 +777,10 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
     try:
         # Load model if not already loaded
         model, tokenizer = load_gemma_model()
-        
+
         # Format input for the model
         input_data = format_ttp_input(coordination_groups)
-        
+
         # Build the prompt following Phase 3 format
         system_prompt = (
             "You are a DISARM TTP adjudicator. Consider T0049, T0049.002, T0049.003, T0049.005, "
@@ -783,20 +788,20 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             "T0143.003, T0149.003, and T0084.002. Use only raw observable cues encoded in the dossier. "
             "Output strict JSON only. Prefer false negatives over false positives."
         )
-        
+
         # Create chat messages
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(input_data)}
         ]
-        
+
         # Apply chat template
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
-        
+
         # === Generate using MLX ===
         from mlx_lm import generate
         response_text = generate(
@@ -804,25 +809,26 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             tokenizer,
             prompt=prompt,
             max_tokens=1024,
-            #temp=0.1
+            temp=0.1
         )
-        
+
         # === EXTRACT JSON FROM RESPONSE ===
-        # Handle thinking/reasoning text before JSON
+        # 1. First extract from markdown if present
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].strip()
+
+        # 2. Then trim any remaining conversational filler to isolate the JSON object
         json_start = response_text.find('{')
-        if json_start != -1:
-            response_text = response_text[json_start:]
-        
+        json_end = response_text.rfind('}')
+        if json_start != -1 and json_end != -1:
+            response_text = response_text[json_start:json_end+1]
+
         # Parse JSON response
         try:
-            # Clean response - extract JSON if wrapped in markdown
-            if response_text.startswith("```json"):
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif response_text.startswith("```"):
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-            
             result = json.loads(response_text)
-            
+
             # Convert to the format expected by the view
             ttps = []
             if result.get('qualifies', False):
@@ -838,20 +844,20 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
                         'model_source': 'gemma_finetuned'
                     }
                     ttps.append(ttp_data)
-                
+
                 if ttps:
                     logger.info(f"Gemma model detected {len(ttps)} TTPs")
                     return ttps
                 else:
                     logger.info("Gemma model found no TTPs, using fallback")
-                    
+
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse Gemma response as JSON: {e}")
             logger.debug(f"Raw response: {response_text[:500]}")
-            
+
     except Exception as e:
         logger.error(f"Gemma TTP detection failed: {e}", exc_info=True)
-    
+
     # Fallback to old analyze_ttps function
     logger.info("Using fallback TTP analysis")
     return analyze_ttps(coordination_groups, [])
