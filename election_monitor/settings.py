@@ -108,8 +108,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
-    BASE_DIR / 'dashboard' / 'static',
-    BASE_DIR / 'dashboard' / 'templates',
+    BASE_DIR / 'dashboard' / 'static',  
 ]
 
 # Media files
