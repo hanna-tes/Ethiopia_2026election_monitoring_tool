@@ -1,7 +1,7 @@
 import logging
 from groq import Groq
 from django.conf import settings
-import torch
+# import torch
 
 logger = logging.getLogger(__name__)
 
