@@ -2155,13 +2155,12 @@ class HomeView(BaseTabMixin, TemplateView):
         charts = {}
         
         if not df_platforms.empty:
-            # Create a PIE CHART to show proportions clearly
             fig_platform = px.pie(
                 df_platforms, 
-                names='platform',      # lowercase 'platform'
-                values='count',        # lowercase 'count'
+                names='Platform',      # ✅ Capitalized to match DataFrame
+                values='Count',        # ✅ Capitalized to match DataFrame
                 title='Post Distribution by Platform',
-                color='platform',      # Color by platform name
+                color='Platform',      # ✅ Capitalized to match DataFrame
                 color_discrete_map={
                     'X': '#1DA1F2',
                     'Facebook': '#1877F2',
@@ -2171,12 +2170,12 @@ class HomeView(BaseTabMixin, TemplateView):
                     'YouTube': '#FF0000',
                     'Instagram': '#E4405F'
                 },
-                hole=0.4  # Makes it a donut chart
+                hole=0.4
             )
             
             fig_platform.update_traces(
                 textposition='inside',
-                textinfo='label+percent',  # Shows platform name and percentage
+                textinfo='label+percent',
                 hoverinfo='label+value+percent',
                 textfont_size=12,
                 marker=dict(line=dict(color='#ffffff', width=2))
