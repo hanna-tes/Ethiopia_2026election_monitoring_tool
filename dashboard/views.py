@@ -2189,6 +2189,10 @@ class HomeView(BaseTabMixin, TemplateView):
             df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
             df_platforms = df_platforms[df_platforms['count'] > 0]
             df_platforms = df_platforms.sort_values('count', ascending=False)
+
+            # 🔍 DEBUG: Log AFTER processing
+            logger.info(f"📊 Platform DataFrame AFTER processing:\n{df_platforms.to_string()}")
+            logger.info(f"📊 Total posts in chart data: {df_platforms['count'].sum()}")
             
             # Create the chart with solid colors so the massive 'X' bar doesn't break the scaling
             fig_platform = px.bar(
