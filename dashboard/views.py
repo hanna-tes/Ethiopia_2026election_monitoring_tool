@@ -1750,9 +1750,10 @@ def get_risk_actors_insight(posts_queryset, limit=8):
 def get_platform_distribution(posts_queryset):
     """
     Accurately count and normalize platforms
-    Returns: (platforms_list, counts_list, top_platform_name)
+    Returns: (df_platforms, top_platform_name)
     """
     from collections import defaultdict
+    import pandas as pd
     
     raw_platforms = list(posts_queryset.values_list('platform', flat=True))
     
@@ -1783,21 +1784,23 @@ def get_platform_distribution(posts_queryset):
             # Keep original but capitalize properly
             platform_counts[str(plat).title()] += 1
     
-    # Sort platforms by count in descending order
-    sorted_platforms = sorted(
-        [{'platform': k, 'count': int(v)} for k, v in platform_counts.items() if v > 0],
-        key=lambda x: x['count'],
-        reverse=True
-    )
+    # Convert to a cleanly structured, typed DataFrame for Plotly
+    df = pd.DataFrame([
+        {'platform': str(k), 'count': int(v)} 
+        for k, v in platform_counts.items() 
+        if v > 0
+    ])
     
-    # Extract clean parallel arrays for the frontend chart integration
-    platforms_list = [item['platform'] for item in sorted_platforms]
-    counts_list = [item['count'] for item in sorted_platforms]
+    if not df.empty:
+        # Group duplicates and explicitly ensure values are integers
+        df = df.groupby('platform', as_index=False)['count'].sum()
+        df = df.sort_values('count', ascending=False)
+        top_platform = df.iloc[0]['platform']
+    else:
+        top_platform = "—"
     
-    # Safely pinpoint top platform string
-    top_platform = platforms_list[0] if platforms_list else "—"
-    
-    return platforms_list, counts_list, top_platform
+    # Returns exactly two values, resolving the ValueError!
+    return df, top_platform
 
 def get_top_hashtags(posts_queryset, limit=10):
     """Extract and rank top hashtags from post content"""
