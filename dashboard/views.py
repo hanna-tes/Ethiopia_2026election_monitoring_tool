@@ -2133,29 +2133,28 @@ class HomeView(BaseTabMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from django.core.cache import cache
-        cache.clear()
         
         # 1. GET FILTERED QUERYSET
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
         total_posts = posts.count()
         
-        # 2. PLATFORM DISTRIBUTION - Query database directly
+        # 2. PLATFORM DISTRIBUTION - Optimized with robust numeric casting
         platform_stats = posts.values('platform').annotate(
             count=Count('id')
         ).order_by('-count')
         
-        # Build DataFrame with correct column names
-        platform_data = []
-        for item in platform_stats:
-            if item['platform'] and item['count'] > 0:
-                platform_data.append({
-                    'platform': str(item['platform']),
-                    'count': int(item['count'])
-                })
+        platform_data = list(platform_stats)
         
-        df_platforms = pd.DataFrame(platform_data)
+        if platform_data:
+            df_platforms = pd.DataFrame(platform_data)
+            # Ensure proper string formatting and remove empty rows
+            df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
+            df_platforms = df_platforms[df_platforms['platform'].notna() & (df_platforms['platform'] != '')]
+            # Force counts to rigid integers to guarantee Plotly processes the slice sizing
+            df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
+        else:
+            df_platforms = pd.DataFrame(columns=['platform', 'count'])
         
         # Get top platform
         if not df_platforms.empty:
@@ -2166,7 +2165,7 @@ class HomeView(BaseTabMixin, TemplateView):
         charts = {}
         
         # 3. CREATE PIE CHART
-        if not df_platforms.empty:
+        if not df_platforms.empty and df_platforms['count'].sum() > 0:
             fig_platform = px.pie(
                 df_platforms,
                 names='platform',      # lowercase - matches DataFrame column
