@@ -30,9 +30,19 @@
                class="rounded border-gray-300 text-sm px-3 py-2">
     </div>
     <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">🔍 Apply Filter</button>
+    
+    <!-- 👇 ADD THIS NEW BUTTON HERE 👇 -->
+    <a href="?view_all=true" class="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition">
+        📊 View All Data
+    </a>
+    
     <a href="{{ request.path }}" class="text-gray-500 hover:text-gray-700 text-sm px-3 py-2 hover:underline">Clear</a>
     
-    {% if request.GET.start_date or request.GET.end_date %}
+    {% if request.GET.view_all == 'true' %}
+    <span class="text-xs text-green-600 bg-green-50 px-3 py-2 rounded ml-auto">
+        ✅ Showing all {{ metrics.total_posts }} posts
+    </span>
+    {% elif request.GET.start_date or request.GET.end_date %}
     <span class="text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded ml-auto">
         📅 {{ request.GET.start_date|default:"..." }} → {{ request.GET.end_date|default:"..." }}
     </span>
