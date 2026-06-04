@@ -2150,52 +2150,67 @@ class HomeView(BaseTabMixin, TemplateView):
             actual_max = posts.aggregate(max_date=Max('timestamp_share'))['max_date']
             logger.info(f"📊 Actual data range: {actual_min} to {actual_max}")
         
-                # 2. PLATFORM DISTRIBUTION & CHART
-        df_platforms, top_platform = get_platform_distribution(posts)
+        # 2. PLATFORM DISTRIBUTION & CHART
+        platform_stats = posts.values('platform').annotate(
+            count=Count('id')
+        ).order_by('-count')
+        
         charts = {}
         
-        if not df_platforms.empty:
-            # Create a PIE CHART
-            fig_platform = px.pie(
-                df_platforms, 
-                names='platform',   # The column with platform names
-                values='count',     # CRITICAL: The column with the actual post counts!
-                title='Post Distribution by Platform',
-                color='platform',
-                color_discrete_map={
-                    'X': '#1DA1F2',
-                    'Facebook': '#1877F2',
-                    'Telegram': '#0088cc',
-                    'TikTok': '#000000',
-                    'Media': '#6B7280',
-                    'YouTube': '#FF0000',
-                    'Instagram': '#E4405F'
-                },
-                hole=0.4  # Makes it a donut chart
-            )
+        if platform_stats:
+            # Convert to list of dicts for Plotly
+            platform_data = [
+                {'Platform': item['platform'] or 'Unknown', 'Count': item['count']}
+                for item in platform_stats
+                if item['platform'] and item['count'] > 0
+            ]
             
-            fig_platform.update_traces(
-                textposition='inside',
-                textinfo='label+percent',
-                hoverinfo='label+value+percent',
-                textfont_size=12,
-                marker=dict(line=dict(color='#ffffff', width=2))
-            )
-            
-            fig_platform.update_layout(
-                margin=dict(b=20, t=50, l=20, r=20),
-                height=400,
-                showlegend=True,
-                legend=dict(
-                    orientation='h',
-                    yanchor='bottom',
-                    y=-0.1,
-                    xanchor='center',
-                    x=0.5
+            if platform_data:
+                # Create DataFrame with capitalized column names
+                df_platforms = pd.DataFrame(platform_data)
+                
+                # Create PIE CHART using database column names
+                fig_platform = px.pie(
+                    df_platforms,
+                    names='Platform',      # Database column name
+                    values='Count',        # Database column name
+                    title='Post Distribution by Platform',
+                    color='Platform',
+                    color_discrete_map={
+                        'X': '#1DA1F2',
+                        'Facebook': '#1877F2',
+                        'Telegram': '#0088cc',
+                        'TikTok': '#000000',
+                        'Media': '#6B7280',
+                        'YouTube': '#FF0000',
+                        'Instagram': '#E4405F'
+                    },
+                    hole=0.4
                 )
-            )
-            
-            charts['platform'] = fig_platform.to_json() 
+                
+                fig_platform.update_traces(
+                    textposition='inside',
+                    textinfo='label+percent',
+                    hoverinfo='label+value+percent',
+                    textfont_size=12,
+                    marker=dict(line=dict(color='#ffffff', width=2))
+                )
+                
+                fig_platform.update_layout(
+                    margin=dict(b=20, t=50, l=20, r=20),
+                    height=400,
+                    showlegend=True,
+                    legend=dict(
+                        orientation='h',
+                        yanchor='bottom',
+                        y=-0.1,
+                        xanchor='center',
+                        x=0.5
+                    )
+                )
+                
+                charts['platform'] = fig_platform.to_json()
+                logger.info(f"✅ Platform chart created with {len(platform_data)} platforms") 
             
         # 3. METRICS
         unique_accounts = posts.values('account_id').distinct().count()
