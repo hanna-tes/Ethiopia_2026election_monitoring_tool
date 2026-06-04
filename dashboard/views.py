@@ -2150,17 +2150,18 @@ class HomeView(BaseTabMixin, TemplateView):
             actual_max = posts.aggregate(max_date=Max('timestamp_share'))['max_date']
             logger.info(f"📊 Actual data range: {actual_min} to {actual_max}")
         
-        # 2. PLATFORM DISTRIBUTION & CHART
+                # 2. PLATFORM DISTRIBUTION & CHART
         df_platforms, top_platform = get_platform_distribution(posts)
         charts = {}
         
         if not df_platforms.empty:
+            # Create a PIE CHART
             fig_platform = px.pie(
                 df_platforms, 
-                names='Platform',      # ✅ Capitalized to match DataFrame
-                values='Count',        # ✅ Capitalized to match DataFrame
+                names='platform',   # The column with platform names
+                values='count',     # CRITICAL: The column with the actual post counts!
                 title='Post Distribution by Platform',
-                color='Platform',      # ✅ Capitalized to match DataFrame
+                color='platform',
                 color_discrete_map={
                     'X': '#1DA1F2',
                     'Facebook': '#1877F2',
@@ -2170,7 +2171,7 @@ class HomeView(BaseTabMixin, TemplateView):
                     'YouTube': '#FF0000',
                     'Instagram': '#E4405F'
                 },
-                hole=0.4
+                hole=0.4  # Makes it a donut chart
             )
             
             fig_platform.update_traces(
