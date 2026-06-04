@@ -1753,17 +1753,16 @@ def get_risk_actors_insight(posts_queryset, limit=8):
 def get_platform_distribution(posts_queryset):
     """
     Accurately count and normalize platforms
-    Returns: (df_platforms, top_platform_name)
+    Returns: (platforms_list, counts_list, top_platform_name)
     """
     from collections import defaultdict
-    import pandas as pd
     
     raw_platforms = list(posts_queryset.values_list('platform', flat=True))
     
     platform_counts = defaultdict(int)
     
     for plat in raw_platforms:
-        if not plat or plat.lower() in ['nan', 'none', '', 'unknown']:
+        if not plat or str(plat).lower() in ['nan', 'none', '', 'unknown']:
             continue
             
         p = str(plat).lower().strip()
@@ -1787,20 +1786,21 @@ def get_platform_distribution(posts_queryset):
             # Keep original but capitalize properly
             platform_counts[str(plat).title()] += 1
     
-    # Convert to DataFrame
-    df = pd.DataFrame([
-        {'platform': k, 'count': int(v)} 
-        for k, v in platform_counts.items() 
-        if v > 0  # Only include platforms with actual posts
-    ])
+    # Sort platforms by count in descending order
+    sorted_platforms = sorted(
+        [{'platform': k, 'count': int(v)} for k, v in platform_counts.items() if v > 0],
+        key=lambda x: x['count'],
+        reverse=True
+    )
     
-    if not df.empty:
-        df = df.sort_values('count', ascending=False)
-        top_platform = df.iloc[0]['platform']
-    else:
-        top_platform = "—"
+    # Extract clean parallel arrays for the frontend chart integration
+    platforms_list = [item['platform'] for item in sorted_platforms]
+    counts_list = [item['count'] for item in sorted_platforms]
     
-    return df, top_platform
+    # Safely pinpoint top platform string
+    top_platform = platforms_list[0] if platforms_list else "—"
+    
+    return platforms_list, counts_list, top_platform
 
 def get_top_hashtags(posts_queryset, limit=10):
     """Extract and rank top hashtags from post content"""
@@ -2123,6 +2123,19 @@ class HomeView(BaseTabMixin, TemplateView):
         charts = {}
         
         if not df_platforms.empty:
+            # FIX: Ensure column structures are strictly strings and numeric integers
+            df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
+            df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
+            
+            # FIX: Group matching rows together to ensure 'X' handles its 18k records combined
+            df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
+            
+            # FIX: Drop empty categories that visually break the layout engine
+            df_platforms = df_platforms[df_platforms['count'] > 0]
+            
+            # Re-sort to make sure the Plotly engine renders beautifully
+            df_platforms = df_platforms.sort_values('count', ascending=False)
+
             fig_platform = px.bar(
                 df_platforms, x='platform', y='count',
                 labels={'platform': 'Platform', 'count': 'Posts'},
@@ -2130,7 +2143,9 @@ class HomeView(BaseTabMixin, TemplateView):
                 title='Post Distribution by Platform'
             )
             fig_platform.update_layout(
-                xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400,
+                xaxis_tickangle=-45, 
+                margin=dict(b=100, t=50, l=50, r=20), 
+                height=400,
                 xaxis={'categoryorder': 'total descending'}
             )
             charts['platform'] = fig_platform.to_json()
