@@ -2155,13 +2155,13 @@ class HomeView(BaseTabMixin, TemplateView):
         charts = {}
         
         if not df_platforms.empty:
-            # Create a PIE CHART using the ACTUAL column names from the DataFrame
+            # Create a PIE CHART to show proportions clearly
             fig_platform = px.pie(
                 df_platforms, 
-                names='Platform',  # Capitalized to match your DataFrame
-                values='Count',    # Capitalized to match your DataFrame
+                names='platform',      # lowercase 'platform'
+                values='count',        # lowercase 'count'
                 title='Post Distribution by Platform',
-                color='Platform',  # Capitalized
+                color='platform',      # Color by platform name
                 color_discrete_map={
                     'X': '#1DA1F2',
                     'Facebook': '#1877F2',
@@ -2171,13 +2171,13 @@ class HomeView(BaseTabMixin, TemplateView):
                     'YouTube': '#FF0000',
                     'Instagram': '#E4405F'
                 },
-                hole=0.4  # Makes it a donut chart (set to 0 for regular pie)
+                hole=0.4  # Makes it a donut chart
             )
             
             fig_platform.update_traces(
                 textposition='inside',
                 textinfo='label+percent',  # Shows platform name and percentage
-                hoverinfo='label+value+percent',  # Shows on hover
+                hoverinfo='label+value+percent',
                 textfont_size=12,
                 marker=dict(line=dict(color='#ffffff', width=2))
             )
@@ -2195,7 +2195,7 @@ class HomeView(BaseTabMixin, TemplateView):
                 )
             )
             
-            charts['platform'] = fig_platform.to_json()
+            charts['platform'] = fig_platform.to_json() 
             
         # 3. METRICS
         unique_accounts = posts.values('account_id').distinct().count()
