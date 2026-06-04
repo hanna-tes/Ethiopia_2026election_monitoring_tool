@@ -2139,80 +2139,74 @@ class HomeView(BaseTabMixin, TemplateView):
         posts = queryset
         total_posts = posts.count()
         
-        # 2. PLATFORM DISTRIBUTION - Explicit column mapping to fix 20% flat fallback
+        # 2. PLATFORM DISTRIBUTION - Direct aggregation extraction
         platform_stats = posts.values('platform').annotate(
             total_count=Count('id')
         ).order_by('-total_count')
         
-        # Manually reconstruct the data list with strict, predictable dictionary keys
-        cleaned_platform_list = []
+        # Build direct lists for Plotly instead of a DataFrame to avoid parsing failure
+        labels = []
+        values = []
+        colors = []
+        
+        color_map = {
+            'X': '#1DA1F2',
+            'Facebook': '#1877F2',
+            'Telegram': '#0088cc',
+            'TikTok': '#000000',
+            'Media': '#6B7280',
+            'YouTube': '#FF0000',
+            'Instagram': '#E4405F'
+        }
+        
         for item in platform_stats:
             p_name = str(item.get('platform') or '').strip()
             p_count = item.get('total_count') or 0
             
-            # Only include valid platforms with active post tallies
             if p_name and p_count > 0:
-                cleaned_platform_list.append({
-                    'platform': p_name,
-                    'count': int(p_count)
-                })
+                labels.append(p_name)
+                values.append(int(p_count))
+                colors.append(color_map.get(p_name, '#6B7280'))
         
-        # Explicitly build the DataFrame columns to match Plotly parameters exactly
-        if cleaned_platform_list:
-            df_platforms = pd.DataFrame(cleaned_platform_list, columns=['platform', 'count'])
-        else:
-            df_platforms = pd.DataFrame(columns=['platform', 'count'])
-        
-        # Get top platform safely
-        if not df_platforms.empty:
-            top_platform = df_platforms.iloc[0]['platform']
-        else:
-            top_platform = "—"
+        # Set top platform metrics fallback
+        top_platform = labels[0] if labels else "—"
         
         charts = {}
         
-        # 3. CREATE PIE CHART
-        if not df_platforms.empty and df_platforms['count'].sum() > 0:
-            fig_platform = px.pie(
-                df_platforms,
-                names='platform',      # Matches DataFrame column name exactly
-                values='count',        # Matches DataFrame column name exactly
-                title=f'Post Distribution by Platform (Total: {df_platforms["count"].sum():,} posts)',
-                color='platform',      
-                color_discrete_map={
-                    'X': '#1DA1F2',
-                    'Facebook': '#1877F2',
-                    'Telegram': '#0088cc',
-                    'TikTok': '#000000',
-                    'Media': '#6B7280',
-                    'YouTube': '#FF0000',
-                    'Instagram': '#E4405F'
-                },
-                hole=0.4
-            )
-            
-            fig_platform.update_traces(
-                textposition='inside',
-                textinfo='label+percent',
-                hoverinfo='label+value+percent',
-                textfont_size=12,
-                marker=dict(line=dict(color='#ffffff', width=2))
-            )
-            
-            fig_platform.update_layout(
-                margin=dict(b=20, t=50, l=20, r=20),
-                height=400,
-                showlegend=True,
-                legend=dict(
-                    orientation='h',
-                    yanchor='bottom',
-                    y=-0.1,
-                    xanchor='center',
-                    x=0.5
-                )
-            )
-            
-            charts['platform'] = fig_platform.to_json()
+        # 3. CREATE PIE CHART - Using a raw dictionary payload for maximum reliability
+        if labels:
+            total_sum = sum(values)
+            raw_chart_dict = {
+                "data": [{
+                    "labels": labels,
+                    "values": values,
+                    "type": "pie",
+                    "hole": 0.4,
+                    "textposition": "inside",
+                    "textinfo": "label+percent",
+                    "hoverinfo": "label+value+percent",
+                    "textfont": {"size": 12},
+                    "marker": {
+                        "colors": colors,
+                        "line": {"color": "#ffffff", "width": 2}
+                    }
+                }],
+                "layout": {
+                    "title": f'Post Distribution by Platform (Total: {total_sum:,} posts)',
+                    "margin": {"b": 20, "t": 50, l: 20, "r": 20},
+                    "height": 400,
+                    "showlegend": True,
+                    "legend": {
+                        "orientation": "h",
+                        "yanchor": "bottom",
+                        "y": -0.1,
+                        "xanchor": "center",
+                        "x": 0.5
+                    }
+                }
+            }
+            # Serialize to string safely
+            charts['platform'] = json.dumps(raw_chart_dict)
         
         # 4. METRICS
         unique_accounts = posts.values('account_id').distinct().count()
