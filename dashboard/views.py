@@ -1749,69 +1749,62 @@ def get_risk_actors_insight(posts_queryset, limit=8):
     
 def get_platform_distribution(posts_queryset):
     """
-    Accurately count and normalize platforms
-    Returns: (df_platforms, top_platform_name)
+    Simplified platform distribution matching Streamlit logic
     """
-    from collections import defaultdict
-    import pandas as pd
+    # Get raw platform counts directly from database
+    platform_counts = posts_queryset.values('platform').annotate(
+        count=Count('id')
+    ).order_by('-count')
     
-    # Use a dictionary mapping to build clean key-value tracking pairs directly
-    platform_counts = defaultdict(int)
-    
-    # Iterate through values while forcing absolute string coercion at the database layer
-    for plat in posts_queryset.values_list('platform', flat=True):
-        # Catch numbers, booleans, or nulls and turn them safely into string text
-        if plat is None:
+    # Build a clean list (similar to Streamlit's value_counts)
+    platform_data = []
+    for item in platform_counts:
+        platform_name = item['platform']
+        count = item['count']
+        
+        # Skip invalid platforms
+        if not platform_name or str(platform_name).lower() in ['nan', 'none', '', 'unknown', 'null']:
             continue
         
-        p_str = str(plat).strip().lower()
+        # Normalize platform names (same logic as Streamlit's infer_platform_from_url)
+        p_lower = str(platform_name).lower().strip()
         
-        if p_str in ['nan', 'none', '', 'unknown', 'null']:
-            continue
-            
-        # Comprehensive normalization matching
-        if p_str in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com', 'twitter_source']:
-            platform_counts['X'] += 1
-        elif p_str in ['facebook', 'fb.watch', 'facebook.com', 'fb', 'facebook_source', 'fb_source']:
-            platform_counts['Facebook'] += 1
-        elif p_str in ['telegram', 't.me', 'tg', 'telegram_source']:
-            platform_counts['Telegram'] += 1
-        elif p_str in ['tiktok', 'tik tok', 'tik-tok', 'tiktok_source']:
-            platform_counts['TikTok'] += 1
-        elif p_str in ['media', 'news', 'news/media', 'civicsignal', 'civic signal', 'civicsignals']:
-            platform_counts['Media'] += 1
-        elif p_str in ['youtube', 'youtu.be', 'yt', 'youtube_source']:
-            platform_counts['YouTube'] += 1
-        elif p_str in ['instagram', 'insta', 'ig', 'instagram_source']:
-            platform_counts['Instagram'] += 1
+        if p_lower in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com']:
+            normalized_name = 'X'
+        elif p_lower in ['facebook', 'fb.watch', 'facebook.com', 'fb']:
+            normalized_name = 'Facebook'
+        elif p_lower in ['telegram', 't.me', 'tg']:
+            normalized_name = 'Telegram'
+        elif p_lower in ['tiktok', 'tik tok', 'tik-tok']:
+            normalized_name = 'TikTok'
+        elif p_lower in ['media', 'news', 'news/media', 'civicsignal']:
+            normalized_name = 'Media'
+        elif p_lower in ['youtube', 'youtu.be', 'yt']:
+            normalized_name = 'YouTube'
+        elif p_lower in ['instagram', 'insta', 'ig']:
+            normalized_name = 'Instagram'
         else:
-            # Fallback for unexpected names
-            clean_name = str(plat).strip().title()
-            if clean_name:
-                platform_counts[clean_name] += 1
-
-    # Rebuild a pristine DataFrame explicitly with native python data types
-    processed_data = []
-    for platform_name, post_count in platform_counts.items():
-        if post_count > 0:
-            processed_data.append({
-                'platform': str(platform_name),
-                'count': int(post_count)
-            })
-            
-    df = pd.DataFrame(processed_data)
+            normalized_name = str(platform_name).title()
+        
+        platform_data.append({
+            'Platform': normalized_name,
+            'Count': count
+        })
+    
+    # Create DataFrame (matching Streamlit structure)
+    df = pd.DataFrame(platform_data)
     
     if not df.empty:
-        # Sort values directly by count descending
-        df = df.sort_values(by='count', ascending=False).reset_index(drop=True)
-        top_platform = str(df.iloc[0]['platform'])
+        # Group by Platform and sum counts (in case of duplicates after normalization)
+        df = df.groupby('Platform', as_index=False)['Count'].sum()
+        df = df.sort_values('Count', ascending=False).reset_index(drop=True)
+        top_platform = df.iloc[0]['Platform']
     else:
-        # Create an empty structured fallback DataFrame if completely blank
-        df = pd.DataFrame(columns=['platform', 'count'])
+        df = pd.DataFrame(columns=['Platform', 'Count'])
         top_platform = "—"
-        
+    
     return df, top_platform
-
+    
 def get_top_hashtags(posts_queryset, limit=10):
     """Extract and rank top hashtags from post content"""
     import re
@@ -2134,35 +2127,22 @@ class HomeView(BaseTabMixin, TemplateView):
         charts = {}
         
         if not df_platforms.empty:
-            # FIX: Ensure column structures are strictly strings and numeric integers
-            df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
-            df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
-            df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
-            df_platforms = df_platforms[df_platforms['count'] > 0]
-            df_platforms = df_platforms.sort_values('count', ascending=False)
-
-            # FIX: Use a uniform, solid theme color instead of 'color=count' to prevent invisible scaling
+            # Use the same approach as Streamlit - pass the DataFrame directly
             fig_platform = px.bar(
-                df_platforms, x='platform', y='count',
-                labels={'platform': 'Platform', 'count': 'Posts'},
-                title='Post Distribution by Platform'
-            )
-            
-            # FIX: Explicitly enforce the y-axis range and styling so massive columns don't break the container
-            fig_platform.update_traces(
-                marker_color='#3b82f6',  # Clean solid brand blue
-                marker_line_color='#1d4ed8',
-                marker_line_width=1,
-                opacity=0.9
+                df_platforms, 
+                x='Platform', 
+                y='Count',
+                title='Post Distribution by Platform',
+                labels={'Platform': 'Platform', 'Count': 'Posts'}
             )
             
             fig_platform.update_layout(
-                xaxis_tickangle=-45, 
-                margin=dict(b=100, t=50, l=50, r=20), 
+                xaxis_tickangle=-45,
+                margin=dict(b=100, t=50, l=50, r=20),
                 height=400,
-                xaxis={'type': 'category', 'categoryorder': 'total descending'},
-                yaxis={'title': 'Posts', 'autorange': True}  # Forces the graph to scale to 9k+
+                xaxis={'categoryorder': 'total descending'}
             )
+            
             charts['platform'] = fig_platform.to_json()
         
         # 3. METRICS
