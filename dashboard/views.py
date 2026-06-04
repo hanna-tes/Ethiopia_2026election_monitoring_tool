@@ -1755,51 +1755,61 @@ def get_platform_distribution(posts_queryset):
     from collections import defaultdict
     import pandas as pd
     
-    raw_platforms = list(posts_queryset.values_list('platform', flat=True))
-    
+    # Use a dictionary mapping to build clean key-value tracking pairs directly
     platform_counts = defaultdict(int)
     
-    for plat in raw_platforms:
-        if not plat or str(plat).lower() in ['nan', 'none', '', 'unknown']:
+    # Iterate through values while forcing absolute string coercion at the database layer
+    for plat in posts_queryset.values_list('platform', flat=True):
+        # Catch numbers, booleans, or nulls and turn them safely into string text
+        if plat is None:
+            continue
+        
+        p_str = str(plat).strip().lower()
+        
+        if p_str in ['nan', 'none', '', 'unknown', 'null']:
             continue
             
-        p = str(plat).lower().strip()
-        
-        # Normalize platform names
-        if p in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com', 'twitter_source']:
+        # Comprehensive normalization matching
+        if p_str in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com', 'twitter_source']:
             platform_counts['X'] += 1
-        elif p in ['facebook', 'fb.watch', 'facebook.com', 'fb', 'facebook_source', 'fb_source']:
+        elif p_str in ['facebook', 'fb.watch', 'facebook.com', 'fb', 'facebook_source', 'fb_source']:
             platform_counts['Facebook'] += 1
-        elif p in ['telegram', 't.me', 'tg', 'telegram_source']:
+        elif p_str in ['telegram', 't.me', 'tg', 'telegram_source']:
             platform_counts['Telegram'] += 1
-        elif p in ['tiktok', 'tik tok', 'tik-tok', 'tiktok_source']:
+        elif p_str in ['tiktok', 'tik tok', 'tik-tok', 'tiktok_source']:
             platform_counts['TikTok'] += 1
-        elif p in ['media', 'news', 'news/media', 'civicsignal', 'civic signal', 'civicsignals']:
+        elif p_str in ['media', 'news', 'news/media', 'civicsignal', 'civic signal', 'civicsignals']:
             platform_counts['Media'] += 1
-        elif p in ['youtube', 'youtu.be', 'yt', 'youtube_source']:
+        elif p_str in ['youtube', 'youtu.be', 'yt', 'youtube_source']:
             platform_counts['YouTube'] += 1
-        elif p in ['instagram', 'insta', 'ig', 'instagram_source']:
+        elif p_str in ['instagram', 'insta', 'ig', 'instagram_source']:
             platform_counts['Instagram'] += 1
         else:
-            # Keep original but capitalize properly
-            platform_counts[str(plat).title()] += 1
-    
-    # Convert to a cleanly structured, typed DataFrame for Plotly
-    df = pd.DataFrame([
-        {'platform': str(k), 'count': int(v)} 
-        for k, v in platform_counts.items() 
-        if v > 0
-    ])
+            # Fallback for unexpected names
+            clean_name = str(plat).strip().title()
+            if clean_name:
+                platform_counts[clean_name] += 1
+
+    # Rebuild a pristine DataFrame explicitly with native python data types
+    processed_data = []
+    for platform_name, post_count in platform_counts.items():
+        if post_count > 0:
+            processed_data.append({
+                'platform': str(platform_name),
+                'count': int(post_count)
+            })
+            
+    df = pd.DataFrame(processed_data)
     
     if not df.empty:
-        # Group duplicates and explicitly ensure values are integers
-        df = df.groupby('platform', as_index=False)['count'].sum()
-        df = df.sort_values('count', ascending=False)
-        top_platform = df.iloc[0]['platform']
+        # Sort values directly by count descending
+        df = df.sort_values(by='count', ascending=False).reset_index(drop=True)
+        top_platform = str(df.iloc[0]['platform'])
     else:
+        # Create an empty structured fallback DataFrame if completely blank
+        df = pd.DataFrame(columns=['platform', 'count'])
         top_platform = "—"
-    
-    # Returns exactly two values, resolving the ValueError!
+        
     return df, top_platform
 
 def get_top_hashtags(posts_queryset, limit=10):
