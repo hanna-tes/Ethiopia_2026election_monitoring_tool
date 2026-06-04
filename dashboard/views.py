@@ -2144,7 +2144,6 @@ class HomeView(BaseTabMixin, TemplateView):
             total_count=Count('id')
         ).order_by('-total_count')
         
-        # Build direct lists for Plotly instead of a DataFrame to avoid parsing failure
         labels = []
         values = []
         colors = []
@@ -2173,39 +2172,38 @@ class HomeView(BaseTabMixin, TemplateView):
         
         charts = {}
         
-        # 3. CREATE PIE CHART - Fixed the "l" key syntax error here 👇
+        # 3. CREATE BAR CHART - Shifted from 'pie' to 'bar' layout structure
         if labels:
             total_sum = sum(values)
             raw_chart_dict = {
                 "data": [{
-                    "labels": labels,
-                    "values": values,
-                    "type": "pie",
-                    "hole": 0.4,
-                    "textposition": "inside",
-                    "textinfo": "label+percent",
-                    "hoverinfo": "label+value+percent",
-                    "textfont": {"size": 12},
+                    "x": labels,          # Platforms along the X-Axis
+                    "y": values,          # Post volume tallies along the Y-Axis
+                    "type": "bar",
+                    "text": [f"{v:,}" for v in values], # Shows numerical values on top of bars
+                    "textposition": "auto",
+                    "hoverinfo": "x+y",
                     "marker": {
-                        "colors": colors,
-                        "line": {"color": "#ffffff", "width": 2}
+                        "color": colors,   # Keeps your native platform brand colors
+                        "line": {"color": "#ffffff", "width": 1}
                     }
                 }],
                 "layout": {
                     "title": f'Post Distribution by Platform (Total: {total_sum:,} posts)',
-                    "margin": {"b": 20, "t": 50, "l": 20, "r": 20},
+                    "margin": {"b": 40, "t": 50, "l": 50, "r": 20},
                     "height": 400,
-                    "showlegend": True,
-                    "legend": {
-                        "orientation": "h",
-                        "yanchor": "bottom",
-                        "y": -0.1,
-                        "xanchor": "center",
-                        "x": 0.5
-                    }
+                    "xaxis": {
+                        "title": "Platform",
+                        "tickmode": "array"
+                    },
+                    "yaxis": {
+                        "title": "Number of Posts",
+                        "gridcolor": "#E5E7EB" # Clean light-gray grid lines
+                    },
+                    "plot_bgcolor": "#ffffff"   # Clean white background grid container
                 }
             }
-            # Serialize to string safely
+            # Serialize directly to string safely
             charts['platform'] = json.dumps(raw_chart_dict)
         
         # 4. METRICS
