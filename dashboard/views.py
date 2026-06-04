@@ -2165,28 +2165,28 @@ class HomeView(BaseTabMixin, TemplateView):
             actual_max = posts.aggregate(max_date=Max('timestamp_share'))['max_date']
             logger.info(f"📊 Actual data range: {actual_min} to {actual_max}")
         
-        # 2. PLATFORM DISTRIBUTION & CHART
+                # 2. PLATFORM DISTRIBUTION & CHART
         df_platforms, top_platform = get_platform_distribution(posts)
         charts = {}
         
         if not df_platforms.empty:
-            logger.info(f"📊 Platform distribution DataFrame:\n{df_platforms.to_string()}")
+            # 🔥 CRITICAL FIX: Force all column names to lowercase to prevent KeyError
+            df_platforms.columns = [c.lower() for c in df_platforms.columns]
             
-            # FIX: Ensure column structures are strictly strings and numeric integers
+            # Ensure correct data types and group by platform
             df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
             df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
             df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
             df_platforms = df_platforms[df_platforms['count'] > 0]
             df_platforms = df_platforms.sort_values('count', ascending=False)
             
-            # FIX: Use a uniform, solid theme color instead of 'color=count' to prevent invisible scaling
+            # Create the chart with solid colors so the massive 'X' bar doesn't break the scaling
             fig_platform = px.bar(
                 df_platforms, x='platform', y='count',
                 labels={'platform': 'Platform', 'count': 'Posts'},
-                title=f'Post Distribution by Platform ({start_date} to {end_date})'
+                title='Post Distribution by Platform'
             )
             
-            # FIX: Explicitly enforce the y-axis range and styling so massive columns don't break the container
             fig_platform.update_traces(
                 marker_color='#3b82f6',  # Clean solid brand blue
                 marker_line_color='#1d4ed8',
@@ -2199,11 +2199,10 @@ class HomeView(BaseTabMixin, TemplateView):
                 margin=dict(b=100, t=50, l=50, r=20),
                 height=400,
                 xaxis={'type': 'category', 'categoryorder': 'total descending'},
-                yaxis={'title': 'Posts', 'autorange': True}
+                yaxis={'title': 'Posts', 'autorange': True}  # Forces the graph to scale to 9k+
             )
-            
             charts['platform'] = fig_platform.to_json()
-        
+            
         # 3. METRICS
         unique_accounts = posts.values('account_id').distinct().count()
         high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
