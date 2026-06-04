@@ -1646,21 +1646,15 @@ def preprocess_dataframe(df):
     
 def get_election_posts_queryset(request):
     """
-<<<<<<< HEAD
     Centralized date filtering helper with smart fallback for small datasets.
-=======
     Centralized date filtering helper with improved debugging.
->>>>>>> c04d75a9b31de591cb3694091cb8c75edb41ba17
     """
     queryset = ProcessedPost.objects.all()
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     
-<<<<<<< HEAD
-=======
     logger.info(f"📅 Date filter - start_date: {start_date}, end_date: {end_date}")
     
->>>>>>> c04d75a9b31de591cb3694091cb8c75edb41ba17
     if start_date and end_date:
         try:
             # Convert string dates to date objects if needed
@@ -1685,7 +1679,6 @@ def get_election_posts_queryset(request):
         # Default: last 30 days
         from django.utils import timezone
         end_dt = timezone.now()
-<<<<<<< HEAD
         # 1. Default to 90 days (3 months) to capture more data
         start_dt = end_dt - timedelta(days=90)
         
@@ -1700,7 +1693,6 @@ def get_election_posts_queryset(request):
         start_date = start_dt
         end_date = end_dt
         
-=======
         start_dt = end_dt - timedelta(days=30)
         queryset = queryset.filter(
             timestamp_share__gte=start_dt
@@ -1710,7 +1702,6 @@ def get_election_posts_queryset(request):
         logger.info(f"⚠️ No date filter provided, using default: last 30 days ({start_date} to {end_date})")
         logger.info(f"📊 Default filtered count: {queryset.count()}")
     
->>>>>>> c04d75a9b31de591cb3694091cb8c75edb41ba17
     return queryset.order_by('-timestamp_share'), start_date, end_date
     
 def get_risk_actors_insight(posts_queryset, limit=8):
