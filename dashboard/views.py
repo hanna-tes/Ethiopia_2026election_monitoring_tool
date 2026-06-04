@@ -2117,6 +2117,7 @@ class HomeView(BaseTabMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         from django.core.cache import cache
         cache.clear()
+        
         # 1. GET FILTERED QUERYSET
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
@@ -2127,20 +2128,35 @@ class HomeView(BaseTabMixin, TemplateView):
         charts = {}
         
         if not df_platforms.empty:
-            # Use the same approach as Streamlit - pass the DataFrame directly
+            # Ensure correct data types and group by platform
+            df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
+            df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
+            df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
+            df_platforms = df_platforms.sort_values('count', ascending=False)
+
+            # Create the bar chart using LOWERCASE column names
             fig_platform = px.bar(
                 df_platforms, 
-                x='Platform', 
-                y='Count',
+                x='platform', 
+                y='count',
                 title='Post Distribution by Platform',
-                labels={'Platform': 'Platform', 'Count': 'Posts'}
+                labels={'platform': 'Platform', 'count': 'Posts'}
+            )
+            
+            # Force solid colors so the massive 'X' bar doesn't break the scaling
+            fig_platform.update_traces(
+                marker_color='#3b82f6',  # Solid brand blue
+                marker_line_color='#1d4ed8',
+                marker_line_width=1,
+                opacity=0.9
             )
             
             fig_platform.update_layout(
                 xaxis_tickangle=-45,
                 margin=dict(b=100, t=50, l=50, r=20),
                 height=400,
-                xaxis={'categoryorder': 'total descending'}
+                xaxis={'type': 'category', 'categoryorder': 'total descending'},
+                yaxis={'title': 'Posts', 'autorange': True}  # Forces the graph to scale to 9k+
             )
             
             charts['platform'] = fig_platform.to_json()
@@ -2219,8 +2235,7 @@ class HomeView(BaseTabMixin, TemplateView):
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
-        return context
-        
+        return context        
 class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
 
