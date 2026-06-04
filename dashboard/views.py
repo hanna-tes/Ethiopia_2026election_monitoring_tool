@@ -771,12 +771,20 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
     Detect DISARM TTPs using the fine-tuned Gemma model.
     Falls back to the old analyze_ttps function if model fails.
     """
+    logger.info("🤖 STARTING Gemma TTP detection...")
+    
     try:
-        # Load model if not already loaded
+        logger.info("📥 Attempting to load Gemma model...")
         model, tokenizer = load_gemma_model()
+        logger.info("✅ Model loaded successfully!")
         
-        # Format input for the model
+        if model is None or tokenizer is None:
+            logger.error("❌ Model or tokenizer is None after loading")
+            return analyze_ttps(coordination_groups, [])
+        
+        logger.info(f"📋 Formatting input for {len(coordination_groups)} coordination groups...")
         input_data = format_ttp_input(coordination_groups)
+        logger.info("✅ Input formatted successfully!")
         
         # Build the prompt following Phase 3 format
         system_prompt = (
@@ -792,15 +800,19 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             {"role": "user", "content": json.dumps(input_data)}
         ]
         
-        # Apply chat template
+        logger.info(" Applying chat template...")
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
+        logger.info(f"✅ Prompt created ({len(prompt)} chars)")
         
         # === Generate using MLX ===
+        logger.info("🔄 Importing mlx_lm.generate...")
         from mlx_lm import generate
+        
+        logger.info("🚀 Running Gemma inference (this may take a moment)...")
         response_text = generate(
             model,
             tokenizer,
@@ -808,21 +820,9 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             max_tokens=2048
         )
         
-        # === ROBUST JSON EXTRACTION ===
-        # Gemma 4 outputs a "thinking" channel before the actual JSON.
-        # We must extract only the JSON object { ... } from the response.
-        json_start = response_text.find('{')
-        json_end = response_text.rfind('}')
+        logger.info(f"✅ Gemma generated response ({len(response_text)} chars)")
+        logger.debug(f"Raw response preview: {response_text[:200]}...")
         
-        if json_start != -1 and json_end != -1 and json_end > json_start:
-            response_text = response_text[json_start:json_end + 1]
-            logger.info("✅ Successfully extracted JSON block from model response.")
-        else:
-            # If no JSON block is found, the model ran out of tokens while thinking.
-            logger.error("❌ No JSON object found in model response. The model likely ran out of tokens while thinking.")
-            logger.debug(f"Raw response preview: {response_text[:500]}")
-            raise ValueError("No JSON object found in model output")
-
         # Parse JSON response
         try:
             # Clean response - extract JSON if wrapped in markdown
@@ -831,7 +831,9 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             elif response_text.startswith("```"):
                 response_text = response_text.split("```")[1].split("```")[0].strip()
             
+            logger.info("📄 Parsing JSON response...")
             result = json.loads(response_text)
+            logger.info("✅ JSON parsed successfully!")
             
             # Convert to the format expected by the view
             ttps = []
@@ -850,22 +852,31 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
                         'model_source': 'gemma_finetuned'
                     }
                     ttps.append(ttp_data)
-            
-            if ttps:
-                logger.info(f"Gemma model detected {len(ttps)} TTPs")
-                return ttps
+                
+                if ttps:
+                    logger.info(f"🎯 Gemma model detected {len(ttps)} TTPs!")
+                    return ttps
+                else:
+                    logger.info("ℹ️ Gemma model found no qualifying TTPs")
             else:
-                logger.info("Gemma model found no TTPs, using fallback")
+                logger.info("ℹ️ Gemma model determined content does not qualify")
+            
+            logger.info("⚠️ Gemma ran but found no TTPs, using fallback")
                 
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse Gemma response as JSON: {e}")
-            logger.debug(f"Raw response: {response_text[:500]}")
+            logger.error(f"❌ Failed to parse Gemma response as JSON: {e}")
+            logger.error(f"Raw response was: {response_text[:500]}")
+            raise  # Re-raise to trigger fallback
         
+    except ImportError as e:
+        logger.error(f"❌ MLX not available (ImportError): {e}")
+        logger.info("⬇️ Falling back to rule-based TTP analysis")
     except Exception as e:
-        logger.error(f"Gemma TTP detection failed: {e}", exc_info=True)
+        logger.error(f"❌ Gemma TTP detection failed: {e}", exc_info=True)
+        logger.info("⬇️ Falling back to rule-based TTP analysis")
     
     # Fallback to old analyze_ttps function
-    logger.info("Using fallback TTP analysis")
+    logger.info("🔧 Using fallback rule-based TTP analysis")
     return analyze_ttps(coordination_groups, [])
     
 def _convert_techniques_to_ttp_format(techniques: List[Dict]) -> List[Dict]:
