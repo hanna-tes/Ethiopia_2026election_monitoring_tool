@@ -1646,29 +1646,47 @@ def preprocess_dataframe(df):
     
 def get_election_posts_queryset(request):
     """
-    Centralized date filtering helper.
+    Centralized date filtering helper with improved debugging.
     """
-
     queryset = ProcessedPost.objects.all()
-
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-
+    
+    logger.info(f"📅 Date filter - start_date: {start_date}, end_date: {end_date}")
+    
     if start_date and end_date:
-        queryset = queryset.filter(
-            timestamp_share__date__range=[start_date, end_date]
-        )
+        try:
+            # Convert string dates to date objects if needed
+            if isinstance(start_date, str):
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            if isinstance(end_date, str):
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            
+            # Filter using __date to compare date parts only
+            queryset = queryset.filter(
+                timestamp_share__date__gte=start_date,
+                timestamp_share__date__lte=end_date
+            )
+            
+            logger.info(f"✅ Applied date filter: {start_date} to {end_date}")
+            logger.info(f"📊 Filtered queryset count: {queryset.count()}")
+            
+        except Exception as e:
+            logger.error(f"❌ Date filtering failed: {e}")
+            # Fallback: return all posts if date parsing fails
     else:
+        # Default: last 30 days
+        from django.utils import timezone
         end_dt = timezone.now()
         start_dt = end_dt - timedelta(days=30)
-
         queryset = queryset.filter(
             timestamp_share__gte=start_dt
         )
-
-        start_date = start_dt
-        end_date = end_dt
-
+        start_date = start_dt.date()
+        end_date = end_dt.date()
+        logger.info(f"⚠️ No date filter provided, using default: last 30 days ({start_date} to {end_date})")
+        logger.info(f"📊 Default filtered count: {queryset.count()}")
+    
     return queryset.order_by('-timestamp_share'), start_date, end_date
     
 def get_risk_actors_insight(posts_queryset, limit=8):
@@ -2123,28 +2141,37 @@ class HomeView(BaseTabMixin, TemplateView):
         posts = queryset
         total_posts = posts.count()
         
-                # 2. PLATFORM DISTRIBUTION & CHART
+        logger.info(f"📊 HomeView - Total posts after filtering: {total_posts}")
+        logger.info(f"📊 Date range: {start_date} to {end_date}")
+        
+        # Debug: Check actual date range in the data
+        if posts.exists():
+            actual_min = posts.aggregate(min_date=Min('timestamp_share'))['min_date']
+            actual_max = posts.aggregate(max_date=Max('timestamp_share'))['max_date']
+            logger.info(f"📊 Actual data range: {actual_min} to {actual_max}")
+        
+        # 2. PLATFORM DISTRIBUTION & CHART
         df_platforms, top_platform = get_platform_distribution(posts)
         charts = {}
         
         if not df_platforms.empty:
-            # 🔥 CRITICAL FIX: Force all column names to lowercase to prevent KeyError
-            df_platforms.columns = [c.lower() for c in df_platforms.columns]
+            logger.info(f"📊 Platform distribution DataFrame:\n{df_platforms.to_string()}")
             
-            # Ensure correct data types and group by platform
+            # FIX: Ensure column structures are strictly strings and numeric integers
             df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
             df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
             df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
             df_platforms = df_platforms[df_platforms['count'] > 0]
             df_platforms = df_platforms.sort_values('count', ascending=False)
             
-            # Create the chart with solid colors so the massive 'X' bar doesn't break the scaling
+            # FIX: Use a uniform, solid theme color instead of 'color=count' to prevent invisible scaling
             fig_platform = px.bar(
                 df_platforms, x='platform', y='count',
                 labels={'platform': 'Platform', 'count': 'Posts'},
-                title='Post Distribution by Platform'
+                title=f'Post Distribution by Platform ({start_date} to {end_date})'
             )
             
+            # FIX: Explicitly enforce the y-axis range and styling so massive columns don't break the container
             fig_platform.update_traces(
                 marker_color='#3b82f6',  # Clean solid brand blue
                 marker_line_color='#1d4ed8',
@@ -2157,8 +2184,9 @@ class HomeView(BaseTabMixin, TemplateView):
                 margin=dict(b=100, t=50, l=50, r=20),
                 height=400,
                 xaxis={'type': 'category', 'categoryorder': 'total descending'},
-                yaxis={'title': 'Posts', 'autorange': True}  # Forces the graph to scale to 9k+
+                yaxis={'title': 'Posts', 'autorange': True}
             )
+            
             charts['platform'] = fig_platform.to_json()
         
         # 3. METRICS
