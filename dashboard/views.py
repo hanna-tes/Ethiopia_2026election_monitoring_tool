@@ -1646,61 +1646,46 @@ def preprocess_dataframe(df):
     
 def get_election_posts_queryset(request):
     """
-    Centralized date filtering helper with smart fallback for small datasets.
-    Centralized date filtering helper with improved debugging.
+    Centralized date filtering helper.
+    Supports 'view_all' parameter to show all data without date filtering.
     """
     queryset = ProcessedPost.objects.all()
-    start_date = request.GET.get('start_date')
-    end_date = request.GET.get('end_date')
     
-    logger.info(f"📅 Date filter - start_date: {start_date}, end_date: {end_date}")
+    # Check if user wants to view all data
+    view_all = request.GET.get('view_all') == 'true'
     
-    if start_date and end_date:
-        try:
-            # Convert string dates to date objects if needed
-            if isinstance(start_date, str):
-                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            if isinstance(end_date, str):
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-            
-            # Filter using __date to compare date parts only
-            queryset = queryset.filter(
-                timestamp_share__date__gte=start_date,
-                timestamp_share__date__lte=end_date
-            )
-            
-            logger.info(f"✅ Applied date filter: {start_date} to {end_date}")
-            logger.info(f"📊 Filtered queryset count: {queryset.count()}")
-            
-        except Exception as e:
-            logger.error(f"❌ Date filtering failed: {e}")
-            # Fallback: return all posts if date parsing fails
-    else:
-        # Default: last 30 days
-        from django.utils import timezone
-        end_dt = timezone.now()
-        # 1. Default to 90 days (3 months) to capture more data
-        start_dt = end_dt - timedelta(days=90)
-        
-        # 2. Smart Fallback: If 90 days is empty, find the earliest post in the DB
-        if not queryset.filter(timestamp_share__gte=start_dt).exists() and queryset.exists():
-            # Exclude null timestamps just in case, then order by oldest first
-            earliest_post = queryset.exclude(timestamp_share__isnull=True).order_by('timestamp_share').first()
-            if earliest_post and earliest_post.timestamp_share:
-                start_dt = earliest_post.timestamp_share
-                
-        queryset = queryset.filter(timestamp_share__gte=start_dt)
-        start_date = start_dt
-        end_date = end_dt
-        
-        start_dt = end_dt - timedelta(days=30)
-        queryset = queryset.filter(
-            timestamp_share__gte=start_dt
+    if view_all:
+        # No date filtering - show all posts
+        # Get actual date range from data for display purposes
+        date_range = queryset.aggregate(
+            min_date=Min('timestamp_share'),
+            max_date=Max('timestamp_share')
         )
-        start_date = start_dt.date()
-        end_date = end_dt.date()
-        logger.info(f"⚠️ No date filter provided, using default: last 30 days ({start_date} to {end_date})")
-        logger.info(f"📊 Default filtered count: {queryset.count()}")
+        start_date = date_range['min_date'] or timezone.now()
+        end_date = date_range['max_date'] or timezone.now()
+    else:
+        # Apply date filtering
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if start_date and end_date:
+            queryset = queryset.filter(
+                timestamp_share__date__range=[start_date, end_date]
+            )
+            # Convert strings to date objects
+            if isinstance(start_date, str):
+                start_date = datetime.strptime(start_date, '%Y-%m-%d')
+            if isinstance(end_date, str):
+                end_date = datetime.strptime(end_date, '%Y-%m-%d')
+        else:
+            # Default: last 30 days
+            end_dt = timezone.now()
+            start_dt = end_dt - timedelta(days=30)
+            queryset = queryset.filter(
+                timestamp_share__gte=start_dt
+            )
+            start_date = start_dt
+            end_date = end_dt
     
     return queryset.order_by('-timestamp_share'), start_date, end_date
     
