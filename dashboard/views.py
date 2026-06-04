@@ -765,18 +765,10 @@ def extract_narrative_description(summary_text, sample_posts):
     
 
 def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Detect DISARM TTPs using the fine-tuned Gemma model.
-    Falls back to the old analyze_ttps function if model fails.
-    """
     try:
-        # Load model if not already loaded
         model, tokenizer = load_gemma_model()
-        
-        # Format input for the model
         input_data = format_ttp_input(coordination_groups)
         
-        # Build the prompt following Phase 3 format
         system_prompt = (
             "You are a DISARM TTP adjudicator. Consider T0049, T0049.002, T0049.003, T0049.005, "
             "T0016, T0060, T0119, T0119.001, T0119.002, T0097.102, T0097.202, T0143.002, "
@@ -784,88 +776,74 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             "Output strict JSON only. Prefer false negatives over false positives."
         )
         
-        # Create chat messages
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(input_data)}
         ]
         
-        # Apply chat template
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
         
-        # === Generate using MLX ===
         from mlx_lm import generate
+        
+        # Increase max_tokens to give model room to think AND output JSON
         response_text = generate(
             model,
             tokenizer,
             prompt=prompt,
-            max_tokens=2048  # Increased to give the model room to think AND output JSON
+            max_tokens=2048  # Increased from 1024
         )
         
-        logger.info(f"Raw Gemma response length: {len(response_text)} chars")
+        logger.info(f"Raw response length: {len(response_text)}")
         
-        # === CRITICAL FIX: EXTRACT JSON FROM THE RESPONSE ===
-        # The model outputs <think> or <|channel>thought before the JSON.
-        # We must find the first '{' and the last '}' to get ONLY the JSON.
+        # === CRITICAL: Extract JSON from thinking output ===
+        # Find the first { and last } to extract JSON
         json_start = response_text.find('{')
         json_end = response_text.rfind('}')
         
         if json_start != -1 and json_end != -1 and json_end > json_start:
             response_text = response_text[json_start:json_end + 1]
-            logger.info("✅ Successfully extracted JSON block from model response.")
+            logger.info("✅ Extracted JSON from response")
         else:
-            # If no JSON block is found, the model ran out of tokens while thinking.
-            logger.error("❌ No JSON object found in model response. The model likely ran out of tokens while thinking.")
-            logger.debug(f"Raw response preview: {response_text[:500]}")
-            raise ValueError("No JSON object found in model output")
-
-        # Parse JSON response
+            logger.error("❌ No JSON found in response")
+            return analyze_ttps(coordination_groups, [])
+        
+        # Parse JSON
         try:
-            # Clean response - extract JSON if wrapped in markdown (just in case)
-            if response_text.startswith("```json"):
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif response_text.startswith("```"):
-                response_text = response_text.split("```")[1].split("```")[0].strip()
-            
             result = json.loads(response_text)
             
-            # Convert to the format expected by the view
             ttps = []
-            
             if result.get('qualifies', False):
                 techniques = result.get('techniques', [])
                 reason = result.get('reason', '')
-                
                 for technique in techniques:
                     ttp_data = {
                         'name': technique.get('technique_id', ''),
                         'description': technique.get('description', reason),
                         'severity': _get_ttp_severity(technique.get('technique_id', '')),
-                        'evidence': f"Detected via Gemma model analysis. {technique.get('evidence', '')}",
+                        'evidence': f"Detected via Gemma model. {technique.get('evidence', '')}",
                         'confidence': technique.get('confidence', 0.8),
                         'model_source': 'gemma_finetuned'
                     }
                     ttps.append(ttp_data)
-            
-            if ttps:
-                logger.info(f"🎯 Gemma model detected {len(ttps)} TTPs")
-                return ttps
-            else:
-                logger.info("Gemma model found no TTPs, using fallback")
                 
+                if ttps:
+                    logger.info(f"🎯 Gemma detected {len(ttps)} TTPs")
+                    return ttps
+            
+            logger.info("Gemma found no TTPs")
+            
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse Gemma response as JSON: {e}")
-            logger.debug(f"Raw response: {response_text[:500]}")
+            logger.error(f"JSON parse error: {e}")
+            logger.debug(f"Response: {response_text[:300]}")
         
     except Exception as e:
-        logger.error(f"Gemma TTP detection failed: {e}", exc_info=True)
+        logger.error(f"Gemma detection failed: {e}", exc_info=True)
     
-    # Fallback to old analyze_ttps function
-    logger.info("🔧 Using fallback TTP analysis")
+    logger.info("Using fallback TTP analysis")
     return analyze_ttps(coordination_groups, [])
     
 def _convert_techniques_to_ttp_format(techniques: List[Dict]) -> List[Dict]:
