@@ -60,7 +60,7 @@ def load_gemma_model():
     if _GEMMA_MODEL is not None and _GEMMA_TOKENIZER is not None:
         return _GEMMA_MODEL, _GEMMA_TOKENIZER
     try:
-        # Point to your newly fused MLX model
+        # Point fused MLX model
         model_path = getattr(settings, 'GEMMA_TTP_MODEL_PATH', './model_cache/gemma-merged')
         logger.info(f"Loading Gemma TTP model from {model_path} using MLX...")
         
@@ -189,7 +189,7 @@ def dashboard_view(request):
                 if platform_type == 'brandwatch':
                     df = pd.read_csv(f, sep=',', low_memory=False, skiprows=6, on_bad_lines='skip')
                 else:
-                    # Fix 2: Use the robust loader to handle UTF-16/Tabs for Meltwater/others
+                    
                     df = load_data_robustly(f) 
                 
                 stats['total_rows'] += len(df)
@@ -223,7 +223,7 @@ def dashboard_view(request):
                         content_id=cid,
                         # Use 'original_text' which is the standardized column name
                         original_text=str(row.get('original_text', '')),
-                        # Fix 3: Robust URL capture (checks both cases)
+                        
                         url=row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '',
                         platform=row.get('Platform', platform_type.title()),
                         timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
@@ -347,7 +347,7 @@ def summarize_cluster_ethiopia(texts, urls, cluster_data, min_ts, max_ts):
     # Add real URLs for reference
     url_context = "\nRelevant post links:\n" + "\n".join(urls[:5]) if urls else ""
     
-    # Ethiopia-specific prompt (adapted from Côte d'Ivoire version)
+    # Ethiopia-specific prompt 
     prompt = f"""
 Generate a structured IMI intelligence report on online narratives related to the Ethiopia election.
 Focus on pre and post-election tensions and emerging narratives, including:
@@ -2150,56 +2150,51 @@ class HomeView(BaseTabMixin, TemplateView):
             actual_max = posts.aggregate(max_date=Max('timestamp_share'))['max_date']
             logger.info(f"📊 Actual data range: {actual_min} to {actual_max}")
         
-                # 2. PLATFORM DISTRIBUTION & CHART
+        # 2. PLATFORM DISTRIBUTION & CHART
         df_platforms, top_platform = get_platform_distribution(posts)
-
-        # 🔍 DEBUG: Check platform distribution
-        logger.info(f"📊 Platform DataFrame shape: {df_platforms.shape if not df_platforms.empty else 'EMPTY'}")
-        if not df_platforms.empty:
-            logger.info(f"📊 Platform distribution:\n{df_platforms.to_string()}")
-            logger.info(f"📊 Top platform: {top_platform}")
-        else:
-            logger.warning("📊 Platform DataFrame is EMPTY!")
-
-        
         charts = {}
         
         if not df_platforms.empty:
-            # 🔥 CRITICAL FIX: Force all column names to lowercase to prevent KeyError
-            df_platforms.columns = [c.lower() for c in df_platforms.columns]
-            
-            # Ensure correct data types and group by platform
-            df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
-            df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
-            df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
-            df_platforms = df_platforms[df_platforms['count'] > 0]
-            df_platforms = df_platforms.sort_values('count', ascending=False)
-
-            # 🔍 DEBUG: Log AFTER processing
-            logger.info(f"📊 Platform DataFrame AFTER processing:\n{df_platforms.to_string()}")
-            logger.info(f"📊 Total posts in chart data: {df_platforms['count'].sum()}")
-            
-            # Create the chart with solid colors so the massive 'X' bar doesn't break the scaling
-            fig_platform = px.bar(
-                df_platforms, x='platform', y='count',
-                labels={'platform': 'Platform', 'count': 'Posts'},
-                title='Post Distribution by Platform'
+            # Create a PIE CHART instead of bar chart
+            fig_platform = px.pie(
+                df_platforms, 
+                names='platform', 
+                values='count',
+                title='Post Distribution by Platform',
+                color='platform',
+                color_discrete_map={
+                    'X': '#1DA1F2',
+                    'Facebook': '#1877F2',
+                    'Telegram': '#0088cc',
+                    'TikTok': '#000000',
+                    'Media': '#6B7280',
+                    'YouTube': '#FF0000',
+                    'Instagram': '#E4405F'
+                },
+                hole=0.4  # Makes it a donut chart (set to 0 for regular pie)
             )
             
             fig_platform.update_traces(
-                marker_color='#3b82f6',  # Clean solid brand blue
-                marker_line_color='#1d4ed8',
-                marker_line_width=1,
-                opacity=0.9
+                textposition='inside',
+                textinfo='label+percent',  # Shows platform name and percentage
+                hoverinfo='label+value+percent',  # Shows on hover
+                textfont_size=12,
+                marker=dict(line=dict(color='#ffffff', width=2))
             )
             
             fig_platform.update_layout(
-                xaxis_tickangle=-45,
-                margin=dict(b=100, t=50, l=50, r=20),
+                margin=dict(b=20, t=50, l=20, r=20),
                 height=400,
-                xaxis={'type': 'category', 'categoryorder': 'total descending'},
-                yaxis={'title': 'Posts', 'autorange': True}  # Forces the graph to scale to 9k+
+                showlegend=True,
+                legend=dict(
+                    orientation='h',
+                    yanchor='bottom',
+                    y=-0.1,
+                    xanchor='center',
+                    x=0.5
+                )
             )
+            
             charts['platform'] = fig_platform.to_json()
             
         # 3. METRICS
