@@ -2123,29 +2123,30 @@ class HomeView(BaseTabMixin, TemplateView):
         posts = queryset
         total_posts = posts.count()
         
-        # 2. PLATFORM DISTRIBUTION & CHART
+                # 2. PLATFORM DISTRIBUTION & CHART
         df_platforms, top_platform = get_platform_distribution(posts)
         charts = {}
         
         if not df_platforms.empty:
+            # 🔥 CRITICAL FIX: Force all column names to lowercase to prevent KeyError
+            df_platforms.columns = [c.lower() for c in df_platforms.columns]
+            
             # Ensure correct data types and group by platform
             df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
             df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
             df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
+            df_platforms = df_platforms[df_platforms['count'] > 0]
             df_platforms = df_platforms.sort_values('count', ascending=False)
-
-            # Create the bar chart using LOWERCASE column names
+            
+            # Create the chart with solid colors so the massive 'X' bar doesn't break the scaling
             fig_platform = px.bar(
-                df_platforms, 
-                x='platform', 
-                y='count',
-                title='Post Distribution by Platform',
-                labels={'platform': 'Platform', 'count': 'Posts'}
+                df_platforms, x='platform', y='count',
+                labels={'platform': 'Platform', 'count': 'Posts'},
+                title='Post Distribution by Platform'
             )
             
-            # Force solid colors so the massive 'X' bar doesn't break the scaling
             fig_platform.update_traces(
-                marker_color='#3b82f6',  # Solid brand blue
+                marker_color='#3b82f6',  # Clean solid brand blue
                 marker_line_color='#1d4ed8',
                 marker_line_width=1,
                 opacity=0.9
@@ -2158,7 +2159,6 @@ class HomeView(BaseTabMixin, TemplateView):
                 xaxis={'type': 'category', 'categoryorder': 'total descending'},
                 yaxis={'title': 'Posts', 'autorange': True}  # Forces the graph to scale to 9k+
             )
-            
             charts['platform'] = fig_platform.to_json()
         
         # 3. METRICS
