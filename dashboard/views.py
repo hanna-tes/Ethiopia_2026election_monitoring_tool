@@ -2140,27 +2140,31 @@ class HomeView(BaseTabMixin, TemplateView):
             # FIX: Ensure column structures are strictly strings and numeric integers
             df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
             df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
-            
-            # FIX: Group matching rows together to ensure 'X' handles its 18k records combined
             df_platforms = df_platforms.groupby('platform', as_index=False)['count'].sum()
-            
-            # FIX: Drop empty categories that visually break the layout engine
             df_platforms = df_platforms[df_platforms['count'] > 0]
-            
-            # Re-sort to make sure the Plotly engine renders beautifully
             df_platforms = df_platforms.sort_values('count', ascending=False)
 
+            # FIX: Use a uniform, solid theme color instead of 'color=count' to prevent invisible scaling
             fig_platform = px.bar(
                 df_platforms, x='platform', y='count',
                 labels={'platform': 'Platform', 'count': 'Posts'},
-                color='count', color_continuous_scale='Blues',
                 title='Post Distribution by Platform'
             )
+            
+            # FIX: Explicitly enforce the y-axis range and styling so massive columns don't break the container
+            fig_platform.update_traces(
+                marker_color='#3b82f6',  # Clean solid brand blue
+                marker_line_color='#1d4ed8',
+                marker_line_width=1,
+                opacity=0.9
+            )
+            
             fig_platform.update_layout(
                 xaxis_tickangle=-45, 
                 margin=dict(b=100, t=50, l=50, r=20), 
                 height=400,
-                xaxis={'categoryorder': 'total descending'}
+                xaxis={'type': 'category', 'categoryorder': 'total descending'},
+                yaxis={'title': 'Posts', 'autorange': True}  # Forces the graph to scale to 9k+
             )
             charts['platform'] = fig_platform.to_json()
         
