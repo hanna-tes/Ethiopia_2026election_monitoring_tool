@@ -2167,6 +2167,16 @@ class HomeView(BaseTabMixin, TemplateView):
         
                 # 2. PLATFORM DISTRIBUTION & CHART
         df_platforms, top_platform = get_platform_distribution(posts)
+
+        # 🔍 DEBUG: Check platform distribution
+        logger.info(f"📊 Platform DataFrame shape: {df_platforms.shape if not df_platforms.empty else 'EMPTY'}")
+        if not df_platforms.empty:
+            logger.info(f"📊 Platform distribution:\n{df_platforms.to_string()}")
+            logger.info(f"📊 Top platform: {top_platform}")
+        else:
+            logger.warning("📊 Platform DataFrame is EMPTY!")
+
+        
         charts = {}
         
         if not df_platforms.empty:
@@ -2277,7 +2287,8 @@ class HomeView(BaseTabMixin, TemplateView):
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
-        return context        
+        return context     
+        
 class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
 
