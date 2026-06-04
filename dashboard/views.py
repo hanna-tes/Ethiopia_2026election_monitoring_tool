@@ -2139,24 +2139,31 @@ class HomeView(BaseTabMixin, TemplateView):
         posts = queryset
         total_posts = posts.count()
         
-        # 2. PLATFORM DISTRIBUTION - Optimized with robust numeric casting
+        # 2. PLATFORM DISTRIBUTION - Explicit column mapping to fix 20% flat fallback
         platform_stats = posts.values('platform').annotate(
-            count=Count('id')
-        ).order_by('-count')
+            total_count=Count('id')
+        ).order_by('-total_count')
         
-        platform_data = list(platform_stats)
+        # Manually reconstruct the data list with strict, predictable dictionary keys
+        cleaned_platform_list = []
+        for item in platform_stats:
+            p_name = str(item.get('platform') or '').strip()
+            p_count = item.get('total_count') or 0
+            
+            # Only include valid platforms with active post tallies
+            if p_name and p_count > 0:
+                cleaned_platform_list.append({
+                    'platform': p_name,
+                    'count': int(p_count)
+                })
         
-        if platform_data:
-            df_platforms = pd.DataFrame(platform_data)
-            # Ensure proper string formatting and remove empty rows
-            df_platforms['platform'] = df_platforms['platform'].astype(str).str.strip()
-            df_platforms = df_platforms[df_platforms['platform'].notna() & (df_platforms['platform'] != '')]
-            # Force counts to rigid integers to guarantee Plotly processes the slice sizing
-            df_platforms['count'] = pd.to_numeric(df_platforms['count'], errors='coerce').fillna(0).astype(int)
+        # Explicitly build the DataFrame columns to match Plotly parameters exactly
+        if cleaned_platform_list:
+            df_platforms = pd.DataFrame(cleaned_platform_list, columns=['platform', 'count'])
         else:
             df_platforms = pd.DataFrame(columns=['platform', 'count'])
         
-        # Get top platform
+        # Get top platform safely
         if not df_platforms.empty:
             top_platform = df_platforms.iloc[0]['platform']
         else:
@@ -2168,10 +2175,10 @@ class HomeView(BaseTabMixin, TemplateView):
         if not df_platforms.empty and df_platforms['count'].sum() > 0:
             fig_platform = px.pie(
                 df_platforms,
-                names='platform',      # lowercase - matches DataFrame column
-                values='count',        # lowercase - matches DataFrame column
+                names='platform',      # Matches DataFrame column name exactly
+                values='count',        # Matches DataFrame column name exactly
                 title=f'Post Distribution by Platform (Total: {df_platforms["count"].sum():,} posts)',
-                color='platform',      # lowercase - matches DataFrame column
+                color='platform',      
                 color_discrete_map={
                     'X': '#1DA1F2',
                     'Facebook': '#1877F2',
