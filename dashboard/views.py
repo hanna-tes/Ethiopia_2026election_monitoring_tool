@@ -2141,85 +2141,81 @@ class HomeView(BaseTabMixin, TemplateView):
         posts = queryset
         total_posts = posts.count()
         
-        logger.info(f"📊 HomeView - Total posts after filtering: {total_posts}")
-        logger.info(f"📊 Date range: {start_date} to {end_date}")
-        
-        # Debug: Check actual date range in the data
-        if posts.exists():
-            actual_min = posts.aggregate(min_date=Min('timestamp_share'))['min_date']
-            actual_max = posts.aggregate(max_date=Max('timestamp_share'))['max_date']
-            logger.info(f"📊 Actual data range: {actual_min} to {actual_max}")
-        
-        # 2. PLATFORM DISTRIBUTION & CHART
+        # 2. PLATFORM DISTRIBUTION - Query database directly
         platform_stats = posts.values('platform').annotate(
             count=Count('id')
         ).order_by('-count')
         
+        # Build DataFrame with correct column names
+        platform_data = []
+        for item in platform_stats:
+            if item['platform'] and item['count'] > 0:
+                platform_data.append({
+                    'platform': str(item['platform']),
+                    'count': int(item['count'])
+                })
+        
+        df_platforms = pd.DataFrame(platform_data)
+        
+        # Get top platform
+        if not df_platforms.empty:
+            top_platform = df_platforms.iloc[0]['platform']
+        else:
+            top_platform = "—"
+        
         charts = {}
         
-        if platform_stats:
-            # Convert to list of dicts for Plotly
-            platform_data = [
-                {'Platform': item['platform'] or 'Unknown', 'Count': item['count']}
-                for item in platform_stats
-                if item['platform'] and item['count'] > 0
-            ]
+        # 3. CREATE PIE CHART
+        if not df_platforms.empty:
+            fig_platform = px.pie(
+                df_platforms,
+                names='platform',      # lowercase - matches DataFrame column
+                values='count',        # lowercase - matches DataFrame column
+                title=f'Post Distribution by Platform (Total: {df_platforms["count"].sum():,} posts)',
+                color='platform',      # lowercase - matches DataFrame column
+                color_discrete_map={
+                    'X': '#1DA1F2',
+                    'Facebook': '#1877F2',
+                    'Telegram': '#0088cc',
+                    'TikTok': '#000000',
+                    'Media': '#6B7280',
+                    'YouTube': '#FF0000',
+                    'Instagram': '#E4405F'
+                },
+                hole=0.4
+            )
             
-            if platform_data:
-                # Create DataFrame with capitalized column names
-                df_platforms = pd.DataFrame(platform_data)
-                
-                # Create PIE CHART using database column names
-                fig_platform = px.pie(
-                    df_platforms,
-                    names='Platform',      # Database column name
-                    values='Count',        # Database column name
-                    title='Post Distribution by Platform',
-                    color='Platform',
-                    color_discrete_map={
-                        'X': '#1DA1F2',
-                        'Facebook': '#1877F2',
-                        'Telegram': '#0088cc',
-                        'TikTok': '#000000',
-                        'Media': '#6B7280',
-                        'YouTube': '#FF0000',
-                        'Instagram': '#E4405F'
-                    },
-                    hole=0.4
-                )
-                
-                fig_platform.update_traces(
-                    textposition='inside',
-                    textinfo='label+percent',
-                    hoverinfo='label+value+percent',
-                    textfont_size=12,
-                    marker=dict(line=dict(color='#ffffff', width=2))
-                )
-                
-                fig_platform.update_layout(
-                    margin=dict(b=20, t=50, l=20, r=20),
-                    height=400,
-                    showlegend=True,
-                    legend=dict(
-                        orientation='h',
-                        yanchor='bottom',
-                        y=-0.1,
-                        xanchor='center',
-                        x=0.5
-                    )
-                )
-                
-                charts['platform'] = fig_platform.to_json()
-                logger.info(f"✅ Platform chart created with {len(platform_data)} platforms") 
+            fig_platform.update_traces(
+                textposition='inside',
+                textinfo='label+percent',
+                hoverinfo='label+value+percent',
+                textfont_size=12,
+                marker=dict(line=dict(color='#ffffff', width=2))
+            )
             
-        # 3. METRICS
+            fig_platform.update_layout(
+                margin=dict(b=20, t=50, l=20, r=20),
+                height=400,
+                showlegend=True,
+                legend=dict(
+                    orientation='h',
+                    yanchor='bottom',
+                    y=-0.1,
+                    xanchor='center',
+                    x=0.5
+                )
+            )
+            
+            charts['platform'] = fig_platform.to_json()
+        
+        # 4. METRICS
         unique_accounts = posts.values('account_id').distinct().count()
         high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
         alert_level = '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low'
         peps_tracked = PEP.objects.filter(is_active=True).count()
         last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
         
-        # 4. OTHER CHARTS
+        # 5. OTHER CHARTS
         if posts.exists():
             # Top Accounts
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
@@ -2260,7 +2256,7 @@ class HomeView(BaseTabMixin, TemplateView):
                     fig_daily.update_layout(xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400)
                     charts['daily'] = fig_daily.to_json()
         
-        # 5. UPLOAD SUMMARY
+        # 6. UPLOAD SUMMARY
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
         upload_summary = {
             'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
@@ -2268,7 +2264,7 @@ class HomeView(BaseTabMixin, TemplateView):
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         
-        # 6. BUILD CONTEXT
+        # 7. BUILD CONTEXT
         context.update({
             'active_tab': 'home',
             'metrics': {
