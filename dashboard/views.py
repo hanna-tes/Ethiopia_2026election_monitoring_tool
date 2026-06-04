@@ -2125,7 +2125,8 @@ class HomeView(BaseTabMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
+        from django.core.cache import cache
+        cache.clear()
         # 1. GET FILTERED QUERYSET
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
