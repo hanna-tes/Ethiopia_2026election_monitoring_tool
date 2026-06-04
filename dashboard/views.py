@@ -2155,13 +2155,13 @@ class HomeView(BaseTabMixin, TemplateView):
         charts = {}
         
         if not df_platforms.empty:
-            # Create a PIE CHART instead of bar chart
+            # Create a PIE CHART using the ACTUAL column names from the DataFrame
             fig_platform = px.pie(
                 df_platforms, 
-                names='platform', 
-                values='count',
+                names='Platform',  # Capitalized to match your DataFrame
+                values='Count',    # Capitalized to match your DataFrame
                 title='Post Distribution by Platform',
-                color='platform',
+                color='Platform',  # Capitalized
                 color_discrete_map={
                     'X': '#1DA1F2',
                     'Facebook': '#1877F2',
