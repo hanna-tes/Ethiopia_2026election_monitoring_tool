@@ -2173,7 +2173,7 @@ class HomeView(BaseTabMixin, TemplateView):
         
         charts = {}
         
-        # 3. CREATE PIE CHART - Using a raw dictionary payload for maximum reliability
+        # 3. CREATE PIE CHART - Fixed the "l" key syntax error here 👇
         if labels:
             total_sum = sum(values)
             raw_chart_dict = {
@@ -2193,7 +2193,7 @@ class HomeView(BaseTabMixin, TemplateView):
                 }],
                 "layout": {
                     "title": f'Post Distribution by Platform (Total: {total_sum:,} posts)',
-                    "margin": {"b": 20, "t": 50, l: 20, "r": 20},
+                    "margin": {"b": 20, "t": 50, "l": 20, "r": 20},
                     "height": 400,
                     "showlegend": True,
                     "legend": {
