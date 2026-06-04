@@ -800,7 +800,7 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
             model,
             tokenizer,
             prompt=prompt,
-            max_tokens=1024
+            max_tokens=2048
         )
 
         logger.debug(f"[Gemma raw output] ({len(raw_output)} chars): {repr(raw_output[:800])}")
