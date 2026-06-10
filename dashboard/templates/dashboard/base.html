@@ -76,14 +76,10 @@
             background:linear-gradient(180deg,#0a1628 0%, #081120 100%);
             border-right:1px solid var(--line);
         }
-        .brand-logo{
-            width:64px;height:64px;border-radius:14px;
-            background:linear-gradient(135deg,#1e40af,#3b82f6);
-            display:flex;align-items:center;justify-content:center;
-            color:#ffffff;font-weight:800;font-family:'Space Grotesk',sans-serif;
-            font-size:22px; letter-spacing:.04em;
-            box-shadow:0 12px 32px -10px rgba(59,130,246,.55);
-            border:1px solid rgba(255,255,255,.18);
+        .logo-container {
+            display: inline-flex;
+            align-items: center;
+            background: transparent;
         }
         .topbar{
             background:linear-gradient(180deg, rgba(10,22,40,.9), rgba(10,22,40,.6));
@@ -106,8 +102,28 @@
 <div class="flex min-h-screen">
 
     <aside class="sidebar-shell hidden lg:flex flex-col w-[260px] shrink-0">
-        <div class="px-5 pt-8 pb-6 border-b hairline flex justify-center">
-            <div class="brand-logo">ADDO</div>
+        <div class="px-5 pt-8 pb-6 border-b hairline flex flex-col items-center">
+            <div class="logo-container p-2 bg-white/5 rounded-xl border border-white/10 shadow-lg">
+                <svg width="140" height="48" viewBox="0 0 160 55" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 44L26 10L40 44" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M19 31.5H33" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round"/>
+                    <path d="M52 11V43" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                    <path d="M52 11H61C71 11 76 17 76 27C76 37 71 43 61 43H52" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M58 17V37" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round"/>
+                    <path d="M86 11V43" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                    <path d="M86 11H95C105 11 110 17 110 27C110 37 105 43 95 43H86" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M92 17V37" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round"/>
+                    <circle cx="134" cy="28" r="13" stroke="#ffffff" stroke-width="6.5"/>
+                    <circle cx="134" cy="28" r="4" fill="#2563eb"/>
+                    <path d="M134 15V8" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/>
+                    <path d="M134 8H149" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/>
+                    <circle cx="134" cy="8" r="3" fill="#ffffff"/>
+                    <circle cx="149" cy="8" r="3" fill="#ffffff"/>
+                </svg>
+            </div>
+            <div class="text-[9.5px] uppercase tracking-[0.2em] font-bold text-blue-400/90 mt-3 font-display">
+                Digital Democracy Observatory
+            </div>
         </div>
 
         <nav class="flex-1 overflow-y-auto px-3 py-4">
@@ -134,6 +150,24 @@
 
         <header class="topbar sticky top-0 z-30">
             <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-4 flex items-center gap-4">
+                <div class="flex lg:hidden items-center mr-2">
+                    <svg width="85" height="30" viewBox="0 0 160 55" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 44L26 10L40 44" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M19 31.5H33" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round"/>
+                        <path d="M52 11V43" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                        <path d="M52 11H61C71 11 76 17 76 27C76 37 71 43 61 43H52" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M58 17V37" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round"/>
+                        <path d="M86 11V43" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                        <path d="M86 11H95C105 11 110 17 110 27C110 37 105 43 95 43H86" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M92 17V37" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round"/>
+                        <circle cx="134" cy="28" r="13" stroke="#ffffff" stroke-width="6.5"/>
+                        <circle cx="134" cy="28" r="4" fill="#2563eb"/>
+                        <path d="M134 15V8" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/>
+                        <path d="M134 8H149" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/>
+                        <circle cx="134" cy="8" r="3" fill="#ffffff"/>
+                        <circle cx="149" cy="8" r="3" fill="#ffffff"/>
+                    </svg>
+                </div>
                 <div class="hidden md:flex items-center gap-2">
                     <span class="chip">Amharic · EN</span>
                 </div>
