@@ -263,7 +263,6 @@
 
     {% if top_hashtags %}
     <div class="flex flex-wrap gap-2">
-        {% photog tag in top_hashtags %}
         {% for tag in top_hashtags %}
         <span class="px-3 py-1.5 rounded-full text-[13px] font-medium border transition cursor-default hover:brightness-125"
               style="background:rgba(167,139,250,.08); color:#ddd6fe; border-color:rgba(167,139,250,.25);">
@@ -275,7 +274,6 @@
     <p class="text-[13px] muted italic">No hashtags found in current dataset.</p>
     {% endif %}
 </div>
-
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
     // Dark theme defaults for all charts
