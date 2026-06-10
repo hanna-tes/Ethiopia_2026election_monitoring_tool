@@ -2620,12 +2620,12 @@ class LexiconManagementView(TemplateView):
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
         
-        # Scan ONLY the filtered posts for lexicon matches
+       # Scan ONLY the filtered posts for lexicon matches
         all_matches = []
         posts_scanned = 0
         
-        # Scan posts for lexicon matches (Limited to 3000 for performance)
-        for post in filtered_posts[:3000]:
+        # scan the ENTIRE filtered dataset
+        for post in filtered_posts.iterator():
             if post.original_text:
                 matches = scan_text_for_lexicon_terms(post.original_text)
                 if matches:
