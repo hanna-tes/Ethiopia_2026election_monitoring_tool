@@ -33,7 +33,6 @@
                       placeholder="Paste text to scan for hate speech terms (e.g., 'Kill them all' or 'የወያኔ ድስት')..."></textarea>
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-semibold transition">🔎 Scan Text</button>
         </form>
-        
         {% if messages %}
             {% for message in messages %}
             <div class="mt-3 p-3 rounded-lg {% if message.tags == 'success' %}bg-green-950 border border-green-900/60 text-green-400{% elif message.tags == 'warning' %}bg-yellow-950 border border-yellow-900/60 text-yellow-400{% else %}bg-red-950 border border-red-900/60 text-red-400{% endif %}">
@@ -138,13 +137,24 @@
         </form>
     </div>
     
-    <div>
-        <h3 class="text-lg font-semibold text-white mb-4">
-            📋 Lexicon Detection: {{ total_matches|default:0 }} matches in {{ posts_scanned|default:0 }} posts
+    <div class="mb-6">
+        <h3 class="text-2xl font-bold text-white mb-2 flex items-center gap-3">
+            <span class="bg-blue-600/20 border border-blue-500/40 rounded-lg px-4 py-2">
+                📋 {{ total_matches|default:0 }} Trigger Matches
+            </span>
+            <span class="text-slate-400 font-normal text-lg">
+                found in {{ posts_scanned|default:0 }} posts
+            </span>
         </h3>
-        <p class="text-sm text-gray-400 mb-4">
-            Based on {{ total_terms }} active lexicon terms scanning {{ total_posts }} total posts
+        <p class="text-slate-400 text-sm flex items-center gap-2 ml-1">
+            <i class="fas fa-info-circle text-blue-400"></i>
+            <span>
+                Our system scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts using a dictionary of 
+                <strong class="text-white">{{ total_terms }}</strong> monitored trigger words 
+                <span class="text-slate-500">(ethnic slurs, violence terms, election keywords, etc.)</span>
+            </span>
         </p>
+ </div>
         <div class="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/20 shadow-inner">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-slate-800 text-sm">
