@@ -197,7 +197,7 @@
                                     {% if pep.risk_score %}
                                         {% if pep.risk_score <= 3 %}<span class="text-emerald-400 font-semibold">🟢 Mostly Neutral</span>
                                         {% elif pep.risk_score <= 6 %}<span class="text-amber-400 font-semibold">🟡 Some Criticism</span>
-                                        {% align %}<span class="text-rose-400 font-semibold">🔴 High Criticism</span>{% endif %}
+                                        {% else %}<span class="text-rose-400 font-semibold">🔴 High Criticism</span>{% endif %}
                                     {% else %}
                                         <span class="text-slate-500 italic">Unassessed</span>
                                     {% endif %}
