@@ -190,7 +190,7 @@
                                 <span class="text-gray-300">|</span>
                                 <span class="flex items-center gap-1">
                                     {% if pep.risk_score %}
-                                        {% if pep.risk_score <= 3 %}<span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold">🟢 Mostly Neutral</span>
+                                        {% if pep.risk_score <= 3 %;<span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold">🟢 Mostly Neutral</span>
                                         {% elif pep.risk_score <= 6 %}<span class="inline-flex items-center px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 font-bold">🟡 Some Criticism</span>
                                         {% else %}<span class="inline-flex items-center px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-100 font-bold">🔴 High Criticism</span>{% endif %}
                                     {% else %}<span class="text-gray-400 font-normal italic">Unassessed</span>{% endif %}
@@ -228,7 +228,7 @@
                                 {% if pep.velocity_alert %}<span class="velocity-indicator text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold">⚠️</span>{% endif %}
                             </div>
                             <div class="text-xs text-gray-700">
-                                Peak: {% if pep.peak_hour is not none %}<strong class="text-gray-900 font-bold">{{ pep.peak_hour|stringformat:"02d" }}:00</strong>{% else %;<span class="text-gray-400 italic">—</span>{% endif %}
+                                Peak: {% if pep.peak_hour is not none %;<strong class="text-gray-900 font-bold">{{ pep.peak_hour|stringformat:"02d" }}:00</strong>{% else %}<span class="text-gray-400 italic">—</span>{% endif %}
                             </div>
                         </div>
                         
