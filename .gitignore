@@ -1,4 +1,4 @@
-o# Python
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -45,6 +45,7 @@ media/
 .DS_Store
 Thumbs.db
 
+
 __pycache__/
 *.pyc
 *.dump
@@ -65,3 +66,6 @@ model_cache/
 *.pt
 *.pth
 
+*.pem
+__pycache__/
+*.pyc
