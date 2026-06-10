@@ -42,38 +42,9 @@
         .sidebar-link:hover { background: rgba(255,255,255,0.1); }
         .sidebar-link.active { background: rgba(255,255,255,0.15); border-left: 4px solid #f59e0b; }
         
-        /* Header with Africa Map Background */
-        .header-banner {
-            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
-            position: relative;
-            overflow: hidden;
-            min-height: 140px;
-        }
-        
-        .header-banner::before {
-            content: '';
-            position: absolute;
-            right: 0;
-            top: 0;
-            width: 50%;
-            height: 100%;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600' preserveAspectRatio='xMidYMid slice'%3E%3Cpath d='M400,100 Q450,80 500,100 T600,150 T650,250 T620,350 T550,450 T450,500 T350,480 T280,400 T250,300 T280,200 T350,130 Z' fill='none' stroke='white' stroke-width='3' opacity='0.2'/%3E%3Cpath d='M520,220 Q540,210 560,220 T580,250 T570,280 T540,290 T510,280 T500,250 Z' fill='%23dc2626' stroke='white' stroke-width='2' opacity='0.6'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: center right;
-            background-size: contain;
-            opacity: 0.4;
-            pointer-events: none;
-        }
-        
-        /* ADDO Logo Container - Ensure no clipping */
-        .addo-logo-container {
-            background: white;
-            border-radius: 12px;
-            padding: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        /* Ensure logo container doesn't clip content */
+        .logo-container {
+            overflow: visible;
         }
     </style>
     
@@ -152,43 +123,46 @@
     <!-- Main Content Area -->
     <main class="ml-64 min-h-screen flex flex-col">
         
-        <!-- Top Header Banner - Fixed height to prevent logo clipping -->
-        <header class="header-banner text-white shadow-lg">
-            <div class="relative z-10 px-8 py-6 flex items-center justify-between">
+        <!-- Top Header - Clean, No Map, Full Logo -->
+        <header class="bg-[#1e3a8a] text-white shadow-lg border-b border-blue-900">
+            <div class="px-8 py-5 flex items-center justify-between">
                 
-                <!-- Left: ADDO Logo & Branding -->
-                <div class="flex items-center space-x-6">
-                    <!-- ADDO Logo - Properly sized container -->
-                    <div class="addo-logo-container">
-                        <svg width="64" height="64" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect width="100" height="100" rx="8" fill="#1e3a8a"/>
-                            <text x="12" y="68" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="white">ADD</text>
-                            <circle cx="78" cy="38" r="10" fill="none" stroke="white" stroke-width="4"/>
-                            <circle cx="78" cy="38" r="4" fill="white"/>
-                            <line x1="78" y1="28" x2="78" y2="22" stroke="white" stroke-width="3"/>
-                            <line x1="84" y1="32" x2="86" y2="30" stroke="white" stroke-width="2"/>
+                <!-- Left Spacer (to balance the layout) -->
+                <div class="w-1/4"></div>
+
+                <!-- Center: ADDO Logo & Branding (Fully Visible) -->
+                <div class="flex items-center space-x-4 logo-container">
+                    <!-- ADDO Logo SVG - Sized to prevent clipping -->
+                    <div class="bg-white rounded-xl p-2 shadow-md flex-shrink-0">
+                        <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect width="100" height="100" rx="12" fill="#1e3a8a"/>
+                            <text x="10" y="68" font-family="Arial, sans-serif" font-size="44" font-weight="900" fill="white" letter-spacing="-2">ADD</text>
+                            <!-- The 'O' with camera icon -->
+                            <circle cx="78" cy="42" r="14" fill="none" stroke="white" stroke-width="5"/>
+                            <circle cx="78" cy="42" r="5" fill="white"/>
+                            <line x1="78" y1="28" x2="78" y2="20" stroke="white" stroke-width="4" stroke-linecap="round"/>
+                            <line x1="86" y1="34" x2="90" y2="30" stroke="white" stroke-width="3" stroke-linecap="round"/>
                         </svg>
                     </div>
                     
                     <!-- Branding Text -->
-                    <div>
+                    <div class="text-left">
                         <h1 class="text-2xl font-bold tracking-wide leading-tight">ADDO</h1>
                         <p class="text-sm text-blue-200 uppercase tracking-wider font-medium">African Digital Democracy Observatory</p>
                     </div>
                 </div>
                 
                 <!-- Divider -->
-                <div class="h-16 w-px bg-white/30 mx-4"></div>
+                <div class="h-16 w-px bg-white/20 mx-6"></div>
                 
                 <!-- Right: Dashboard Title -->
-                <div class="flex items-center space-x-3">
-                    <span class="text-3xl">🇪🇹</span>
-                    <div>
-                        <h2 class="text-xl font-bold text-white leading-tight">Ethiopia Election Monitoring Dashboard</h2>
-                        <p class="text-sm text-blue-200 mt-1">
-                            Dataset-driven triggers • Amharic support • Lexicon management
-                        </p>
-                    </div>
+                <div class="w-1/4 text-right">
+                    <h2 class="text-xl font-bold text-white leading-tight flex items-center justify-end gap-2">
+                        <span class="text-2xl">🇪🇹</span> Ethiopia Election Monitoring Dashboard
+                    </h2>
+                    <p class="text-sm text-blue-200 mt-1">
+                        Dataset-driven triggers • Amharic support • Lexicon management
+                    </p>
                 </div>
             </div>
         </header>
