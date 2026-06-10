@@ -5,7 +5,6 @@
 
 {% block content %}
 
-<!-- =================== MISSION BRIEF =================== -->
 <div class="panel p-6 md:p-7 mb-6">
     <div class="flex items-start gap-4">
         <div class="hidden md:flex shrink-0 w-11 h-11 rounded-xl items-center justify-center"
@@ -35,7 +34,6 @@
     </div>
 </div>
 
-<!-- =================== DATE FILTER =================== -->
 <form method="get" class="panel p-5 mb-8 flex flex-wrap gap-4 items-end">
     <div>
         <label class="block text-[11px] uppercase tracking-[0.12em] muted mb-1.5">From</label>
@@ -73,9 +71,7 @@
     {% endif %}
 </form>
 
-<!-- =================== METRIC CARDS =================== -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-    <!-- card -->
     <div class="panel p-5 relative overflow-hidden group">
         <div class="absolute inset-x-0 top-0 h-px" style="background:linear-gradient(90deg, transparent, #22d3ee, transparent);"></div>
         <div class="text-[11px] uppercase tracking-[0.14em] muted">Posts Analyzed</div>
@@ -117,7 +113,6 @@
     </div>
 </div>
 
-<!-- =================== CHARTS =================== -->
 {% if not charts %}
 <div class="panel p-14 text-center mb-10">
     <div class="text-5xl mb-3">📊</div>
@@ -129,44 +124,55 @@
     </a>
 </div>
 {% else %}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
-    <div class="panel p-6">
+    <div class="panel p-6 flex flex-col justify-between min-h-[420px]">
         <div class="flex items-center justify-between mb-4">
             <h3 class="font-display text-[15px] font-semibold text-slate-100">📱 Post Distribution by Platform</h3>
             <span class="chip">Live</span>
         </div>
-        <div id="chart-platform" class="w-full h-80"></div>
+        <div class="relative w-full flex-1 min-h-[340px]">
+            <div id="chart-platform" class="w-full h-full"></div>
+        </div>
     </div>
 
-    <div class="panel p-6">
+    <div class="panel p-6 flex flex-col justify-between min-h-[420px]">
         <div class="flex items-center justify-between mb-4">
             <h3 class="font-display text-[15px] font-semibold text-slate-100">⚠️ Risk Level Distribution</h3>
             <span class="chip">Signal</span>
         </div>
-        <div id="chart-risk" class="w-full h-80"></div>
+        <div class="relative w-full flex-1 min-h-[340px]">
+            <div id="chart-risk" class="w-full h-full"></div>
+        </div>
     </div>
 
-    <div class="panel p-6 lg:col-span-2">
+</div>
+
+<div class="grid grid-cols-1 gap-6 mb-10">
+
+    <div class="panel p-6 w-full flex flex-col min-h-[420px]">
         <div class="flex items-center justify-between mb-4">
             <h3 class="font-display text-[15px] font-semibold text-slate-100">📈 Daily Post Volume</h3>
             <span class="chip">Trend</span>
         </div>
-        <div id="chart-daily" class="w-full h-80"></div>
+        <div class="relative w-full flex-1 min-h-[340px]">
+            <div id="chart-daily" class="w-full h-full"></div>
+        </div>
     </div>
 
-    <div class="panel p-6 lg:col-span-2">
+    <div class="panel p-6 w-full flex flex-col min-h-[420px]">
         <div class="flex items-center justify-between mb-4">
             <h3 class="font-display text-[15px] font-semibold text-slate-100">👤 Top 10 Accounts by Activity</h3>
             <span class="chip">Ranking</span>
         </div>
-        <div id="chart-accounts" class="w-full h-80"></div>
+        <div class="relative w-full flex-1 min-h-[340px]">
+            <div id="chart-accounts" class="w-full h-full"></div>
+        </div>
     </div>
 
 </div>
 {% endif %}
 
-<!-- =================== HIGH-RISK ACTORS =================== -->
 {% if risk_actors %}
 <div class="panel p-6 mb-10">
     <div class="flex items-center justify-between mb-5">
@@ -246,7 +252,6 @@
 </div>
 {% endif %}
 
-<!-- =================== HASHTAGS =================== -->
 <div class="panel p-6 mb-10">
     <div class="flex items-center gap-3 mb-4">
         <span class="text-xl">#️⃣</span>
@@ -258,6 +263,7 @@
 
     {% if top_hashtags %}
     <div class="flex flex-wrap gap-2">
+        {% photog tag in top_hashtags %}
         {% for tag in top_hashtags %}
         <span class="px-3 py-1.5 rounded-full text-[13px] font-medium border transition cursor-default hover:brightness-125"
               style="background:rgba(167,139,250,.08); color:#ddd6fe; border-color:rgba(167,139,250,.25);">
@@ -270,7 +276,6 @@
     {% endif %}
 </div>
 
-<!-- Plotly -->
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
     // Dark theme defaults for all charts
