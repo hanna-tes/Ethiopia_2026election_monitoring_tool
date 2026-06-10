@@ -2596,7 +2596,7 @@ class LexiconManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Load lexicon terms from DB (user-added + CONFIG defaults)
+        # 1. Load lexicon terms from DB (user-added + CONFIG defaults)
         lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
         # If DB is empty, seed from CONFIG (one-time migration)
@@ -2615,10 +2615,23 @@ class LexiconManagementView(TemplateView):
                     )
             lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
-        # Get distinct categories for filter dropdown
+        # 2. SCAN POSTS TO GET ACTUAL MATCH COUNTS (Matches Mapped Lexicons logic)
+        posts = ProcessedPost.objects.all()
+        all_matches = []
+        posts_scanned = 0
+        
+        # Scan posts for lexicon matches (Limited to 3000 for performance)
+        for post in posts[:3000]:
+            if post.original_text:
+                matches = scan_text_for_lexicon_terms(post.original_text)
+                if matches:
+                    all_matches.extend(matches)
+                    posts_scanned += 1
+        
+        # 3. Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
         
-        # Get scan results from session (if any) and clear immediately
+        # 4. Get scan results from session (if any) and clear immediately
         scan_results = self.request.session.pop('scan_results', None)
         
         context.update({
@@ -2628,7 +2641,12 @@ class LexiconManagementView(TemplateView):
             'total_terms': lexicon_terms.count(),
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
-            'scan_results': scan_results,  # Only pass if exists
+            'scan_results': scan_results,
+            
+            # NEW: Add match statistics to match Mapped Lexicons section
+            'total_matches': len(all_matches),
+            'posts_scanned': posts_scanned,
+            'total_posts': posts.count(),
         })
         return context
 
