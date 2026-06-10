@@ -1,356 +1,77 @@
 {% extends 'dashboard/base.html' %}
-{% block title %}PEPs/PIPs Tracker{% endblock %}
-
-{% block extra_head %}
-<style>
-    .pep-card {
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        border: 1px solid rgba(229, 231, 235, 0.6);
-    }
-    .pep-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02);
-    }
-    .metric-pill { transition: all 0.2s ease; }
-    .metric-pill:hover { transform: scale(1.03); }
-    .hashtag-tag { transition: all 0.2s ease; }
-    .hashtag-tag:hover { background-color: #2563eb; color: #ffffff; }
-    .cluster-badge { animation: fadeIn 0.4s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-    .velocity-indicator { animation: pulse 2s infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-</style>
-{% endblock %}
+{% block title %}{{ selected_file }} - Election Data{% endblock %}
 
 {% block content %}
-
 <div class="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 max-w-7xl mx-auto my-4">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-100">
         <div class="flex items-center gap-3">
-            <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">👥 PEPs & Candidates Tracker</h2>
-            {% if last_pep_sync %}
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                <span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Synced: {{ last_pep_sync|timesince }} ago
-            </span>
+            <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">📊 {{ selected_file }}</h2>
+        </div>
+        <a href="{% url 'peps' %}" class="inline-flex items-center justify-center text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 px-4 py-2 rounded-xl border border-gray-200 shadow-2xs transition-all tracking-tight">
+            ← Back to Tracker Tabs
+        </a>
+    </div>
+
+    {% if sheets %}
+    <div class="mb-5 flex flex-wrap items-center gap-3 bg-gray-50/60 p-3 rounded-xl border border-gray-200/60">
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Data Sheet:</label>
+        <select class="border border-gray-200 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-gray-800 shadow-2xs focus:border-blue-500 focus:outline-none transition-all" 
+                onchange="window.location.href='?file={{ selected_file }}&sheet='+this.value">
+            {% for s in sheets %}
+            <option value="{{ s }}" {% if selected_sheet == s %}selected{% endif %}>{{ s|title }}</option>
+            {% endfor %}
+        </select>
+        <span class="text-xs text-gray-400 font-bold uppercase tracking-wider bg-white border border-gray-200 px-2.5 py-1 rounded-md shadow-3xs ml-auto">
+            {{ total_records }} Total Records
+        </span>
+    </div>
+    {% endif %}
+
+    {% if page_obj and page_obj.paginator.count > 0 %}
+    <div class="overflow-hidden border border-gray-200/80 rounded-xl shadow-xs">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50/70">
+                    <tr>
+                        {% for col in column_order %}
+                            {% if col %}
+                            <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">{{ col|title }}</th>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-100">
+                    {% for row_values in aligned_rows %}
+                    <tr class="hover:bg-gray-50/40 transition-colors">
+                        {% for val in row_values %}
+                        <td class="px-5 py-3.5 whitespace-nowrap text-sm font-medium text-gray-700">{{ val|default:"—" }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="mt-5 flex items-center justify-between border-t border-gray-100 pt-4 text-sm font-medium text-gray-500">
+        <div>
+            Page <span class="text-gray-900 font-bold">{{ page_obj.number }}</span> of <span class="text-gray-900 font-bold">{{ page_obj.paginator.num_pages }}</span>
+        </div>
+        <div class="flex gap-2">
+            {% if page_obj.has_previous %}
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.previous_page_number }}" class="inline-flex items-center px-3 py-1.5 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 shadow-2xs font-semibold text-gray-700 text-xs transition">Prev</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.next_page_number }}" class="inline-flex items-center px-3 py-1.5 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 shadow-2xs font-semibold text-gray-700 text-xs transition">Next</a>
             {% endif %}
         </div>
-        
-        <div class="text-sm text-gray-500 font-medium">
-            Total tracked officials: <span class="text-gray-900 font-bold bg-gray-50 px-2 py-1 rounded border border-gray-200/60 ml-0.5 mr-2">{{ total_peps|add:rc_members_count }}</span>
-            Election candidates: <span class="text-gray-900 font-bold bg-gray-50 px-2 py-1 rounded border border-gray-200/60 ml-0.5">{{ total_candidates|default:0 }}</span>
-        </div>
     </div>
-
-    <div class="border-b border-gray-200 mb-6">
-        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-            <button onclick="switchTab('officials')" id="tab-officials" class="border-blue-600 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
-                🏛️ Key Officials
-            </button>
-            <button onclick="switchTab('candidates')" id="tab-candidates" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all focus:outline-none">
-                🗳️ Election Candidates
-            </button>
-            <button onclick="switchTab('analysis')" id="tab-analysis" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all focus:outline-none">
-                📊 PEP Analysis
-            </button>
-        </nav>
+    {% endif %}
+    {% else %}
+    <div class="text-center py-12 bg-gray-50 rounded-xl border border-gray-200 text-sm text-gray-500 italic">
+        No records found for this sheet execution.
     </div>
-
-    <div id="content-officials" class="tab-content transition-opacity duration-200">
-        {% if peps %}
-        <div class="overflow-hidden border border-gray-200/80 rounded-xl shadow-xs">
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50/70">
-                        <tr>
-                            <th scope="col" class="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Name</th>
-                            <th scope="col" class="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Position</th>
-                            <th scope="col" class="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">X (Twitter)</th>
-                            <th scope="col" class="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Facebook</th>
-                            <th scope="col" class="px-6 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Confidence</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-100">
-                        {% for pep in peps %}
-                        <tr class="hover:bg-gray-50/50 transition-colors">
-                            <td class="px-6 py-4 whitespace-nowrap font-semibold text-gray-900">{{ pep.name }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{{ pep.title|default:"—" }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                {% if pep.x_link %}
-                                <a href="{{ pep.x_link }}" target="_blank" class="inline-flex items-center text-blue-600 font-medium hover:text-blue-800 transition-colors">
-                                    {{ pep.x_verified|yesno:"✓ Verified,Link" }}
-                                </a>
-                                {% else %}
-                                <span class="text-gray-300">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                {% if pep.facebook_link %}
-                                <a href="{{ pep.facebook_link }}" target="_blank" class="inline-flex items-center text-blue-600 font-medium hover:text-blue-800 transition-colors">
-                                    {{ pep.facebook_verified|yesno:"✓ Verified,Link" }}
-                                </a>
-                                {% else %}
-                                <span class="text-gray-300">—</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                {% if pep.confidence_level == 'high' %}
-                                <span class="px-2.5 py-1 inline-flex text-xs font-bold rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">High</span>
-                                {% elif pep.confidence_level == 'medium' %}
-                                <span class="px-2.5 py-1 inline-flex text-xs font-bold rounded-full bg-amber-50 text-amber-800 border border-amber-200">Medium</span>
-                                {% else %}
-                                <span class="px-2.5 py-1 inline-flex text-xs font-bold rounded-full bg-gray-50 text-gray-600 border border-gray-200">Low</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% else %}
-        <div class="text-center py-12 bg-gray-50 rounded-xl border border-gray-200">
-            <p class="text-gray-500 italic text-sm">No PEPs loaded yet. GitHub sync will run automatically on next visit if empty.</p>
-        </div>
-        {% endif %}
-    </div>
-
-    <div id="content-candidates" class="tab-content hidden transition-opacity duration-200">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
-            <a href="{% url 'peps_data' %}?file=HoPR_Candidates.xlsx" class="group block bg-white p-5 rounded-xl border border-gray-200 shadow-xs hover:border-blue-500 hover:shadow-md transition-all duration-200">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-md font-bold text-gray-900 group-hover:text-blue-600 transition-colors">🏛️ House of Peoples' Representatives</h3>
-                    <div class="p-1.5 rounded-lg bg-blue-50 group-hover:bg-blue-600 text-blue-600 group-hover:text-white transition-all">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
-                    </div>
-                </div>
-                <p class="mt-2.5 text-xs leading-relaxed text-gray-500">Federal parliamentary candidates & elected members.</p>
-            </a>
-
-            <a href="{% url 'peps_data' %}?file=Regional_Candidates.xlsx" class="group block bg-white p-5 rounded-xl border border-gray-200 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all duration-200">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-md font-bold text-gray-900 group-hover:text-emerald-600 transition-colors">🌍 Regional Councils</h3>
-                    <div class="p-1.5 rounded-lg bg-emerald-50 group-hover:bg-emerald-600 text-emerald-600 group-hover:text-white transition-all">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
-                    </div>
-                </div>
-                <p class="mt-2.5 text-xs leading-relaxed text-gray-500">State-level council members across all regions.</p>
-            </a>
-
-            <a href="{% url 'peps_data' %}?file=Executive_Members.xlsx" class="group block bg-white p-5 rounded-xl border border-gray-200 shadow-xs hover:border-purple-500 hover:shadow-md transition-all duration-200">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-md font-bold text-gray-900 group-hover:text-purple-600 transition-colors">⚖️ Executive Members</h3>
-                    <div class="p-1.5 rounded-lg bg-purple-50 group-hover:bg-purple-600 text-purple-600 group-hover:text-white transition-all">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
-                    </div>
-                </div>
-                <p class="mt-2.5 text-xs leading-relaxed text-gray-500">Executive branch officials & cabinet-level positions.</p>
-            </a>
-
-            <a href="{% url 'peps_data' %}?file=RC_Members.xlsx" class="group block bg-white p-5 rounded-xl border border-gray-200 shadow-xs hover:border-amber-500 hover:shadow-md transition-all duration-200">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-md font-bold text-gray-900 group-hover:text-amber-600 transition-colors">👥 RC Members</h3>
-                    <div class="p-1.5 rounded-lg bg-amber-50 group-hover:bg-amber-600 text-amber-600 group-hover:text-white transition-all">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
-                    </div>
-                </div>
-                <p class="mt-2.5 text-xs leading-relaxed text-gray-500">Regional Council Members data and personnel.</p>
-            </a>
-        </div>
-        
-        <div class="bg-blue-50/50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900 flex items-start gap-3">
-            <span class="text-xl shrink-0 mt-0.5">📊</span>
-            <div>
-                <strong class="font-bold text-blue-950">Local Data Status:</strong> <span class="font-semibold bg-blue-100/80 px-1.5 py-0.5 rounded text-blue-800">{{ total_candidates|default:0 }}</span> election candidate records loaded from local Excel files.
-                <div class="text-xs mt-1.5 text-blue-800/90 leading-relaxed border-t border-blue-200/50 pt-1.5">
-                    💡 <em class="font-medium style-normal">Note:</em> The PEP Analysis tab now automatically includes names from the <strong class="font-semibold text-blue-950">RC_Members.xlsx</strong> dataset to improve official tracking and narrative detection.
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="content-analysis" class="tab-content hidden transition-opacity duration-200">
-        {% if pep_analysis %}
-        <div class="mb-6 p-5 bg-gradient-to-r from-slate-50 to-blue-50/40 rounded-xl border border-gray-200">
-            <h3 class="text-lg font-bold text-gray-900 mb-1">🔍 PEP Mention & Narrative Analysis</h3>
-            <p class="text-xs sm:text-sm text-gray-600 leading-relaxed">
-                Advanced threat intelligence across <span class="font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">{{ pep_analysis|length }}</span> analyzed officials (including Regional Council Members). Shows network distributions, bot levels, and narrative targets.
-            </p>
-        </div>
-
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {% for pep in pep_analysis %}
-            <div class="pep-card bg-white rounded-xl overflow-hidden">
-                <div class="bg-gray-50/80 px-6 py-4 border-b border-gray-200/60">
-                    <div class="flex justify-between items-start gap-4">
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-900 tracking-tight">{{ pep.pep_name }}</h3>
-                            <div class="flex flex-wrap items-center gap-2 mt-1.5 text-xs font-medium text-gray-500">
-                                <span class="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded border border-gray-200">💬 {{ pep.mention_count|default:"0" }} mentions</span>
-                                <span class="text-gray-300">|</span>
-                                <span class="flex items-center gap-1">
-                                    {% if pep.risk_score %}
-                                        {% if pep.risk_score <= 3 %}
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold">🟢 Mostly Neutral</span>
-                                        {% elif pep.risk_score <= 6 %}
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 font-bold">🟡 Some Criticism</span>
-                                        {% else %}
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-100 font-bold">🔴 High Criticism</span>
-                                        {% endif %}
-                                    {% else %}
-                                        <span class="text-gray-400 font-normal italic">Unassessed</span>
-                                    {% endif %}
-                                </span>
-                            </div>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <div class="text-2xl font-black text-blue-600 tracking-tight">{{ pep.risk_score|default:"—" }}{% if pep.risk_score %}<span class="text-xs font-semibold text-gray-400">/10</span>{% endif %}</div>
-                            <div class="text-[10px] uppercase font-bold tracking-wider text-gray-400 mt-0.5">Risk Score</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="p-5 space-y-5">
-                    {% if pep.platform_breakdown %}
-                    <div>
-                        <h4 class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2.5">📱 Platform Distribution</h4>
-                        <div class="flex flex-wrap gap-2">
-                            {% for platform in pep.platform_breakdown %}
-                            <div class="metric-pill bg-white text-gray-700 px-3 py-1 rounded-lg text-xs font-semibold border border-gray-200 shadow-2xs">
-                                <span class="text-blue-600">{{ platform.name }}</span>: {{ platform.percent }}%
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-gray-50/50 rounded-xl p-3 border border-gray-200/70">
-                            <div class="flex items-center justify-between mb-1.5">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-sm">⚡</span>
-                                    <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Velocity</span>
-                                </div>
-                                {% if pep.velocity_alert %}<span class="velocity-indicator text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold">⚠️</span>{% endif %}
-                            </div>
-                            <div class="text-xs text-gray-700">
-                                Peak: {% if pep.peak_hour is not none %}<strong class="text-gray-900 font-bold">{{ pep.peak_hour|stringformat:"02d" }}:00</strong>{% else %}<span class="text-gray-400 italic">—</span>{% endif %}
-                            </div>
-                        </div>
-                        
-                        <div class="bg-gray-50/50 rounded-xl p-3 border border-gray-200/70">
-                            <div class="flex items-center gap-1.5 mb-1.5">
-                                <span class="text-sm">🤖</span>
-                                <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Bot Activity</span>
-                            </div>
-                            <div class="text-xs font-bold text-gray-800">
-                                {{ pep.bot_level|default:"🟢 Low" }} 
-                                <span class="text-gray-500 font-medium">{% if pep.bot_score is not none %}({{ pep.bot_score }}%){% else %}(0%){% endif %}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {% if pep.is_gendered_target %}
-                    <div class="bg-gradient-to-r from-pink-50 to-rose-50 border-l-4 border-pink-500 p-3.5 rounded-r-xl">
-                        <div class="flex items-start gap-2.5">
-                            <span class="text-xl shrink-0">⚠️</span>
-                            <div>
-                                <h4 class="font-bold text-pink-950 text-xs sm:text-sm">Gendered Disinformation Detected</h4>
-                                <p class="text-[11px] sm:text-xs text-pink-800 mt-0.5 leading-relaxed">AI-generated content, sexualized narratives, or qualification attacks identified.</p>
-                            </div>
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    {% if pep.top_hashtags %}
-                    <div>
-                        <h4 class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">#️⃣ Weaponized Hashtags</h4>
-                        <div class="flex flex-wrap gap-1.5">
-                            {% for hashtag in pep.top_hashtags %}
-                            <span class="hashtag-tag bg-gray-50 text-gray-700 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 cursor-pointer">
-                                #{{ hashtag.tag }} <span class="text-gray-400 font-normal ml-0.5">({{ hashtag.count }})</span>
-                            </span>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    {% if pep.narrative_clusters or pep.critical_narratives %}
-                    <div>
-                        <h4 class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">🎭 Critical Narratives & Clusters</h4>
-                        <div class="space-y-2">
-                            {% for cluster in pep.narrative_clusters %}
-                            <div class="cluster-badge bg-indigo-50/50 border border-indigo-100 rounded-lg p-3">
-                                <div class="flex justify-between items-center gap-4">
-                                    <span class="text-xs sm:text-sm font-semibold text-indigo-950">{{ cluster.name }}</span>
-                                    <span class="text-[11px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold shrink-0">{{ cluster.count }} posts</span>
-                                </div>
-                            </div>
-                            {% endfor %}
-                            
-                            {% for narrative in pep.critical_narratives %}
-                            <div class="bg-rose-50/50 border-l-4 border-rose-400 p-3 rounded-r-lg">
-                                <div class="flex justify-between items-start gap-4">
-                                    <div>
-                                        <p class="text-xs sm:text-sm font-bold text-rose-950">{{ narrative.theme }}</p>
-                                        <p class="text-[11px] sm:text-xs text-rose-800 mt-0.5 leading-relaxed">{{ narrative.description }}</p>
-                                    </div>
-                                    <span class="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-bold uppercase tracking-wider rounded shrink-0">{{ narrative.severity|title }}</span>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-
-                    {% if pep.sample_posts %}
-                    <div>
-                        <h4 class="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-2">📄 Recent Examples / Sample Claims</h4>
-                        <div class="space-y-2">
-                            {% for post in pep.sample_posts %}
-                            <div class="bg-white rounded-xl p-3 text-xs sm:text-sm text-gray-700 border border-gray-200 hover:border-gray-300 shadow-2xs transition">
-                                <div class="flex items-center justify-between gap-4 mb-1.5 text-xs text-gray-400 font-medium">
-                                    <div class="flex items-center gap-1.5">
-                                        <span class="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded uppercase">{{ post.platform|default:"Social Post" }}</span>
-                                        <span>•</span>
-                                        <span>{{ post.timestamp|date:"M d, H:i" }}</span>
-                                    </div>
-                                    {% if post.risk_level == 'high' or post.risk_level == 'critical' or post.url %}<span class="text-rose-500 font-bold text-xs">⚠️</span>{% endif %}
-                                </div>
-                                <p class="text-gray-800 leading-relaxed">{{ post.text|truncatechars:180 }}</p>
-                                {% if post.url %}
-                                <a href="{{ post.url }}" target="_blank" class="text-xs text-blue-600 font-medium hover:text-blue-800 hover:underline mt-2 inline-flex items-center gap-0.5">
-                                    🔗 View Original Post
-                                </a>
-                                {% endif %}
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="text-center py-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
-            <p class="text-gray-500 text-md font-medium">📊 No PEP mentions detected yet. Upload social media data to begin analysis.</p>
-        </div>
-        {% endif %}
-    </div>
+    {% endif %}
 </div>
-
-<script>
-    function switchTab(tabName) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-        document.getElementById('content-' + tabName).classList.remove('hidden');
-        
-        const activeClass = 'border-blue-600 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none';
-        const inactiveClass = 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all focus:outline-none';
-        
-        document.getElementById('tab-officials').className = tabName === 'officials' ? activeClass : inactiveClass;
-        document.getElementById('tab-candidates').className = tabName === 'candidates' ? activeClass : inactiveClass;
-        document.getElementById('tab-analysis').className = tabName === 'analysis' ? activeClass : inactiveClass;
-    }
-</script>
 {% endblock %}
