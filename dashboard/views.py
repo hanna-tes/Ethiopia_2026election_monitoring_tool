@@ -1648,6 +1648,7 @@ def get_election_posts_queryset(request):
     """
     Centralized date filtering helper.
     Supports 'view_all' parameter to show all data without date filtering.
+    Default: Shows last 3 months of data.
     """
     queryset = ProcessedPost.objects.all()
     
@@ -1656,7 +1657,6 @@ def get_election_posts_queryset(request):
     
     if view_all:
         # No date filtering - show all posts
-        # Get actual date range from data for display purposes
         date_range = queryset.aggregate(
             min_date=Min('timestamp_share'),
             max_date=Max('timestamp_share')
@@ -1678,9 +1678,9 @@ def get_election_posts_queryset(request):
             if isinstance(end_date, str):
                 end_date = datetime.strptime(end_date, '%Y-%m-%d')
         else:
-            # Default: last 30 days
+            # DEFAULT: Last 3 months 
             end_dt = timezone.now()
-            start_dt = end_dt - timedelta(days=30)
+            start_dt = end_dt - timedelta(days=90)  # 3 months = 90 days
             queryset = queryset.filter(
                 timestamp_share__gte=start_dt
             )
