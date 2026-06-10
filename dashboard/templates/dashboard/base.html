@@ -27,7 +27,6 @@
                         primary: '#1e3a8a',
                         secondary: '#3b82f6',
                         accent: '#f59e0b',
-                        ethiopia: '#dc2626',
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
@@ -39,7 +38,7 @@
     
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .gradient-bg { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); }
+        .gradient-bg { background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%); }
         .card-hover { transition: all 0.3s ease; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
         .sidebar-link { transition: all 0.2s; }
@@ -62,37 +61,53 @@
 
     <!-- Sidebar -->
     <aside class="fixed left-0 top-0 h-screen w-72 gradient-bg text-white overflow-y-auto z-50 shadow-2xl">
-        <!-- Logo Section - ADDO Branding -->
-        <div class="p-6 border-b border-white/20 bg-white/10">
-            <div class="flex items-center space-x-3 mb-4">
-                <!-- ADDO Logo SVG -->
-                <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="bg-white rounded-lg p-1">
-                    <rect width="100" height="100" rx="8" fill="#1e3a8a"/>
-                    <text x="15" y="68" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="white">ADD</text>
-                    <circle cx="78" cy="38" r="10" fill="none" stroke="white" stroke-width="4"/>
-                    <circle cx="78" cy="38" r="4" fill="white"/>
-                    <line x1="78" y1="28" x2="78" y2="22" stroke="white" stroke-width="3"/>
-                    <line x1="84" y1="32" x2="86" y2="30" stroke="white" stroke-width="2"/>
+        <!-- Logo Section - ADDO Branding with Africa Map -->
+        <div class="p-6 border-b border-white/20 bg-white/10 relative overflow-hidden">
+            <!-- Africa Map Background -->
+            <div class="absolute inset-0 opacity-20 pointer-events-none">
+                <svg viewBox="0 0 800 600" class="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                    <!-- Africa Outline -->
+                    <path d="M400,50 Q450,30 500,50 T600,100 T650,200 T620,300 T550,400 T450,450 T350,430 T280,350 T250,250 T280,150 T350,80 Z" 
+                          fill="none" stroke="white" stroke-width="2" opacity="0.6"/>
+                    <!-- Ethiopia Highlight -->
+                    <path d="M520,170 Q540,160 560,170 T580,200 T570,230 T540,240 T510,230 T500,200 Z" 
+                          fill="#dc2626" stroke="white" stroke-width="1.5" opacity="0.8"/>
                 </svg>
-                <div>
-                    <h1 class="font-bold text-xl leading-tight text-white">ADDO</h1>
-                    <p class="text-xs text-blue-200">African Digital Democracy Observatory</p>
-                </div>
             </div>
             
-            <!-- Main Title -->
-            <div class="mt-4 pt-4 border-t border-white/20">
-                <h2 class="text-lg font-bold text-white leading-tight">
-                    🇪 Ethiopia Election Monitoring Dashboard
-                </h2>
-                <p class="text-xs text-blue-200 mt-1">
-                    Dataset-driven triggers • Amharic support • Lexicon management
-                </p>
+            <div class="relative z-10">
+                <div class="flex items-center space-x-3 mb-4">
+                    <!-- ADDO Logo -->
+                    <div class="bg-white rounded-lg p-2">
+                        <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect width="100" height="100" rx="8" fill="#1e3a8a"/>
+                            <text x="15" y="68" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="white">ADD</text>
+                            <circle cx="78" cy="38" r="10" fill="none" stroke="white" stroke-width="4"/>
+                            <circle cx="78" cy="38" r="4" fill="white"/>
+                            <line x1="78" y1="28" x2="78" y2="22" stroke="white" stroke-width="3"/>
+                            <line x1="84" y1="32" x2="86" y2="30" stroke="white" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-xl leading-tight text-white">ADDO</h1>
+                        <p class="text-xs text-blue-200">African Digital Democracy Observatory</p>
+                    </div>
+                </div>
+                
+                <!-- Main Title -->
+                <div class="mt-4 pt-4 border-t border-white/20">
+                    <h2 class="text-lg font-bold text-white leading-tight">
+                        🇪 Ethiopia Election Monitoring Dashboard
+                    </h2>
+                    <p class="text-xs text-blue-200 mt-1">
+                        Dataset-driven triggers • Amharic support • Lexicon management
+                    </p>
+                </div>
             </div>
         </div>
 
         <!-- Navigation -->
-        <nav class="p-4 space-y-1">
+        <nav class="p-4 space-y-1 relative z-10">
             <a href="{% url 'home' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'home' %}active{% endif %}">
                 <i class="fas fa-home w-5"></i>
                 <span class="font-medium">Home</span>
@@ -138,27 +153,24 @@
         </nav>
 
         <!-- Footer -->
-        <div class="p-4 mt-auto border-t border-white/20 text-xs text-blue-200 text-center">
+        <div class="p-4 mt-auto border-t border-white/20 text-xs text-blue-200 text-center relative z-10">
             African Digital Democracy Observatory 2026
         </div>
     </aside>
 
     <!-- Main Content -->
     <main class="ml-72 min-h-screen">
-        <!-- Top Header with Africa Map Background -->
-        <header class="bg-white shadow-sm border-b sticky top-0 z-40 relative overflow-hidden">
-            <div class="absolute inset-0 africa-map-bg pointer-events-none"></div>
-            <div class="px-8 py-4 flex items-center justify-between relative z-10">
-                <div>
-                    <h2 class="text-2xl font-bold text-gray-800">{% block page_title %}Dashboard{% endblock %}</h2>
+        <!-- Top Header - Centered Title -->
+        <header class="bg-white shadow-sm border-b sticky top-0 z-40">
+            <div class="px-8 py-4 flex items-center justify-center">
+                <div class="text-center">
+                    <h2 class="text-2xl font-bold text-gray-800">{% block page_title %}Executive Dashboard{% endblock %}</h2>
                     <p class="text-sm text-gray-500 mt-1">{% block page_subtitle %}Real-time election integrity monitoring{% endblock %}</p>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <span class="text-sm text-gray-500">Last updated: <span class="font-semibold">{{ metrics.last_update|default:"Just now" }}</span></span>
-                    <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-lg shadow-blue-600/30">
-                        <i class="fas fa-download mr-2"></i>Export
-                    </button>
-                </div>
+            </div>
+            <!-- Last Updated -->
+            <div class="px-8 py-2 bg-gray-50 border-t border-gray-200 text-right">
+                <span class="text-sm text-gray-600">Last updated: <span class="font-semibold">{{ metrics.last_update|default:"Just now" }}</span></span>
             </div>
         </header>
 
