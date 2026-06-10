@@ -110,16 +110,16 @@
         </div>
 
         <nav class="flex-1 overflow-y-auto px-3 py-4">
-            <a href="{% url 'home' %}" class="nav-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}"><span class="dot"></span> Home</a>
-            <a href="{% url 'peps' %}" class="nav-item {% if request.resolver_match.url_name == 'peps' %}active{% endif %}"><span class="dot"></span> PEPs/PIPs Tracker</a>
-            <a href="{% url 'lexicons' %}" class="nav-item {% if request.resolver_match.url_name == 'lexicons' %}active{% endif %}"><span class="dot"></span> Mapped Lexicons</a>
-            <a href="{% url 'narratives' %}" class="nav-item {% if request.resolver_match.url_name == 'narratives' %}active{% endif %}"><span class="dot"></span> Trending Narratives</a>
-            <a href="{% url 'networks' %}" class="nav-item {% if request.resolver_match.url_name == 'networks' %}active{% endif %}"><span class="dot"></span> Networks &amp; TTPs</a>
-            <a href="{% url 'lexicon_management' %}" class="nav-item {% if request.resolver_match.url_name == 'lexicon_management' %}active{% endif %}"><span class="dot"></span> Lexicon Management</a>
-            <a href="{% url 'reports_landing' %}" class="nav-item {% if request.resolver_match.url_name == 'reports_landing' %}active{% endif %}"><span class="dot"></span> Reports</a>
-
+            <a href="{% url 'home' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'home' %}active{% endif %}"><span class="dot"></span> Home</a>
+            <a href="{% url 'peps' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'peps' %}active{% endif %}"><span class="dot"></span> PEPs/PIPs Tracker</a>
+            <a href="{% url 'lexicons' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'lexicons' %}active{% endif %}"><span class="dot"></span> Mapped Lexicons</a>
+            <a href="{% url 'narratives' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'narratives' %}active{% endif %}"><span class="dot"></span> Trending Narratives</a>
+            <a href="{% url 'networks' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'networks' %}active{% endif %}"><span class="dot"></span> Networks &amp; TTPs</a>
+            <a href="{% url 'lexicon_management' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'lexicon_management' %}active{% endif %}"><span class="dot"></span> Lexicon Management</a>
+            <a href="{% url 'reports_landing' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'reports_landing' %}active{% endif %}"><span class="dot"></span> Reports</a>
+        
             <div class="nav-section-label">Data Management</div>
-            <a href="{% url 'upload_data' %}" class="nav-item {% if request.resolver_match.url_name == 'upload_data' %}active{% endif %}"><span class="dot"></span> Upload Data</a>
+            <a href="{% url 'upload_data' %}?{{ request.GET.urlencode }}" class="nav-item {% if request.resolver_match.url_name == 'upload_data' %}active{% endif %}"><span class="dot"></span> Upload Data</a>
         </nav>
 
         <div class="px-5 py-4 border-t hairline bg-slate-950/20">
