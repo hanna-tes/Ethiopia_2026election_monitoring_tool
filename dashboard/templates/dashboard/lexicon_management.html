@@ -146,26 +146,22 @@
                 found in {{ posts_scanned|default:0 }} posts
             </span>
         </h3>
-        
         <p class="text-slate-400 text-sm flex items-center gap-2 ml-1">
             <i class="fas fa-info-circle text-blue-400"></i>
             <span>
-                {% if has_date_filter %}
-                    Scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts 
-                    from <strong class="text-white">{{ start_date }}</strong> to <strong class="text-white">{{ end_date }}</strong>
-                    using a dictionary of <strong class="text-white">{{ total_terms }}</strong> monitored trigger words
-                {% elif view_all %}
+                {% if view_all %}
                     Scanned <strong class="text-white">all {{ total_posts|default:0 }}</strong> posts in the database
-                    using a dictionary of <strong class="text-white">{{ total_terms }}</strong> monitored trigger words
+                {% elif has_custom_date_filter %}
+                    Scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from 
+                    <strong class="text-white">{{ start_date }}</strong> to <strong class="text-white">{{ end_date }}</strong>
                 {% else %}
                     Scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from the last 3 months
-                    using a dictionary of <strong class="text-white">{{ total_terms }}</strong> monitored trigger words
                 {% endif %}
+                using a dictionary of <strong class="text-white">{{ total_terms }}</strong> monitored trigger words 
                 <span class="text-slate-500">(ethnic slurs, violence terms, election keywords, etc.)</span>
             </span>
         </p>
-    </div>
-        <div class="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/20 shadow-inner">
+    </div>        <div class="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/20 shadow-inner">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-slate-800 text-sm">
                     <thead class="bg-slate-900/60 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
