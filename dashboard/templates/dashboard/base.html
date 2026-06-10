@@ -1,21 +1,24 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-50">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Ethiopia Election Monitor{% endblock %}</title>
     
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
+    <!-- Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Plotly -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     
+    <!-- Custom Config -->
     <script>
         tailwind.config = {
             theme: {
@@ -34,166 +37,196 @@
     </script>
     
     <style>
-        body { 
-            font-family: 'Inter', sans-serif;
-            -webkit-font-smoothing: antialiased;
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-link { transition: all 0.2s; }
+        .sidebar-link:hover { background: rgba(255,255,255,0.1); }
+        .sidebar-link.active { background: rgba(255,255,255,0.15); border-left: 4px solid #f59e0b; }
+        
+        /* Header with proper height and gradient */
+        .header-banner {
+            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+            min-height: 140px;
+            padding: 2rem 2.5rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
         }
         
-        /* Modernized Custom Micro-Scrollbars */
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-        /* Premium Workspace Sidebar Links styling overrides */
-        .sidebar-link { 
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
-            position: relative;
-        }
-        .sidebar-link:hover { 
-            background: rgba(255, 255, 255, 0.05); 
-            color: #ffffff; 
-        }
-        .sidebar-link.active { 
-            background: linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.01) 100%); 
-            color: #f59e0b;
-            font-weight: 600;
-        }
-        .sidebar-link.active::before {
+        /* Decorative background pattern */
+        .header-banner::before {
             content: '';
             position: absolute;
+            top: 0;
             left: 0;
-            top: 25%;
-            height: 50%;
-            width: 3px;
-            background: #f59e0b;
-            border-radius: 0 4px 4px 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.1) 0%, transparent 50%);
+            pointer-events: none;
+        }
+        
+        /* Logo container - bigger and fancier */
+        .logo-box {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.2) inset;
+            min-width: 110px;
+            min-height: 110px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .logo-box:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.3) inset;
+        }
+        
+        /* Center content wrapper */
+        .center-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            position: relative;
+            z-index: 1;
         }
     </style>
     
     {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-slate-50 antialiased h-full text-slate-900">
+<body class="bg-gray-50">
 
-    <aside class="fixed left-0 top-0 h-screen w-64 bg-[#0f172a] text-slate-300 overflow-y-auto z-50 shadow-[4px_0_24px_rgba(15,23,42,0.05)] border-r border-slate-800 flex flex-col justify-between">
-        <div>
-            <div class="p-6 border-b border-slate-800/80 flex items-center space-x-3.5 bg-[#0b1329]/30">
-                <div class="bg-white rounded-xl p-1 flex-shrink-0 flex items-center justify-center w-9 h-9 shadow-md shadow-black/20 ring-1 ring-slate-700/50">
-                    <span class="text-[#1e3a8a] font-black text-xl tracking-tighter">A</span>
-                </div>
-                <div>
-                    <h1 class="font-extrabold text-white text-base tracking-wide leading-none">ADDO</h1>
-                    <p class="text-[10px] text-slate-400 uppercase font-bold tracking-widest mt-1.5">Dashboard</p>
-                </div>
+    <!-- Sidebar -->
+    <aside class="fixed left-0 top-0 h-screen w-64 bg-[#1e3a8a] text-white overflow-y-auto z-50 shadow-xl flex flex-col">
+        <!-- Small Logo Header -->
+        <div class="p-5 border-b border-white/10 flex items-center space-x-3">
+            <div class="bg-white rounded-lg p-1.5 flex-shrink-0">
+                <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="100" height="100" rx="8" fill="#1e3a8a"/>
+                    <text x="50" y="68" font-family="Arial" font-size="45" font-weight="bold" fill="white" text-anchor="middle">A</text>
+                </svg>
             </div>
-
-            <nav class="flex-1 p-4 mt-4 space-y-1">
-                <a href="{% url 'home' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'home' %}active{% endif %}">
-                    <i class="fas fa-home w-5 text-center text-base opacity-80"></i>
-                    <span class="font-medium">Home</span>
-                </a>
-                
-                <a href="{% url 'peps' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'peps' %}active{% endif %}">
-                    <i class="fas fa-user-shield w-5 text-center text-base opacity-80"></i>
-                    <span class="font-medium">PEPs/PIPs Tracker</span>
-                </a>
-                
-                <a href="{% url 'lexicons' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'lexicons' %}active{% endif %}">
-                    <i class="fas fa-book w-5 text-center text-base opacity-80"></i>
-                    <span class="font-medium">Mapped Lexicons</span>
-                </a>
-                
-                <a href="{% url 'narratives' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'narratives' %}active{% endif %}">
-                    <i class="fas fa-newspaper w-5 text-center text-base opacity-80"></i>
-                    <span class="font-medium">Trending Narratives</span>
-                </a>
-                
-                <a href="{% url 'networks' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'networks' %}active{% endif %}">
-                    <i class="fas fa-project-diagram w-5 text-center text-base opacity-80"></i>
-                    <span class="font-medium">Networks & TTPs</span>
-                </a>
-                
-                <a href="{% url 'lexicon_management' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'lexicon_management' %}active{% endif %}">
-                    <i class="fas fa-cog w-5 text-center text-base opacity-80"></i>
-                    <span class="font-medium">Lexicon Management</span>
-                </a>
-                
-                <a href="{% url 'reports_landing' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'reports' %}active{% endif %}">
-                    <i class="fas fa-file-alt w-5 text-center text-base opacity-80"></i>
-                    <span class="font-medium">Reports</span>
-                </a>
-
-                <div class="pt-5 mt-5 border-t border-slate-800/80">
-                    <p class="px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Data Management</p>
-                    <a href="{% url 'upload_data' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-xl text-slate-400 text-sm {% if active_tab == 'upload' %}active{% endif %}">
-                        <i class="fas fa-upload w-5 text-center text-base opacity-80"></i>
-                        <span class="font-medium">Upload Data</span>
-                    </a>
-                </div>
-            </nav>
+            <div>
+                <h1 class="font-bold text-base leading-tight">ADDO</h1>
+                <p class="text-[10px] text-blue-200 uppercase tracking-wider">Dashboard</p>
+            </div>
         </div>
 
-        <div class="p-4 border-t border-slate-800/80 bg-[#0b1329]/40">
-            <div class="bg-slate-900/50 rounded-xl p-3 border border-slate-800/40 text-center">
-                <span class="text-[10px] font-bold text-slate-400 tracking-wide block uppercase">African Digital Democracy Observatory 2026</span>
+        <!-- Navigation -->
+        <nav class="flex-1 p-4 space-y-1">
+            <a href="{% url 'home' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'home' %}active{% endif %}">
+                <i class="fas fa-home w-5 text-center"></i>
+                <span class="font-medium">Home</span>
+            </a>
+            
+            <a href="{% url 'peps' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'peps' %}active{% endif %}">
+                <i class="fas fa-user-shield w-5 text-center"></i>
+                <span class="font-medium">PEPs/PIPs Tracker</span>
+            </a>
+            
+            <a href="{% url 'lexicons' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'lexicons' %}active{% endif %}">
+                <i class="fas fa-book w-5 text-center"></i>
+                <span class="font-medium">Mapped Lexicons</span>
+            </a>
+            
+            <a href="{% url 'narratives' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'narratives' %}active{% endif %}">
+                <i class="fas fa-newspaper w-5 text-center"></i>
+                <span class="font-medium">Trending Narratives</span>
+            </a>
+            
+            <a href="{% url 'networks' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'networks' %}active{% endif %}">
+                <i class="fas fa-project-diagram w-5 text-center"></i>
+                <span class="font-medium">Networks & TTPs</span>
+            </a>
+            
+            <a href="{% url 'lexicon_management' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'lexicon_management' %}active{% endif %}">
+                <i class="fas fa-cog w-5 text-center"></i>
+                <span class="font-medium">Lexicon Management</span>
+            </a>
+            
+            <a href="{% url 'reports_landing' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'reports' %}active{% endif %}">
+                <i class="fas fa-file-alt w-5 text-center"></i>
+                <span class="font-medium">Reports</span>
+            </a>
+
+            <div class="pt-4 mt-4 border-t border-white/10">
+                <p class="px-4 text-[10px] font-semibold text-blue-300 uppercase tracking-wider mb-2">Data Management</p>
+                <a href="{% url 'upload_data' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'upload' %}active{% endif %}">
+                    <i class="fas fa-upload w-5 text-center"></i>
+                    <span class="font-medium">Upload Data</span>
+                </a>
             </div>
+        </nav>
+
+        <!-- Footer -->
+        <div class="p-4 border-t border-white/10 text-[10px] text-blue-300 text-center">
+            African Digital Democracy Observatory 2026
         </div>
     </aside>
 
-    <main class="ml-64 min-h-screen flex flex-col bg-[#f8fafc]">
+    <!-- Main Content Area -->
+    <main class="ml-64 min-h-screen flex flex-col">
         
-        <header class="h-20 bg-white border-b border-slate-200/80 sticky top-0 z-40 px-8 flex items-center justify-between shadow-[0_2px_12px_rgba(15,23,42,0.02)]">
-            
-            <div class="flex items-center space-x-5 max-w-xl">
-                <div class="bg-slate-50 rounded-xl border border-slate-200 p-2 w-[116px] h-[44px] flex items-center justify-center shadow-inner hover:bg-white transition-colors duration-200 group">
-                    <svg width="105" height="40" viewBox="0 0 105 40" fill="none" xmlns="http://www.w3.org/2000/svg" class="transform group-hover:scale-[1.02] transition duration-200">
-                        <text x="5" y="29" font-family="'Inter', 'Arial', sans-serif" font-size="26" font-weight="800" fill="#1e3a8a" letter-spacing="-0.5">ADD</text>
-                        <circle cx="88" cy="22" r="7" fill="none" stroke="#1e3a8a" stroke-width="3"/>
-                        <circle cx="88" cy="22" r="2.5" fill="#1e3a8a"/>
-                        <path d="M88 15V9" stroke="#1e3a8a" stroke-width="2" stroke-linecap="round"/>
-                        <path d="M92 12C94.5 13.5 96 15 96 15" stroke="#1e3a8a" stroke-width="1.5" stroke-linecap="round"/>
+        <!-- Top Header Banner - Enhanced -->
+        <header class="header-banner text-white">
+            <div class="center-content">
+                
+                <!-- ADDO Logo - Bigger and centered -->
+                <div class="logo-box">
+                    <svg width="80" height="80" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect width="100" height="100" rx="12" fill="#1e3a8a"/>
+                        <!-- ADDO text with better spacing -->
+                        <text x="5" y="62" font-family="Arial, sans-serif" font-size="38" font-weight="bold" fill="white" letter-spacing="-1">ADD</text>
+                        <!-- Camera icon for the O -->
+                        <circle cx="76" cy="40" r="14" fill="none" stroke="white" stroke-width="4.5"/>
+                        <circle cx="76" cy="40" r="5" fill="white"/>
+                        <line x1="76" y1="26" x2="76" y2="18" stroke="white" stroke-width="4" stroke-linecap="round"/>
+                        <line x1="84" y1="33" x2="88" y2="29" stroke="white" stroke-width="3" stroke-linecap="round"/>
+                        <line x1="68" y1="33" x2="64" y2="29" stroke="white" stroke-width="3" stroke-linecap="round"/>
                     </svg>
                 </div>
                 
-                <div class="hidden md:block h-6 w-px bg-slate-200"></div>
-                
-                <div class="hidden sm:block">
-                    <h1 class="text-base font-black text-slate-900 tracking-tight leading-none">ADDO</h1>
-                    <p class="text-[11px] text-slate-400 font-bold uppercase tracking-widest mt-1">African Digital Democracy Observatory</p>
+                <!-- Branding Text -->
+                <div class="text-left">
+                    <h1 class="text-3xl font-bold tracking-wide leading-tight mb-1">ADDO</h1>
+                    <p class="text-base text-blue-100 uppercase tracking-widest font-medium">African Digital Democracy Observatory</p>
                 </div>
-            </div>
-            
-            <div class="text-right">
-                <h2 class="text-sm font-bold text-slate-900 flex items-center justify-end gap-2 tracking-tight">
-                    <span class="inline-block transform scale-110 shadow-sm rounded-sm">🇪🇹</span> Ethiopia Election Monitoring Dashboard
-                </h2>
-                <p class="text-[11px] text-slate-400 mt-0.5 font-medium">
-                    Dataset-driven triggers • Amharic support • Lexicon management
-                </p>
+                
+                <!-- Divider -->
+                <div class="h-20 w-px bg-gradient-to-b from-transparent via-white/40 to-transparent mx-4"></div>
+                
+                <!-- Dashboard Title -->
+                <div class="text-left">
+                    <h2 class="text-2xl font-bold text-white leading-tight mb-1">
+                        <span class="text-3xl mr-2">🇪🇹</span> Ethiopia Election Monitoring Dashboard
+                    </h2>
+                    <p class="text-sm text-blue-100">
+                        Dataset-driven triggers • Amharic support • Lexicon management
+                    </p>
+                </div>
             </div>
         </header>
 
-        <div class="flex-1 p-8 space-y-6">
+        <!-- Page Content Container -->
+        <div class="flex-1 p-6 bg-gray-50">
             
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-5 gap-4">
+            <!-- Page Sub-Header -->
+            <div class="mb-6 flex items-end justify-between border-b border-gray-200 pb-3">
                 <div>
-                    <h3 class="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                         {% block page_title %}📊 Executive Dashboard{% endblock %}
                     </h3>
-                    <p class="text-xs font-medium text-slate-500 mt-0.5">{% block page_subtitle %}Real-time election integrity monitoring analytics{% endblock %}</p>
+                    <p class="text-sm text-gray-500 mt-0.5">{% block page_subtitle %}Real-time election integrity monitoring{% endblock %}</p>
                 </div>
-                
-                <div class="bg-white px-4 py-2 rounded-xl border border-slate-200 flex items-center space-x-3.5 self-start sm:self-auto shadow-sm">
-                    <div class="text-right">
-                        <span class="text-[9px] text-slate-400 uppercase tracking-wider font-extrabold block leading-none">System Status</span>
-                        <div class="text-xs font-bold text-slate-700 flex items-center gap-1.5 mt-1 justify-end">
-                            <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse inline-block"></span> 
-                            <span>Active / {{ metrics.last_update|default:"Just now" }}</span>
-                        </div>
-                    </div>
+                <div class="text-right">
+                    <span class="text-xs text-gray-500 uppercase tracking-wide font-semibold">Last Updated</span>
+                    <div class="text-sm font-bold text-gray-700">{{ metrics.last_update|default:"Just now" }}</div>
                 </div>
             </div>
 
+            <!-- Dynamic Content -->
             {% block content %}{% endblock %}
         </div>
     </main>
