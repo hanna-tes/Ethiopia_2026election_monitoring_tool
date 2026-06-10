@@ -86,13 +86,6 @@
             border:1px solid var(--line-strong);
             border-radius:14px;
         }
-        
-        /* Custom image isolation processing context */
-        .brand-card {
-            background-color: #ffffff;
-            transition: opacity 0.2s ease;
-        }
-        
         ::-webkit-scrollbar{width:8px;height:8px;}
         ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:8px;}
     </style>
@@ -105,19 +98,13 @@
 
     <aside class="sidebar-shell hidden lg:flex flex-col w-[260px] shrink-0">
         
-        <div class="p-4 border-b hairline">
-            <div class="brand-card p-3 rounded-xl shadow-md border border-white/5 flex flex-col items-center justify-center">
+        <div class="px-4 pt-5 pb-4 border-b hairline flex flex-col items-center">
+            <div class="w-full bg-white rounded-xl p-3 shadow-sm border border-white/10 flex items-center justify-center overflow-hidden">
                 <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" 
-                     alt="ADDO & Code for Africa Branding" 
-                     class="w-full h-auto object-contain max-h-[110px]"
-                     onerror="this.style.display='none'; document.getElementById('fallback-brand-text').style.display='block';">
-                
-                <div id="fallback-brand-text" class="hidden text-center py-2">
-                    <span class="text-slate-900 font-bold text-xl tracking-wider font-display block">ADDO</span>
-                    <span class="text-slate-500 font-medium text-[9px] uppercase tracking-widest block mt-0.5">Code For Africa</span>
-                </div>
+                     alt="ADDO Logo Asset" 
+                     class="w-full h-auto object-contain max-h-[110px]">
             </div>
-            <div class="text-[9.5px] uppercase tracking-[0.16em] font-bold text-slate-400 text-center mt-3 font-display px-1">
+            <div class="text-[9px] uppercase tracking-[0.15em] font-bold text-slate-400 text-center mt-3 font-display">
                 DIGITAL DEMOCRACY OBSERVATORY
             </div>
         </div>
@@ -148,8 +135,8 @@
             <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-4 flex items-center gap-4">
                 
                 <div class="flex lg:hidden items-center mr-2">
-                    <div class="bg-white px-2 py-1 rounded-md max-w-[110px]">
-                        <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" alt="ADDO" class="h-6 w-auto object-contain">
+                    <div class="bg-white px-2 py-1 rounded-md max-w-[90px] flex items-center shadow-sm">
+                        <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" alt="ADDO" class="w-full h-auto object-contain">
                     </div>
                 </div>
                 
