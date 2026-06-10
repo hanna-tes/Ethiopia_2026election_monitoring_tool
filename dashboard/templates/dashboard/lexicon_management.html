@@ -140,13 +140,11 @@
     
     <div>
         <h3 class="text-lg font-semibold text-white mb-4">
-            📋 Current Lexicon ({{ total_terms }} terms)
-            {% if total_matches %}
-                <span class="text-blue-400 font-normal text-base ml-2">
-                    — {{ total_matches|default:0 }} matches found across {{ posts_scanned|default:0 }} posts
-                </span>
-            {% endif %}
+            📋 Lexicon Detection: {{ total_matches|default:0 }} matches in {{ posts_scanned|default:0 }} posts
         </h3>
+        <p class="text-sm text-gray-400 mb-4">
+            Based on {{ total_terms }} active lexicon terms scanning {{ total_posts }} total posts
+        </p>
         <div class="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/20 shadow-inner">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-slate-800 text-sm">
