@@ -2134,7 +2134,7 @@ class HomeView(BaseTabMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. GET FILTERED QUERYSET
+        # 1. GET FILTERED QUERYSET (now defaults to 3 months)
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
         total_posts = posts.count()
@@ -2172,19 +2172,19 @@ class HomeView(BaseTabMixin, TemplateView):
         
         charts = {}
         
-        # 3. CREATE BAR CHART - Shifted from 'pie' to 'bar' layout structure
+        # 3. CREATE BAR CHART
         if labels:
             total_sum = sum(values)
             raw_chart_dict = {
                 "data": [{
-                    "x": labels,          # Platforms along the X-Axis
-                    "y": values,          # Post volume tallies along the Y-Axis
+                    "x": labels,
+                    "y": values,
                     "type": "bar",
-                    "text": [f"{v:,}" for v in values], # Shows numerical values on top of bars
+                    "text": [f"{v:,}" for v in values],
                     "textposition": "auto",
                     "hoverinfo": "x+y",
                     "marker": {
-                        "color": colors,   # Keeps your native platform brand colors
+                        "color": colors,
                         "line": {"color": "#ffffff", "width": 1}
                     }
                 }],
@@ -2198,12 +2198,11 @@ class HomeView(BaseTabMixin, TemplateView):
                     },
                     "yaxis": {
                         "title": "Number of Posts",
-                        "gridcolor": "#E5E7EB" # Clean light-gray grid lines
+                        "gridcolor": "#E5E7EB"
                     },
-                    "plot_bgcolor": "#ffffff"   # Clean white background grid container
+                    "plot_bgcolor": "#ffffff"
                 }
             }
-            # Serialize directly to string safely
             charts['platform'] = json.dumps(raw_chart_dict)
         
         # 4. METRICS
