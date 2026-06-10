@@ -2615,8 +2615,10 @@ class LexiconManagementView(TemplateView):
                     )
             lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
-        # USE THE DATE FILTER (respects user's start_date/end_date or view_all)
+        #  RESPECT THE GLOBAL DATE FILTER
+        # This automatically handles "View All", custom date ranges, or the default 3 months
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+        total_posts_in_filter = filtered_posts.count()
         
         # Scan ONLY the filtered posts for lexicon matches
         all_matches = []
@@ -2636,9 +2638,9 @@ class LexiconManagementView(TemplateView):
         # Get scan results from session (if any) and clear immediately
         scan_results = self.request.session.pop('scan_results', None)
         
-        # Check if user is viewing all data or filtered data
+        # Determine filter state for the template text
         view_all = self.request.GET.get('view_all') == 'true'
-        has_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date')
+        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
         
         context.update({
             'active_tab': 'lexicon_management',
@@ -2648,13 +2650,15 @@ class LexiconManagementView(TemplateView):
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
-            # Dynamic match statistics based on current filter
+            
+            # 🔥 Dynamic match statistics based on the active filter
             'total_matches': len(all_matches),
             'posts_scanned': posts_scanned,
-            'total_posts': filtered_posts.count(),
-            # Date filter info for the template
+            'total_posts': total_posts_in_filter,
+            
+            # Filter context for the UI text
             'view_all': view_all,
-            'has_date_filter': has_date_filter,
+            'has_custom_date_filter': has_custom_date_filter,
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
