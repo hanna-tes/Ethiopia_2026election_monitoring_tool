@@ -2,49 +2,49 @@
 {% block title %}{{ selected_file }} - Election Data{% endblock %}
 
 {% block content %}
-<div class="bg-white rounded-2xl shadow-sm p-6 border border-gray-100 max-w-7xl mx-auto my-4">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-100">
-        <div class="flex items-center gap-3">
-            <h2 class="text-2xl font-extrabold text-gray-900 tracking-tight">📊 {{ selected_file }}</h2>
-        </div>
-        <a href="{% url 'peps' %}" class="inline-flex items-center justify-center text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 px-4 py-2 rounded-xl border border-gray-200 shadow-2xs transition-all tracking-tight">
+<div class="space-y-6 text-slate-100">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <h2 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2">📊 {{ selected_file }}</h2>
+        <a href="{% url 'peps' %}" class="inline-flex items-center gap-2 text-xs font-semibold text-slate-300 bg-slate-800/80 hover:bg-slate-700 hover:text-white px-3 py-2 rounded-xl border border-slate-700/60 transition-all">
             ← Back to Tracker Tabs
         </a>
     </div>
 
     {% if sheets %}
-    <div class="mb-5 flex flex-wrap items-center gap-3 bg-gray-50/60 p-3 rounded-xl border border-gray-200/60">
-        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Data Sheet:</label>
-        <select class="border border-gray-200 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-gray-800 shadow-2xs focus:border-blue-500 focus:outline-none transition-all" 
-                onchange="window.location.href='?file={{ selected_file }}&sheet='+this.value">
-            {% for s in sheets %}
-            <option value="{{ s }}" {% if selected_sheet == s %}selected{% endif %}>{{ s|title }}</option>
-            {% endfor %}
-        </select>
-        <span class="text-xs text-gray-400 font-bold uppercase tracking-wider bg-white border border-gray-200 px-2.5 py-1 rounded-md shadow-3xs ml-auto">
-            {{ total_records }} Total Records
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900/40 p-3.5 rounded-xl border border-slate-800/80 backdrop-blur-md">
+        <div class="flex items-center gap-3">
+            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider tracking-tight">Active Sheet Select:</label>
+            <select class="border border-slate-700 rounded-lg bg-slate-950 px-3 py-1.5 text-xs sm:text-sm text-slate-200 font-medium focus:border-blue-500 focus:outline-none transition shadow-inner" 
+                    onchange="window.location.href='?file={{ selected_file }}&sheet='+this.value">
+                {% for s in sheets %}
+                <option value="{{ s }}" {% if selected_sheet == s %}selected{% endif %}>{{ s|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <span class="text-xs font-bold uppercase tracking-wider text-blue-400 bg-blue-950/40 border border-blue-900/50 px-2.5 py-1 rounded-md">
+            {{ total_records }} Records Present
         </span>
     </div>
     {% endif %}
 
     {% if page_obj and page_obj.paginator.count > 0 %}
-    <div class="overflow-hidden border border-gray-200/80 rounded-xl shadow-xs">
+    <div class="overflow-hidden border border-slate-800 rounded-xl bg-slate-900/20 backdrop-blur-sm shadow-2xl">
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead class="bg-gray-50/70">
+            <table class="min-w-full divide-y divide-slate-800 text-left text-xs sm:text-sm">
+                <thead class="bg-slate-900/60 text-slate-400 font-bold uppercase tracking-wider text-[11px]">
                     <tr>
                         {% for col in column_order %}
                             {% if col %}
-                            <th scope="col" class="px-5 py-3.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">{{ col|title }}</th>
+                            <th scope="col" class="px-5 py-3.5 whitespace-nowrap font-semibold border-b border-slate-800">{{ col|title }}</th>
                             {% endif %}
                         {% endfor %}
                     </tr>
                 </thead>
-                <tbody class="bg-white divide-y divide-gray-100">
+                <tbody class="divide-y divide-slate-800/50 bg-transparent text-slate-300">
                     {% for row_values in aligned_rows %}
-                    <tr class="hover:bg-gray-50/40 transition-colors">
+                    <tr class="hover:bg-slate-800/30 transition-colors">
                         {% for val in row_values %}
-                        <td class="px-5 py-3.5 whitespace-nowrap text-sm font-medium text-gray-700">{{ val|default:"—" }}</td>
+                        <td class="px-5 py-3.5 whitespace-nowrap text-slate-300 font-medium">{{ val|default:"—" }}</td>
                         {% endfor %}
                     </tr>
                     {% endfor %}
@@ -54,22 +54,22 @@
     </div>
 
     {% if page_obj.paginator.num_pages > 1 %}
-    <div class="mt-5 flex items-center justify-between border-t border-gray-100 pt-4 text-sm font-medium text-gray-500">
+    <div class="flex items-center justify-between border-t border-slate-800/80 pt-4 text-xs sm:text-sm text-slate-400 font-medium">
         <div>
-            Page <span class="text-gray-900 font-bold">{{ page_obj.number }}</span> of <span class="text-gray-900 font-bold">{{ page_obj.paginator.num_pages }}</span>
+            Page <span class="text-white font-bold">{{ page_obj.number }}</span> of <span class="text-white font-bold">{{ page_obj.paginator.num_pages }}</span>
         </div>
         <div class="flex gap-2">
             {% if page_obj.has_previous %}
-            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.previous_page_number }}" class="inline-flex items-center px-3 py-1.5 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 shadow-2xs font-semibold text-gray-700 text-xs transition">Prev</a>
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.previous_page_number }}" class="inline-flex items-center px-3 py-1.5 border border-slate-700 bg-slate-800 text-slate-200 rounded-lg hover:bg-slate-700 font-semibold text-xs transition">Prev</a>
             {% endif %}
             {% if page_obj.has_next %}
-            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.next_page_number }}" class="inline-flex items-center px-3 py-1.5 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 shadow-2xs font-semibold text-gray-700 text-xs transition">Next</a>
+            <a href="?file={{ selected_file }}&sheet={{ selected_sheet }}&page={{ page_obj.next_page_number }}" class="inline-flex items-center px-3 py-1.5 border border-slate-700 bg-slate-800 text-slate-200 rounded-lg hover:bg-slate-700 font-semibold text-xs transition">Next</a>
             {% endif %}
         </div>
     </div>
     {% endif %}
     {% else %}
-    <div class="text-center py-12 bg-gray-50 rounded-xl border border-gray-200 text-sm text-gray-500 italic">
+    <div class="text-center py-14 bg-slate-900/20 rounded-xl border border-slate-800 text-slate-400 text-xs sm:text-sm font-medium tracking-tight">
         No records found for this sheet execution.
     </div>
     {% endif %}
