@@ -2596,7 +2596,7 @@ class LexiconManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Load lexicon terms from DB (user-added + CONFIG defaults)
+        # Load lexicon terms from DB (user-added + CONFIG defaults)
         lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
         # If DB is empty, seed from CONFIG (one-time migration)
@@ -2615,24 +2615,30 @@ class LexiconManagementView(TemplateView):
                     )
             lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
-        # 2. SCAN POSTS TO GET ACTUAL MATCH COUNTS (Matches Mapped Lexicons logic)
-        posts = ProcessedPost.objects.all()
+        # USE THE DATE FILTER (respects user's start_date/end_date or view_all)
+        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+        
+        # Scan ONLY the filtered posts for lexicon matches
         all_matches = []
         posts_scanned = 0
         
         # Scan posts for lexicon matches (Limited to 3000 for performance)
-        for post in posts[:3000]:
+        for post in filtered_posts[:3000]:
             if post.original_text:
                 matches = scan_text_for_lexicon_terms(post.original_text)
                 if matches:
                     all_matches.extend(matches)
                     posts_scanned += 1
         
-        # 3. Get distinct categories for filter dropdown
+        # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
         
-        # 4. Get scan results from session (if any) and clear immediately
+        # Get scan results from session (if any) and clear immediately
         scan_results = self.request.session.pop('scan_results', None)
+        
+        # Check if user is viewing all data or filtered data
+        view_all = self.request.GET.get('view_all') == 'true'
+        has_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date')
         
         context.update({
             'active_tab': 'lexicon_management',
@@ -2642,14 +2648,18 @@ class LexiconManagementView(TemplateView):
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
-            
-            # NEW: Add match statistics to match Mapped Lexicons section
+            # Dynamic match statistics based on current filter
             'total_matches': len(all_matches),
             'posts_scanned': posts_scanned,
-            'total_posts': posts.count(),
+            'total_posts': filtered_posts.count(),
+            # Date filter info for the template
+            'view_all': view_all,
+            'has_date_filter': has_date_filter,
+            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
+            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
         return context
-
+        
     def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
         
