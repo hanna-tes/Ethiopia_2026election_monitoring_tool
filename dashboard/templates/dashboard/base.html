@@ -42,9 +42,24 @@
         .sidebar-link:hover { background: rgba(255,255,255,0.1); }
         .sidebar-link.active { background: rgba(255,255,255,0.15); border-left: 4px solid #f59e0b; }
         
-        /* Ensure logo container doesn't clip content */
-        .logo-container {
-            overflow: visible;
+        /* Header with proper height */
+        .header-banner {
+            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+            min-height: 100px;
+            padding: 1.5rem 2rem;
+        }
+        
+        /* Logo container - ensure no clipping */
+        .logo-box {
+            background: white;
+            border-radius: 12px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 80px;
+            min-height: 80px;
         }
     </style>
     
@@ -123,37 +138,36 @@
     <!-- Main Content Area -->
     <main class="ml-64 min-h-screen flex flex-col">
         
-        <!-- Top Header - Clean, No Map, Full Logo -->
-        <header class="bg-[#1e3a8a] text-white shadow-lg border-b border-blue-900">
-            <div class="px-8 py-5 flex items-center justify-between">
+        <!-- Top Header Banner - Taller with proper spacing -->
+        <header class="header-banner text-white shadow-lg">
+            <div class="flex items-center justify-between h-full">
                 
-                <!-- Left Spacer (to balance the layout) -->
+                <!-- Left Spacer -->
                 <div class="w-1/4"></div>
 
-                <!-- Center: ADDO Logo & Branding (Fully Visible) -->
-                <div class="flex items-center space-x-4 logo-container">
-                    <!-- ADDO Logo SVG - Sized to prevent clipping -->
-                    <div class="bg-white rounded-xl p-2 shadow-md flex-shrink-0">
-                        <svg width="56" height="56" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Center: ADDO Logo & Branding -->
+                <div class="flex items-center space-x-4">
+                    <!-- ADDO Logo - Larger container -->
+                    <div class="logo-box">
+                        <svg width="60" height="60" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <rect width="100" height="100" rx="12" fill="#1e3a8a"/>
-                            <text x="10" y="68" font-family="Arial, sans-serif" font-size="44" font-weight="900" fill="white" letter-spacing="-2">ADD</text>
-                            <!-- The 'O' with camera icon -->
-                            <circle cx="78" cy="42" r="14" fill="none" stroke="white" stroke-width="5"/>
-                            <circle cx="78" cy="42" r="5" fill="white"/>
-                            <line x1="78" y1="28" x2="78" y2="20" stroke="white" stroke-width="4" stroke-linecap="round"/>
-                            <line x1="86" y1="34" x2="90" y2="30" stroke="white" stroke-width="3" stroke-linecap="round"/>
+                            <text x="8" y="68" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="white" letter-spacing="-1">ADD</text>
+                            <circle cx="78" cy="42" r="12" fill="none" stroke="white" stroke-width="4"/>
+                            <circle cx="78" cy="42" r="4" fill="white"/>
+                            <line x1="78" y1="30" x2="78" y2="22" stroke="white" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="85" y1="35" x2="88" y2="32" stroke="white" stroke-width="2" stroke-linecap="round"/>
                         </svg>
                     </div>
                     
                     <!-- Branding Text -->
-                    <div class="text-left">
+                    <div>
                         <h1 class="text-2xl font-bold tracking-wide leading-tight">ADDO</h1>
-                        <p class="text-sm text-blue-200 uppercase tracking-wider font-medium">African Digital Democracy Observatory</p>
+                        <p class="text-sm text-blue-200 uppercase tracking-wider">African Digital Democracy Observatory</p>
                     </div>
                 </div>
                 
                 <!-- Divider -->
-                <div class="h-16 w-px bg-white/20 mx-6"></div>
+                <div class="h-16 w-px bg-white/30 mx-6"></div>
                 
                 <!-- Right: Dashboard Title -->
                 <div class="w-1/4 text-right">
