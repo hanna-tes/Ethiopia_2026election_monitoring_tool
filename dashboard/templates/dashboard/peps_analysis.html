@@ -10,9 +10,10 @@
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .pep-card-dark:hover {
-        transform: translateY(-2px);
+        transform: translateY(-4px);
         border-color: rgba(59, 130, 246, 0.3);
         background: rgba(30, 41, 59, 0.6);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
     }
     .metric-pill-dark {
         background: rgba(15, 23, 42, 0.6);
@@ -20,8 +21,8 @@
         transition: all 0.2s ease;
     }
     .metric-pill-dark:hover {
+        transform: scale(1.02);
         border-color: rgba(59, 130, 246, 0.4);
-        color: #f8fafc;
     }
     .hashtag-tag-dark {
         background: rgba(255, 255, 255, 0.04);
@@ -40,6 +41,7 @@
 
 {% block content %}
 <div class="space-y-6 text-slate-100">
+    
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
             <h1 class="text-2xl font-bold text-white tracking-tight flex items-center gap-2">🎯 PEP Mention & Narrative Analysis</h1>
@@ -55,7 +57,7 @@
         <div>
             <h3 class="text-sm font-semibold text-blue-300">Enhanced with Regional Council (RC) Members</h3>
             <p class="text-xs text-slate-400 mt-1 leading-relaxed">
-                This intelligence model references officials from the <strong class="text-blue-300 font-medium">RC_Members.xlsx</strong> dataset seamlessly alongside standard PEP variables. Mentions, tracking flags, or narrative anomalies targeting regional profiles will automatically correlate below.
+                This analysis automatically includes officials from the <strong>RC_Members.xlsx</strong> dataset alongside standard PEPs. Any mentions, narrative clusters, or bot activity targeting these regional officials will be flagged here.
             </p>
         </div>
     </div>
@@ -67,7 +69,7 @@
                 <div>
                     <h3 class="text-lg font-bold text-white tracking-tight">{{ pep.pep_name }}</h3>
                     <div class="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-slate-400 font-medium">
-                        <span class="flex items-center gap-1">💬 {{ pep.mention_count|default:"0" }} mentions</span>
+                        <span class="flex items-center gap-1">💬 {{ pep.mention_count }} mentions</span>
                         <span class="text-slate-700">|</span>
                         <span>
                             {% if pep.risk_score <= 3 %}
@@ -99,19 +101,19 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-slate-900/30 rounded-xl p-3 border border-slate-800/80">
+                    <div class="bg-slate-950/40 rounded-xl p-3 border border-slate-800/60">
                         <div class="flex items-center gap-2 mb-1">
-                            <span class="text-sm">⚡</span>
+                            <span class="text-xs">⚡</span>
                             <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Velocity</span>
                             {% if pep.velocity_alert %}
                             <span class="velocity-indicator text-xs bg-red-950 text-red-400 px-1.5 py-0.2 rounded-full font-bold border border-red-900/50">⚠️</span>
                             {% endif %}
                         </div>
-                        <div class="text-xs text-slate-300">Peak hour: <span class="text-white font-medium">{{ pep.peak_hour }}:00</span></div>
+                        <div class="text-xs text-slate-300">Peak: {{ pep.peak_hour }}:00</div>
                     </div>
-                    <div class="bg-slate-900/30 rounded-xl p-3 border border-slate-800/80">
+                    <div class="bg-slate-950/40 rounded-xl p-3 border border-slate-800/60">
                         <div class="flex items-center gap-2 mb-1">
-                            <span class="text-sm">🤖</span>
+                            <span class="text-xs">🤖</span>
                             <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bot Activity</span>
                         </div>
                         <div class="text-xs text-slate-300 font-medium">
@@ -123,10 +125,10 @@
                 {% if pep.is_gendered_target %}
                 <div class="bg-rose-950/20 border-l-4 border-rose-500 p-3 rounded-r-xl border border-y-rose-950/40 border-r-rose-950/40">
                     <div class="flex items-start gap-2.5">
-                        <span class="text-lg">⚠️</span>
+                        <span class="text-base">⚠️</span>
                         <div>
                             <h4 class="font-bold text-rose-300 text-xs">Gendered Disinformation Detected</h4>
-                            <p class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">AI content manipulation, targeted character calibration, or qualification vectors identified.</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">AI-generated content, sexualized narratives, or qualification attacks identified</p>
                         </div>
                     </div>
                 </div>
@@ -135,7 +137,7 @@
                 {% if pep.top_hashtags %}
                 <div>
                     <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">#️⃣ Weaponized Hashtags</h4>
-                    <div class="flex flex-wrap gap-2">
+                    <div class="flex flex-wrap gap-1.5">
                         {% for hashtag in pep.top_hashtags %}
                         <span class="hashtag-tag-dark text-slate-300 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer">
                             #{{ hashtag.tag }} <span class="text-slate-500 font-normal ml-0.5">({{ hashtag.count }})</span>
@@ -150,7 +152,7 @@
                     <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">🎭 Narrative Clusters</h4>
                     <div class="space-y-2">
                         {% for cluster in pep.narrative_clusters %}
-                        <div class="bg-slate-900/40 border border-slate-800/80 rounded-lg p-3 flex justify-between items-center gap-4">
+                        <div class="cluster-badge bg-slate-950/40 border border-slate-800/80 rounded-lg p-3 flex justify-between items-center gap-4">
                             <span class="text-xs sm:text-sm font-medium text-slate-200">{{ cluster.name }}</span>
                             <span class="text-[10px] bg-blue-950 text-blue-400 border border-blue-900/60 px-2 py-0.5 rounded-full font-bold shrink-0">{{ cluster.count }} posts</span>
                         </div>
@@ -164,18 +166,16 @@
                     <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">📄 Recent Examples</h4>
                     <div class="space-y-2">
                         {% for post in pep.sample_posts %}
-                        <div class="bg-slate-950/40 rounded-xl p-3 text-xs sm:text-sm border border-slate-800/60 hover:border-slate-700/80 transition-all">
-                            <div class="flex items-center justify-between gap-4 mb-1.5 text-xs text-slate-500 font-medium">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-slate-400">{{ post.platform }}</span>
-                                    <span>•</span>
-                                    <span>{{ post.timestamp|date:"M d, H:i" }}</span>
-                                </div>
+                        <div class="bg-slate-950/40 rounded-xl p-3 text-xs border border-slate-800/60 hover:border-slate-700/80 transition-all">
+                            <div class="flex items-center gap-2 mb-1.5 text-[11px] text-slate-500 font-medium">
+                                <span>{{ post.platform }}</span>
+                                <span>•</span>
+                                <span>{{ post.timestamp|date:"M d, H:i" }}</span>
                                 {% if post.risk_level == 'high' or post.risk_level == 'critical' %}
-                                <span class="text-rose-400 font-bold">⚠️</span>
+                                <span class="text-rose-400 font-bold ml-auto">⚠️</span>
                                 {% endif %}
                             </div>
-                            <p class="text-slate-300 leading-relaxed">{{ post.text|truncatechars:160 }}</p>
+                            <p class="text-slate-300 leading-relaxed">{{ post.text }}{% if post.text|length > 150 %}...{% endif %}</p>
                         </div>
                         {% endfor %}
                     </div>
