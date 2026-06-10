@@ -5,194 +5,169 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Ethiopia Election Monitor{% endblock %}</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Plotly -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
-    {% block extra_head %}{% endblock %}
+    
+    <!-- Custom Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1e3a8a',
+                        secondary: '#3b82f6',
+                        accent: '#f59e0b',
+                        ethiopia: '#dc2626',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-        }
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 100vh;
-            width: 260px;
-            z-index: 1000;
-            overflow-y: auto;
-            background-color: #1e3a5f;
-        }
-        .sidebar-brand {
-            background-color: #162d4a;
-            padding: 1.5rem;
-            border-bottom: 2px solid #2a4a6f;
-        }
-        .sidebar-menu {
-            padding: 1rem 0;
-        }
-        .sidebar-item {
-            margin: 0.25rem 0;
-        }
-        .sidebar-link {
-            display: flex;
-            align-items: center;
-            padding: 0.875rem 1.5rem;
-            color: rgba(255, 255, 255, 0.85);
-            text-decoration: none;
-            transition: all 0.3s ease;
-            border-left: 4px solid transparent;
-        }
-        .sidebar-link:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: white;
-            border-left-color: #4a90e2;
-        }
-        .sidebar-link.active {
-            background-color: #2a4a6f;
-            color: white;
-            border-left-color: #60a5fa;
-            font-weight: 600;
-        }
-        .sidebar-link i {
-            margin-right: 0.75rem;
-            width: 20px;
-            text-align: center;
-        }
-        .sidebar-section-title {
-            padding: 1rem 1.5rem 0.5rem;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: rgba(255, 255, 255, 0.5);
-            font-weight: 600;
-            margin-top: 1rem;
-        }
-        .main-content {
-            margin-left: 260px;
-            padding: 20px;
-            min-height: 100vh;
-            background-color: #f8fafc;
-        }
-        @media (max-width: 768px) {
-            .sidebar {
-                transform: translateX(-100%);
-                transition: transform 0.3s ease;
-            }
-            .sidebar.show {
-                transform: translateX(0);
-            }
-            .main-content {
-                margin-left: 0;
-            }
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+        .sidebar-link { transition: all 0.2s; }
+        .sidebar-link:hover { background: rgba(255,255,255,0.1); }
+        .sidebar-link.active { background: rgba(255,255,255,0.15); border-left: 4px solid #f59e0b; }
+        
+        /* Africa Map Pattern */
+        .africa-map-bg {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600'%3E%3Cpath d='M400,100 Q450,80 500,100 T600,150 T650,250 T620,350 T550,450 T450,500 T350,480 T280,400 T250,300 T280,200 T350,130 Z' fill='%231e3a8a' stroke='%23ffffff' stroke-width='2'/%3E%3Cpath d='M520,220 Q540,210 560,220 T580,250 T570,280 T540,290 T510,280 T500,250 Z' fill='%23dc2626' stroke='%23ffffff' stroke-width='1.5'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right center;
+            background-size: contain;
+            opacity: 0.15;
         }
     </style>
+    
+    {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body class="bg-gray-50">
+
     <!-- Sidebar -->
-    <nav class="sidebar">
-        <div class="sidebar-brand">
-            <h5 class="mb-0 text-white">
-                <i class="fas fa-chart-line me-2"></i>Ethiopia Election Monitor
-            </h5>
-        </div>
-        
-        <div class="sidebar-menu">
-            <div class="sidebar-item">
-                <a href="{% url 'home' %}" class="sidebar-link {% if active_tab == 'home' %}active{% endif %}">
-                    <i class="fas fa-home"></i>
-                    <span>Home</span>
-                </a>
+    <aside class="fixed left-0 top-0 h-screen w-72 gradient-bg text-white overflow-y-auto z-50 shadow-2xl">
+        <!-- Logo Section - ADDO Branding -->
+        <div class="p-6 border-b border-white/20 bg-white/10">
+            <div class="flex items-center space-x-3 mb-4">
+                <!-- ADDO Logo SVG -->
+                <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="bg-white rounded-lg p-1">
+                    <rect width="100" height="100" rx="8" fill="#1e3a8a"/>
+                    <text x="15" y="68" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="white">ADD</text>
+                    <circle cx="78" cy="38" r="10" fill="none" stroke="white" stroke-width="4"/>
+                    <circle cx="78" cy="38" r="4" fill="white"/>
+                    <line x1="78" y1="28" x2="78" y2="22" stroke="white" stroke-width="3"/>
+                    <line x1="84" y1="32" x2="86" y2="30" stroke="white" stroke-width="2"/>
+                </svg>
+                <div>
+                    <h1 class="font-bold text-xl leading-tight text-white">ADDO</h1>
+                    <p class="text-xs text-blue-200">African Digital Democracy Observatory</p>
+                </div>
             </div>
             
-            <div class="sidebar-item">
-                <a href="{% url 'peps' %}" class="sidebar-link {% if active_tab == 'peps' %}active{% endif %}">
-                    <i class="fas fa-user-shield"></i>
-                    <span>PEPs/PIPs Tracker</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'lexicons' %}" class="sidebar-link {% if active_tab == 'lexicons' %}active{% endif %}">
-                    <i class="fas fa-book"></i>
-                    <span>Mapped Lexicons</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'narratives' %}" class="sidebar-link {% if active_tab == 'narratives' %}active{% endif %}">
-                    <i class="fas fa-newspaper"></i>
-                    <span>Trending Narratives</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'networks' %}" class="sidebar-link {% if active_tab == 'networks' %}active{% endif %}">
-                    <i class="fas fa-project-diagram"></i>
-                    <span>Networks & TTPs</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'lexicon_management' %}" class="sidebar-link {% if active_tab == 'lexicon_management' %}active{% endif %}">
-                    <i class="fas fa-cog"></i>
-                    <span>Lexicon Management</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'reports_landing' %}" class="sidebar-link {% if active_tab == 'reports' %}active{% endif %}">
-                    <i class="fas fa-file-alt"></i>
-                    <span>Reports</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-section-title">Data Management</div>
-            
-            <div class="sidebar-item">
-                <a href="{% url 'upload_data' %}" class="sidebar-link {% if active_tab == 'upload' %}active{% endif %}">
-                    <i class="fas fa-upload"></i>
-                    <span>Upload Data</span>
-                </a>
+            <!-- Main Title -->
+            <div class="mt-4 pt-4 border-t border-white/20">
+                <h2 class="text-lg font-bold text-white leading-tight">
+                    🇪 Ethiopia Election Monitoring Dashboard
+                </h2>
+                <p class="text-xs text-blue-200 mt-1">
+                    Dataset-driven triggers • Amharic support • Lexicon management
+                </p>
             </div>
         </div>
-    </nav>
+
+        <!-- Navigation -->
+        <nav class="p-4 space-y-1">
+            <a href="{% url 'home' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'home' %}active{% endif %}">
+                <i class="fas fa-home w-5"></i>
+                <span class="font-medium">Home</span>
+            </a>
+            
+            <a href="{% url 'peps' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'peps' %}active{% endif %}">
+                <i class="fas fa-user-shield w-5"></i>
+                <span class="font-medium">PEPs/PIPs Tracker</span>
+            </a>
+            
+            <a href="{% url 'lexicons' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'lexicons' %}active{% endif %}">
+                <i class="fas fa-book w-5"></i>
+                <span class="font-medium">Mapped Lexicons</span>
+            </a>
+            
+            <a href="{% url 'narratives' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'narratives' %}active{% endif %}">
+                <i class="fas fa-newspaper w-5"></i>
+                <span class="font-medium">Trending Narratives</span>
+            </a>
+            
+            <a href="{% url 'networks' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'networks' %}active{% endif %}">
+                <i class="fas fa-project-diagram w-5"></i>
+                <span class="font-medium">Networks & TTPs</span>
+            </a>
+            
+            <a href="{% url 'lexicon_management' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'lexicon_management' %}active{% endif %}">
+                <i class="fas fa-cog w-5"></i>
+                <span class="font-medium">Lexicon Management</span>
+            </a>
+            
+            <a href="{% url 'reports_landing' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'reports' %}active{% endif %}">
+                <i class="fas fa-file-alt w-5"></i>
+                <span class="font-medium">Reports</span>
+            </a>
+
+            <div class="pt-4 mt-4 border-t border-white/20">
+                <p class="px-4 text-xs font-semibold text-blue-200 uppercase tracking-wider mb-2">Data Management</p>
+                <a href="{% url 'upload_data' %}" class="sidebar-link flex items-center space-x-3 px-4 py-3 rounded-lg {% if active_tab == 'upload' %}active{% endif %}">
+                    <i class="fas fa-upload w-5"></i>
+                    <span class="font-medium">Upload Data</span>
+                </a>
+            </div>
+        </nav>
+
+        <!-- Footer -->
+        <div class="p-4 mt-auto border-t border-white/20 text-xs text-blue-200 text-center">
+            African Digital Democracy Observatory 2026
+        </div>
+    </aside>
 
     <!-- Main Content -->
-    <div class="main-content">
-        <!-- Header with Logo and Title -->
-        <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50 mb-6 rounded-lg">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex flex-col items-center py-4 space-y-2">
-                    <img src="https://opportunities.codeforafrica.org/wp-content/uploads/sites/5/2015/11/1-Zq7KnTAeKjBf6eENRsacSQ.png" 
-                         alt="Code for Africa Logo" 
-                         class="h-12 w-auto">
-                    <h1 class="text-2xl font-bold text-gray-900 tracking-tight">
-                        🇪🇹 Ethiopia Election Monitoring Dashboard
-                    </h1>
-                    <p class="text-sm text-gray-500">Dataset-driven triggers • Amharic support • Lexicon management</p>
+    <main class="ml-72 min-h-screen">
+        <!-- Top Header with Africa Map Background -->
+        <header class="bg-white shadow-sm border-b sticky top-0 z-40 relative overflow-hidden">
+            <div class="absolute inset-0 africa-map-bg pointer-events-none"></div>
+            <div class="px-8 py-4 flex items-center justify-between relative z-10">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">{% block page_title %}Dashboard{% endblock %}</h2>
+                    <p class="text-sm text-gray-500 mt-1">{% block page_subtitle %}Real-time election integrity monitoring{% endblock %}</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-gray-500">Last updated: <span class="font-semibold">{{ metrics.last_update|default:"Just now" }}</span></span>
+                    <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-lg shadow-blue-600/30">
+                        <i class="fas fa-download mr-2"></i>Export
+                    </button>
                 </div>
             </div>
         </header>
 
         <!-- Page Content -->
-        <div class="max-w-7xl mx-auto">
+        <div class="p-8">
             {% block content %}{% endblock %}
         </div>
+    </main>
 
-        <!-- Footer -->
-        <footer class="bg-white border-t border-gray-200 mt-12 py-6">
-            <div class="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
-                Ethiopia Election Monitoring Dashboard • Code for Africa 2026
-            </div>
-        </footer>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="{% static 'js/dashboard.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>
