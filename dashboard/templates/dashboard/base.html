@@ -86,10 +86,13 @@
             border:1px solid var(--line-strong);
             border-radius:14px;
         }
-        /* Mix blend property keeps images with light backgrounds clean on dark UI setups */
-        .blend-brand-img {
-            mix-blend-mode: lighten;
+        
+        /* Custom image isolation processing context */
+        .brand-card {
+            background-color: #ffffff;
+            transition: opacity 0.2s ease;
         }
+        
         ::-webkit-scrollbar{width:8px;height:8px;}
         ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:8px;}
     </style>
@@ -101,9 +104,20 @@
 <div class="flex min-h-screen">
 
     <aside class="sidebar-shell hidden lg:flex flex-col w-[260px] shrink-0">
-        <div class="px-6 pt-7 pb-6 border-b hairline flex flex-col items-start w-full">
-            <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" alt="ADDO Logo" class="h-10 w-auto object-contain max-w-full blend-brand-img">
-            <div class="text-[9px] uppercase tracking-[0.16em] font-bold text-slate-400 mt-3 font-display">
+        
+        <div class="p-4 border-b hairline">
+            <div class="brand-card p-3 rounded-xl shadow-md border border-white/5 flex flex-col items-center justify-center">
+                <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" 
+                     alt="ADDO & Code for Africa Branding" 
+                     class="w-full h-auto object-contain max-h-[110px]"
+                     onerror="this.style.display='none'; document.getElementById('fallback-brand-text').style.display='block';">
+                
+                <div id="fallback-brand-text" class="hidden text-center py-2">
+                    <span class="text-slate-900 font-bold text-xl tracking-wider font-display block">ADDO</span>
+                    <span class="text-slate-500 font-medium text-[9px] uppercase tracking-widest block mt-0.5">Code For Africa</span>
+                </div>
+            </div>
+            <div class="text-[9.5px] uppercase tracking-[0.16em] font-bold text-slate-400 text-center mt-3 font-display px-1">
                 DIGITAL DEMOCRACY OBSERVATORY
             </div>
         </div>
@@ -121,15 +135,9 @@
             <a href="{% url 'upload_data' %}" class="nav-item {% if request.resolver_match.url_name == 'upload_data' %}active{% endif %}"><span class="dot"></span> Upload Data</a>
         </nav>
 
-        <div class="px-6 py-5 border-t hairline bg-slate-950/20 flex flex-col items-start gap-4">
-            <div class="text-[10px] text-slate-400/80 leading-snug tracking-wide">
-                African Digital Democracy Observatory
-            </div>
-            
-            <div class="w-full border-t border-white/5"></div>
-            
-            <div class="w-full overflow-hidden h-8 relative flex items-center">
-                <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" alt="Code for Africa Logo" class="h-24 w-auto object-contain max-w-full absolute -bottom-[54px] left-0 blend-brand-img">
+        <div class="px-5 py-4 border-t hairline bg-slate-950/20">
+            <div class="text-[11px] muted leading-snug text-center">
+                African Digital Democracy<br>Observatory · 2026
             </div>
         </div>
     </aside>
@@ -138,9 +146,13 @@
 
         <header class="topbar sticky top-0 z-30">
             <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-4 flex items-center gap-4">
+                
                 <div class="flex lg:hidden items-center mr-2">
-                    <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" alt="ADDO Logo" class="h-7 w-auto object-contain blend-brand-img">
+                    <div class="bg-white px-2 py-1 rounded-md max-w-[110px]">
+                        <img src="{% static 'Ethiopia_2026election_monitoring_tool/ADDO_design.png' %}" alt="ADDO" class="h-6 w-auto object-contain">
+                    </div>
                 </div>
+                
                 <div class="hidden md:flex items-center gap-2">
                     <span class="chip">Amharic · EN</span>
                 </div>
