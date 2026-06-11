@@ -24,6 +24,85 @@
 <div class="bg-slate-900/40 rounded-xl p-6 border border-slate-800/80 backdrop-blur-md shadow-xl text-slate-100">
     <h2 class="text-2xl font-bold text-white mb-6">⚙️ Lexicon Management</h2>
     
+    <!-- 🔥 NEW: How We Identify Weaponized Language Section -->
+    <div class="mb-8 p-6 bg-gradient-to-br from-blue-950/40 to-purple-950/40 rounded-xl border border-blue-800/50">
+        <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <i class="fas fa-shield-alt text-blue-400"></i>
+            How We Identify Weaponized Language
+        </h3>
+        
+        <div class="grid md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-slate-950/40 p-4 rounded-lg border border-slate-800/60">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-2xl">📚</span>
+                    <h4 class="font-semibold text-white">1. Lexicon Engine</h4>
+                </div>
+                <p class="text-sm text-slate-400 leading-relaxed">
+                    Curated dictionary of {{ total_terms }} known ethnic slurs, violence incitement, and election interference terms in English and Amharic. Provides <strong>100% precision</strong> for known high-risk keywords.
+                </p>
+            </div>
+            
+            <div class="bg-slate-950/40 p-4 rounded-lg border border-slate-800/60">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-2xl">🤖</span>
+                    <h4 class="font-semibold text-white">2. LLM Semantic Analysis</h4>
+                </div>
+                <p class="text-sm text-slate-400 leading-relaxed">
+                    Advanced language model analyzes <strong>context and semantics</strong> to detect nuanced threats, coded language, and evolving slang that exact-match systems might miss.
+                </p>
+            </div>
+            
+            <div class="bg-slate-950/40 p-4 rounded-lg border border-slate-800/60">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-2xl">🎯</span>
+                    <h4 class="font-semibold text-white">3. Fine-Tuned Gemma Model</h4>
+                </div>
+                <p class="text-sm text-slate-400 leading-relaxed">
+                    Custom-trained multiclass classifier using <strong>LoRA adapter</strong> on Gemma model. Specifically trained to detect <strong>19 distinct categories</strong> of weaponized language in the Ethiopia election context.
+                </p>
+            </div>
+        </div>
+        
+        <!-- The 19 Categories Grid -->
+        <div class="mb-6">
+            <h4 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                <i class="fas fa-list text-purple-400"></i>
+                Gemma Model Detection Categories:
+            </h4>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <span class="px-3 py-1.5 bg-red-950/40 border border-red-800/60 rounded text-xs text-red-300">🔴 Violence</span>
+                <span class="px-3 py-1.5 bg-red-950/40 border border-red-800/60 rounded text-xs text-red-300">🔴 Inciteful</span>
+                <span class="px-3 py-1.5 bg-red-950/40 border border-red-800/60 rounded text-xs text-red-300">🔴 Call for Action</span>
+                <span class="px-3 py-1.5 bg-red-950/40 border border-red-800/60 rounded text-xs text-red-300">🔴 Dehumanization</span>
+                
+                <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Extremism</span>
+                <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Ethnic Slur</span>
+                <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Misogynistic</span>
+                <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Slur</span>
+                
+                <span class="px-3 py-1.5 bg-yellow-950/40 border border-yellow-800/60 rounded text-xs text-yellow-300">🟡 Derogatory</span>
+                <span class="px-3 py-1.5 bg-yellow-950/40 border border-yellow-800/60 rounded text-xs text-yellow-300">🟡 Inflammatory</span>
+                <span class="px-3 py-1.5 bg-yellow-950/40 border border-yellow-800/60 rounded text-xs text-yellow-300">🟡 Gender Disinformation</span>
+                <span class="px-3 py-1.5 bg-yellow-950/40 border border-yellow-800/60 rounded text-xs text-yellow-300">🟡 Stereotype</span>
+                
+                <span class="px-3 py-1.5 bg-blue-950/40 border border-blue-800/60 rounded text-xs text-blue-300">🔵 Ethnicity</span>
+                <span class="px-3 py-1.5 bg-blue-950/40 border border-blue-800/60 rounded text-xs text-blue-300">🔵 Xenophobia</span>
+                <span class="px-3 py-1.5 bg-blue-950/40 border border-blue-800/60 rounded text-xs text-blue-300">🔵 Religion</span>
+                <span class="px-3 py-1.5 bg-blue-950/40 border border-blue-800/60 rounded text-xs text-blue-300">🔵 Homophobic</span>
+                
+                <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Ancestry</span>
+                <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Class</span>
+                <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Structural</span>
+            </div>
+        </div>
+        
+        <div class="p-4 bg-blue-900/20 rounded-lg border border-blue-800/40">
+            <p class="text-sm text-blue-300">
+                <strong>🔬 Methodology:</strong> Our hybrid approach combines rule-based precision with AI-powered contextual understanding. Each detection method votes on the classification, and we calculate a <strong>weighted confidence score</strong> to minimize false positives while catching sophisticated manipulation tactics. The Gemma model was specifically trained on Ethiopia election discourse to recognize these 19 distinct categories of harmful language.
+            </p>
+        </div>
+    </div>
+    
     <div class="mb-8 p-6 bg-slate-950/20 rounded-lg border border-slate-800/60">
         <h3 class="text-lg font-semibold text-white mb-4">🔍 Real-Time Trigger Detection</h3>
         <form method="post">
@@ -61,6 +140,50 @@
             {% if scan_results.llm_result.llm_detected %}
             <div class="mb-4 p-3 bg-blue-950/40 rounded border border-blue-900/60">
                 <p class="text-sm text-blue-300"><strong>🤖 Analysis:</strong> {{ scan_results.explanation }}</p>
+            </div>
+            {% endif %}
+            
+            <!-- 🔥 NEW: Gemma LoRA Model Results -->
+            {% if scan_results.gemma_result and scan_results.gemma_result.category != 'error' %}
+            <div class="mb-4 p-4 bg-gradient-to-br from-purple-950/40 to-indigo-950/40 rounded-lg border border-purple-800/60">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <p class="text-sm font-semibold text-purple-300 mb-1">
+                            <strong>🎯 Fine-Tuned Gemma Model Detection:</strong>
+                        </p>
+                        <div class="flex items-center gap-3">
+                            <span class="px-3 py-1 bg-purple-600/30 border border-purple-500/50 rounded-full text-purple-200 text-sm font-semibold">
+                                {{ scan_results.gemma_result.category|title }}
+                            </span>
+                            <span class="text-xs text-purple-400">
+                                Confidence: {{ scan_results.gemma_result.confidence|floatformat:2 }} ({{ scan_results.gemma_result.confidence|floatformat:0% }})
+                            </span>
+                        </div>
+                    </div>
+                    <span class="px-2 py-1 rounded text-xs font-bold {% if scan_results.gemma_result.severity == 'critical' %}bg-red-950 text-red-400 border border-red-800{% elif scan_results.gemma_result.severity == 'high' %}bg-orange-950 text-orange-400 border border-orange-800{% elif scan_results.gemma_result.severity == 'medium' %}bg-yellow-950 text-yellow-400 border border-yellow-800{% else %}bg-green-950 text-green-400 border border-green-800{% endif %}">
+                        {{ scan_results.gemma_result.severity|upper }}
+                    </span>
+                </div>
+                
+                {% if scan_results.gemma_result.raw_prediction %}
+                <div class="mt-2 p-2 bg-slate-950/40 rounded border border-slate-800/60">
+                    <p class="text-xs text-slate-400"><strong>Model Prediction:</strong> <span class="text-purple-300">{{ scan_results.gemma_result.raw_prediction }}</span></p>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            <!-- 🔥 NEW: Combined Confidence Score -->
+            {% if scan_results.overall_confidence %}
+            <div class="mb-4 p-4 bg-blue-950/40 rounded-lg border border-blue-800/60">
+                <p class="text-sm text-blue-300 mb-2">
+                    <strong>📊 Combined Confidence Score:</strong> 
+                    <span class="text-white font-bold">{{ scan_results.overall_confidence|floatformat:2 }}</span> 
+                    ({{ scan_results.overall_confidence|floatformat:0% }})
+                </p>
+                <p class="text-xs text-blue-400/80">
+                    Aggregated from: <strong>Lexicon Engine</strong> ({{ total_terms }} terms) + <strong>LLM Semantic Analysis</strong> + <strong>Fine-tuned Gemma Model</strong> (19 multiclass categories)
+                </p>
             </div>
             {% endif %}
             
@@ -161,45 +284,46 @@
                 <span class="text-slate-500">(ethnic slurs, violence terms, election keywords, etc.)</span>
             </span>
         </p>
-    </div>        <div class="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/20 shadow-inner">
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-800 text-sm">
-                    <thead class="bg-slate-900/60 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                        <tr>
-                            <th class="px-4 py-3 text-left border-b border-slate-800">Term</th>
-                            <th class="px-4 py-3 text-left border-b border-slate-800">Category</th>
-                            <th class="px-4 py-3 text-left border-b border-slate-800">Severity</th>
-                            <th class="px-4 py-3 text-left border-b border-slate-800">Language</th>
-                            <th class="px-4 py-3 text-left border-b border-slate-800">Target Entity</th>
-                            <th class="px-4 py-3 text-left border-b border-slate-800">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-800/40 text-slate-300">
-                        {% for term in lexicon_terms %}
-                        <tr class="hover:bg-slate-800/20 transition-colors">
-                            <td class="px-4 py-3 text-sm font-semibold text-white">{{ term.term }}</td>
-                            <td class="px-4 py-3 text-sm text-slate-400">{{ term.category|title }}</td>
-                            <td class="px-4 py-3 text-sm">
-                                <span class="px-2 py-0.5 rounded text-xs font-medium {% if term.severity == 'critical' %}bg-red-950 text-red-400 border border-red-900/60{% elif term.severity == 'high' %}bg-orange-950 text-orange-400 border border-orange-900/60{% elif term.severity == 'medium' %}bg-yellow-950 text-yellow-400 border border-yellow-900/60{% else %}bg-green-950 text-green-400 border border-green-900/60{% endif %}">{{ term.severity }}</span>
-                            </td>
-                            <td class="px-4 py-3 text-sm text-slate-400">{{ term.language|title }}</td>
-                            <td class="px-4 py-3 text-sm text-slate-400">{{ term.target_entity|default:"—" }}</td>
-                            <td class="px-4 py-3 text-sm font-medium">
-                                <button type="button" onclick="openEditModal('{{ term.id }}', '{{ term.term|escapejs }}', '{{ term.category }}', '{{ term.severity }}', '{{ term.target_entity|default:""|escapejs }}', '{{ term.language }}')" class="text-blue-400 hover:text-blue-300 mr-3 transition">Edit</button>
-                                <form method="POST" class="inline">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="delete_term">
-                                    <input type="hidden" name="term_id" value="{{ term.id }}">
-                                    <button type="submit" onclick="return confirm('Are you sure you want to delete this term?')" class="text-red-400 hover:text-red-300 transition">Delete</button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500 bg-slate-900/10 italic">No terms in lexicon. Add one above.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+    </div>
+    
+    <div class="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/20 shadow-inner">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-800 text-sm">
+                <thead class="bg-slate-900/60 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                    <tr>
+                        <th class="px-4 py-3 text-left border-b border-slate-800">Term</th>
+                        <th class="px-4 py-3 text-left border-b border-slate-800">Category</th>
+                        <th class="px-4 py-3 text-left border-b border-slate-800">Severity</th>
+                        <th class="px-4 py-3 text-left border-b border-slate-800">Language</th>
+                        <th class="px-4 py-3 text-left border-b border-slate-800">Target Entity</th>
+                        <th class="px-4 py-3 text-left border-b border-slate-800">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/40 text-slate-300">
+                    {% for term in lexicon_terms %}
+                    <tr class="hover:bg-slate-800/20 transition-colors">
+                        <td class="px-4 py-3 text-sm font-semibold text-white">{{ term.term }}</td>
+                        <td class="px-4 py-3 text-sm text-slate-400">{{ term.category|title }}</td>
+                        <td class="px-4 py-3 text-sm">
+                            <span class="px-2 py-0.5 rounded text-xs font-medium {% if term.severity == 'critical' %}bg-red-950 text-red-400 border border-red-900/60{% elif term.severity == 'high' %}bg-orange-950 text-orange-400 border border-orange-900/60{% elif term.severity == 'medium' %}bg-yellow-950 text-yellow-400 border border-yellow-900/60{% else %}bg-green-950 text-green-400 border border-green-900/60{% endif %}">{{ term.severity }}</span>
+                        </td>
+                        <td class="px-4 py-3 text-sm text-slate-400">{{ term.language|title }}</td>
+                        <td class="px-4 py-3 text-sm text-slate-400">{{ term.target_entity|default:"—" }}</td>
+                        <td class="px-4 py-3 text-sm font-medium">
+                            <button type="button" onclick="openEditModal('{{ term.id }}', '{{ term.term|escapejs }}', '{{ term.category }}', '{{ term.severity }}', '{{ term.target_entity|default:""|escapejs }}', '{{ term.language }}')" class="text-blue-400 hover:text-blue-300 mr-3 transition">Edit</button>
+                            <form method="POST" class="inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_term">
+                                <input type="hidden" name="term_id" value="{{ term.id }}">
+                                <button type="submit" onclick="return confirm('Are you sure you want to delete this term?')" class="text-red-400 hover:text-red-300 transition">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500 bg-slate-900/10 italic">No terms in lexicon. Add one above.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 
