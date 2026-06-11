@@ -1,193 +1,201 @@
-"""
-Hate Speech Detection using Fine-tuned Gemma + LoRA Adapter
-"""
 import logging
 import torch
-from typing import Dict, List, Optional
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
 logger = logging.getLogger(__name__)
 
+# These are the EXACT categories from your trained model
+HATE_SPEECH_CATEGORIES = [
+    'ethnicity', 'xenophobia', 'ancestry', 'violence', 'extremism',
+    'gender disinformation', 'stereotype', 'class', 'derogatory',
+    'slur', 'misogynistic', 'religion', 'ethnic slur',
+    'inflammatory', 'inciteful', 'call for action', 'homophobic',
+    'structural', 'dehumanization', 'neutral'
+]
+
+# Map categories to severity levels
+CATEGORY_SEVERITY = {
+    'violence': 'critical',
+    'inciteful': 'critical',
+    'call for action': 'critical',
+    'dehumanization': 'critical',
+    'extremism': 'high',
+    'ethnic slur': 'high',
+    'slur': 'high',
+    'misogynistic': 'high',
+    'derogatory': 'medium',
+    'inflammatory': 'medium',
+    'gender disinformation': 'medium',
+    'stereotype': 'medium',
+    'homophobic': 'medium',
+    'ethnicity': 'high',
+    'xenophobia': 'high',
+    'religion': 'high',
+    'ancestry': 'medium',
+    'class': 'low',
+    'structural': 'low',
+    'neutral': 'low'
+}
+
 class GemmaHateSpeechDetector:
-    """
-    Multiclass hate speech detector using Gemma model with LoRA adapter.
-    """
-    
-    def __init__(self, model_path: str, base_model: str = "google/gemma-2b"):
-        """
-        Initialize the hate speech detector.
-        
-        Args:
-            model_path: Path to the LoRA adapter files
-            base_model: Base Gemma model to load (default: gemma-2b)
-        """
+    def __init__(self, model_path: str, base_model: str = "google/gemma-2-2b-it"):
         self.model_path = model_path
         self.base_model_name = base_model
         self.model = None
         self.tokenizer = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Using device: {self.device}")
+        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
         
     def load_model(self):
-        """Load the base model and apply LoRA adapter."""
         if self.model is not None:
-            logger.info("Model already loaded")
             return
             
         try:
-            logger.info(f"Loading base model: {self.base_model_name}")
+            logger.info(f"Loading tokenizer from {self.model_path}...")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
             
-            # Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_path,
-                trust_remote_code=True
-            )
-            
-            # Load base model
+            logger.info(f"Loading base model: {self.base_model_name}...")
             base_model = AutoModelForCausalLM.from_pretrained(
                 self.base_model_name,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                device_map="auto" if self.device == "cuda" else None,
-                trust_remote_code=True
+                torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
+                device_map="auto" if self.device != "cpu" else None
             )
             
-            # Load LoRA adapter
-            logger.info(f"Loading LoRA adapter from: {self.model_path}")
+            logger.info(f"Applying LoRA adapter from {self.model_path}...")
             self.model = PeftModel.from_pretrained(
                 base_model,
                 self.model_path,
-                device_map="auto" if self.device == "cuda" else None,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
+                device_map="auto" if self.device != "cpu" else None
             )
-            
             self.model.eval()
-            logger.info("✅ Hate speech detector loaded successfully")
+            logger.info("✅ Gemma LoRA Hate Speech model loaded successfully!")
             
         except Exception as e:
-            logger.error(f"❌ Failed to load model: {e}")
+            logger.error(f"❌ Failed to load Gemma LoRA model: {e}")
             raise
-    
-    def detect(self, text: str) -> Dict:
-        """
-        Detect hate speech in text.
-        
-        Args:
-            text: Input text to analyze
-            
-        Returns:
-            Dictionary with detection results
-        """
+
+    def detect(self, text: str) -> dict:
         if self.model is None:
             self.load_model()
-        
+            
         try:
-            # Prepare input
-            prompt = self._create_prompt(text)
+            # Use the EXACT prompt format from your training
+            prompt = f"""Classify the following text into one of these categories:
+{', '.join(HATE_SPEECH_CATEGORIES)}
+
+Text: "{text}"
+
+Category:"""
+            
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
             
-            # Generate prediction
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=50,
+                    max_new_tokens=30,
                     temperature=0.1,
                     do_sample=False,
                     pad_token_id=self.tokenizer.eos_token_id
                 )
             
-            # Decode prediction
-            prediction = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-            prediction = prediction.strip()
+            prediction = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip().lower()
             
-            # Parse result
-            result = self._parse_prediction(prediction, text)
+            # Find which category was predicted
+            detected_category = self._parse_category(prediction)
+            severity = CATEGORY_SEVERITY.get(detected_category, 'medium')
+            confidence = self._estimate_confidence(prediction, detected_category)
             
-            return result
-            
-        except Exception as e:
-            logger.error(f"Detection failed: {e}")
             return {
-                'is_hate_speech': False,
+                'category': detected_category,
+                'severity': severity,
+                'confidence': confidence,
+                'raw_prediction': prediction,
+                'is_hate_speech': detected_category != 'neutral',
+                'model_type': 'gemma_lora_multiclass_19categories'
+            }
+                
+        except Exception as e:
+            logger.error(f"Gemma LoRA detection failed: {e}")
+            return {
                 'category': 'error',
+                'severity': 'low',
                 'confidence': 0.0,
-                'error': str(e)
+                'raw_prediction': str(e),
+                'is_hate_speech': False
             }
     
-    def _create_prompt(self, text: str) -> str:
-        """Create prompt for hate speech detection."""
-        return f"""Classify the following text into one of these categories:
-- hate_speech
-- offensive
-- neutral
-
-Text: "{text}"
-
-Category:"""
-    
-    def _parse_prediction(self, prediction: str, original_text: str) -> Dict:
-        """Parse model prediction into structured result."""
+    def _parse_category(self, prediction: str) -> str:
+        """Find which category from our list matches the prediction."""
         prediction_lower = prediction.lower().strip()
         
-        # Determine category
-        if 'hate' in prediction_lower or 'hate_speech' in prediction_lower:
-            category = 'hate_speech'
-            is_hate_speech = True
-            confidence = 0.85  # Base confidence
-        elif 'offensive' in prediction_lower:
-            category = 'offensive'
-            is_hate_speech = False
-            confidence = 0.75
+        # Check for exact matches first
+        for category in HATE_SPEECH_CATEGORIES:
+            if category in prediction_lower or prediction_lower in category:
+                return category
+        
+        # Fallback: check for key terms
+        if any(word in prediction_lower for word in ['violence', 'violent']):
+            return 'violence'
+        elif any(word in prediction_lower for word in ['incite', 'incitement']):
+            return 'inciteful'
+        elif any(word in prediction_lower for word in ['call', 'action']):
+            return 'call for action'
+        elif any(word in prediction_lower for word in ['dehumaniz', 'dehumanization']):
+            return 'dehumanization'
+        elif any(word in prediction_lower for word in ['extrem', 'extremism']):
+            return 'extremism'
+        elif any(word in prediction_lower for word in ['slur', 'ethnic slur']):
+            return 'slur' if 'ethnic' not in prediction_lower else 'ethnic slur'
+        elif any(word in prediction_lower for word in ['misogyn', 'misogynistic']):
+            return 'misogynistic'
+        elif any(word in prediction_lower for word in ['derogat', 'derogatory']):
+            return 'derogatory'
+        elif any(word in prediction_lower for word in ['inflamm', 'inflammatory']):
+            return 'inflammatory'
+        elif any(word in prediction_lower for word in ['gender', 'disinformation']):
+            return 'gender disinformation'
+        elif any(word in prediction_lower for word in ['stereotype']):
+            return 'stereotype'
+        elif any(word in prediction_lower for word in ['homophobic', 'homophobia']):
+            return 'homophobic'
+        elif any(word in prediction_lower for word in ['ethnicity', 'ethnic']):
+            return 'ethnicity'
+        elif any(word in prediction_lower for word in ['xenophobia', 'xenophobic']):
+            return 'xenophobia'
+        elif any(word in prediction_lower for word in ['religion', 'religious']):
+            return 'religion'
+        elif any(word in prediction_lower for word in ['ancestry']):
+            return 'ancestry'
+        elif any(word in prediction_lower for word in ['class']):
+            return 'class'
+        elif any(word in prediction_lower for word in ['structural']):
+            return 'structural'
         else:
-            category = 'neutral'
-            is_hate_speech = False
-            confidence = 0.90
-        
-        return {
-            'is_hate_speech': is_hate_speech,
-            'category': category,
-            'confidence': confidence,
-            'raw_prediction': prediction,
-            'model_type': 'gemma_lora_multiclass',
-            'text_analyzed': original_text
-        }
+            return 'neutral'
     
-    def batch_detect(self, texts: List[str]) -> List[Dict]:
-        """
-        Detect hate speech in multiple texts.
+    def _estimate_confidence(self, prediction: str, detected_category: str) -> float:
+        """Estimate confidence based on prediction clarity."""
+        if detected_category == 'neutral':
+            return 0.90
         
-        Args:
-            texts: List of texts to analyze
-            
-        Returns:
-            List of detection results
-        """
-        results = []
-        for text in texts:
-            result = self.detect(text)
-            results.append(result)
-        return results
-
+        # Higher confidence if category name appears clearly in prediction
+        if detected_category in prediction.lower():
+            return 0.85
+        elif any(word in prediction.lower() for word in detected_category.split()):
+            return 0.75
+        else:
+            return 0.65
 
 # Global instance for caching
 _detector_instance = None
 
 def get_hate_speech_detector(model_path: str = None) -> GemmaHateSpeechDetector:
-    """
-    Get or create the hate speech detector instance.
-    
-    Args:
-        model_path: Path to the model (optional, uses default if not provided)
-        
-    Returns:
-        GemmaHateSpeechDetector instance
-    """
     global _detector_instance
     
     if _detector_instance is None:
         if model_path is None:
             from django.conf import settings
-            model_path = getattr(settings, 'HATE_SPEECH_MODEL_PATH', 
+            model_path = getattr(settings, 'GEMMA_LOKA_MODEL_PATH', 
                                './dashboard/model_cache/gemma_hate_lexicon_lora')
         
         _detector_instance = GemmaHateSpeechDetector(model_path)
