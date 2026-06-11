@@ -24,7 +24,7 @@ CATEGORY_SEVERITY = {
 }
 
 class GemmaHateSpeechDetector:
-    def __init__(self, model_path: str, base_model: str = "unsloth/gemma-4-e4b-it-unsloth-bnb-4bit"):
+    def __init__(self, model_path: str, base_model: str = "./dashboard/model_cache/base_model_4bit"):
         self.model_path = model_path
         self.base_model_name = base_model
         self.model = None
