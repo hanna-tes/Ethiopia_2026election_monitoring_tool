@@ -1973,6 +1973,166 @@ def report_detail(request, report_id):
         'active_tab': 'reports',
     }
     return render(request, 'dashboard/report_detail.html', context)
+
+def get_category_trend_analysis(posts_queryset, days_back=90):
+    """
+    Analyze weaponized language category trends over time.
+    Returns Plotly chart data and trending categories with % increase.
+    """
+    from django.db.models.functions import TruncDay
+    from datetime import timedelta
+    
+    # Limit to recent posts for performance
+    cutoff = timezone.now() - timedelta(days=days_back)
+    recent_posts = posts_queryset.filter(timestamp_share__gte=cutoff).order_by('timestamp_share')
+    
+    if recent_posts.count() < 50:
+        return {
+            'chart_json': None,
+            'trending_categories': [],
+            'total_categories_tracked': 0,
+            'message': 'Not enough data for trend analysis'
+        }
+    
+    # Group by day and scan for lexicon matches
+    daily_data = defaultdict(lambda: defaultdict(int))
+    total_scanned = 0
+    
+    # Process posts in chunks
+    for post in recent_posts.iterator():
+        if post.original_text and post.timestamp_share:
+            matches = scan_text_for_lexicon_terms(post.original_text)
+            day = post.timestamp_share.date()
+            for match in matches:
+                daily_data[day][match['category']] += 1
+            total_scanned += 1
+    
+    if not daily_data:
+        return {
+            'chart_json': None,
+            'trending_categories': [],
+            'total_categories_tracked': 0,
+            'message': 'No lexicon matches found in recent posts'
+        }
+    
+    # Convert to chart format
+    dates = sorted(daily_data.keys())
+    categories = set()
+    for day_data in daily_data.values():
+        categories.update(day_data.keys())
+    
+    # Build Plotly chart with color-coded categories
+    traces = []
+    category_colors = {
+        'violence_incitement': '#dc2626',      # Red
+        'dehumanizing': '#ea580c',             # Orange
+        'ethnic_identity': '#d97706',          # Amber
+        'political_groups': '#65a30d',         # Green
+        'election_governance': '#0284c7',      # Blue
+        'foreign_interference': '#7c3aed',     # Purple
+        'religious_cultural': '#db2777'        # Pink
+    }
+    
+    for category in sorted(categories):
+        values = [daily_data[day].get(category, 0) for day in dates]
+        traces.append({
+            'x': [d.strftime('%Y-%m-%d') for d in dates],
+            'y': values,
+            'type': 'scatter',
+            'mode': 'lines+markers',
+            'name': category.replace('_', ' ').title(),
+            'line': {
+                'color': category_colors.get(category, '#6B7280'),
+                'width': 2.5
+            },
+            'marker': {'size': 4}
+        })
+    
+    chart_json = json.dumps({
+        'data': traces,
+        'layout': {
+            'title': f'Weaponized Language Trends (Last {days_back} Days)',
+            'xaxis': {
+                'title': 'Date',
+                'tickangle': -45,
+                'gridcolor': '#E5E7EB'
+            },
+            'yaxis': {
+                'title': 'Daily Mentions',
+                'gridcolor': '#E5E7EB'
+            },
+            'hovermode': 'x unified',
+            'height': 450,
+            'margin': {'b': 100, 't': 50, 'l': 60, 'r': 20},
+            'plot_bgcolor': '#ffffff',
+            'paper_bgcolor': '#ffffff',
+            'legend': {
+                'orientation': 'h',
+                'yanchor': 'bottom',
+                'y': 1.02,
+                'xanchor': 'center',
+                'x': 0.5
+            }
+        }
+    })
+    
+    # Calculate trending categories (compare last 7 days to previous 14 days)
+    trending = []
+    if len(dates) >= 7:
+        recent_7 = dates[-7:]
+        previous_period = dates[:-7] if len(dates) > 7 else dates
+        
+        for category in categories:
+            recent_count = sum(daily_data[d].get(category, 0) for d in recent_7)
+            recent_avg = recent_count / 7
+            
+            if previous_period:
+                previous_count = sum(daily_data[d].get(category, 0) for d in previous_period)
+                previous_avg = previous_count / len(previous_period)
+            else:
+                previous_avg = 0
+            
+            # Calculate percentage change
+            if previous_avg > 0:
+                pct_change = ((recent_avg - previous_avg) / previous_avg) * 100
+            elif recent_avg > 0:
+                pct_change = 100  # New category appearing
+            else:
+                pct_change = 0
+            
+            # Only show categories with significant increase (>15%)
+            if pct_change > 15:
+                trending.append({
+                    'category': category.replace('_', ' ').title(),
+                    'category_key': category,
+                    'pct_change': round(pct_change, 1),
+                    'recent_count': recent_count,
+                    'severity': _get_category_severity_display(category),
+                    'color': category_colors.get(category, '#6B7280')
+                })
+        
+        trending.sort(key=lambda x: x['pct_change'], reverse=True)
+    
+    return {
+        'chart_json': chart_json,
+        'trending_categories': trending[:5],  # Top 5 trending
+        'total_categories_tracked': len(categories),
+        'total_posts_scanned': total_scanned,
+        'date_range': f"{dates[0].strftime('%b %d')} - {dates[-1].strftime('%b %d, %Y')}" if dates else ""
+    }
+
+def _get_category_severity_display(category):
+    """Map category to severity level for display"""
+    severity_map = {
+        'violence_incitement': 'critical',
+        'dehumanizing': 'high',
+        'ethnic_identity': 'medium',
+        'political_groups': 'medium',
+        'election_governance': 'low',
+        'foreign_interference': 'medium',
+        'religious_cultural': 'low'
+    }
+    return severity_map.get(category, 'medium')
     
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
@@ -2260,8 +2420,10 @@ class HomeView(BaseTabMixin, TemplateView):
             'files': recent_uploads,
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
+        # 7. TREND ANALYSIS - Track weaponized language categories over time
+        trend_analysis = get_category_trend_analysis(posts, days_back=90)
         
-        # 7. BUILD CONTEXT
+        # 8. BUILD CONTEXT
         context.update({
             'active_tab': 'home',
             'metrics': {
@@ -2276,6 +2438,7 @@ class HomeView(BaseTabMixin, TemplateView):
             'upload_summary': upload_summary,
             'risk_actors': get_risk_actors_insight(posts),
             'top_hashtags': get_top_hashtags(posts),
+            'trend_analysis': trend_analysis,
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
