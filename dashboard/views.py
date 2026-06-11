@@ -14,6 +14,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from .utils.hate_speech_detector import get_hate_speech_detector
+from .utils.hate_speech_detector import get_hate_speech_detector
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.views.generic import TemplateView, View
@@ -2489,27 +2490,56 @@ class LexiconsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        posts = ProcessedPost.objects.all()
-        total_posts = posts.count()
+        # 1. Get filtered posts (respects date filter)
+        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+        total_posts_in_filter = filtered_posts.count()
         
-        # Scan for lexicon matches
+        # 2. Initialize tracking sets
         all_matches = []
-        posts_scanned = 0
+        regex_post_ids = set()
+        gemma_post_ids = set()
         
-        for post in posts[:3000]:  # Limit for performance
-            if post.original_text:
-                matches = scan_text_for_lexicon_terms(post.original_text)
-                if matches:
-                    all_matches.extend(matches)
-                    posts_scanned += 1
+        # PERFORMANCE LIMIT: ML inference is heavy. We scan a 3,000 post sample 
+        # to prevent 504 timeouts on EC2 while maintaining statistical accuracy.
+        posts_to_scan = filtered_posts[:5000]
         
-        # Aggregate analytics
+        # 3. Load Gemma Model (Lazy load to prevent crashing if model is missing)
+        gemma_detector = None
+        try:
+            gemma_detector = get_hate_speech_detector()
+        except Exception as e:
+            logger.warning(f"Gemma model not available for Lexicons view: {e}")
+
+        # 4. Scan Posts
+        for post in posts_to_scan:
+            if not post.original_text:
+                continue
+                
+            # --- A. REGEX LEXICON SCAN ---
+            lex_matches = scan_text_for_lexicon_terms(post.original_text)
+            if lex_matches:
+                all_matches.extend(lex_matches)
+                regex_post_ids.add(post.id)
+                
+            # --- B. GEMMA ML SCAN ---
+            if gemma_detector:
+                try:
+                    gemma_res = gemma_detector.detect(post.original_text)
+                    # If the model says it's NOT neutral, it's a detection
+                    if gemma_res.get('category') != 'neutral':
+                        gemma_post_ids.add(post.id)
+                except Exception:
+                    pass
+
+        # 5. Calculate Overlaps
+        both_post_ids = regex_post_ids.intersection(gemma_post_ids)
+        
+        # 6. Aggregate Analytics (Existing Logic)
         from collections import Counter
         term_counts = Counter([m['term'] for m in all_matches])
         category_counts = Counter([m['category'] for m in all_matches])
         severity_counts = Counter([m['severity'] for m in all_matches])
         
-        # Top terms with metadata
         top_terms = term_counts.most_common(15)
         top_terms_with_meta = []
         for term, count in top_terms:
@@ -2519,54 +2549,55 @@ class LexiconsView(TemplateView):
                     metadata = terms[term]
                     break
             top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
-        
-        # === 🎨 WORD CLOUD (Streamlit-style) ===
+            
+        # Word Cloud & Targeted Entities (Existing Logic)
         wordcloud_base64 = None
         if all_matches:
             try:
-                wordcloud = generate_trigger_wordcloud(
-                    {'top_terms': [{'term': t, 'count': c} for t, c in term_counts.most_common(50)]}
-                )
+                wordcloud = generate_trigger_wordcloud({'top_terms': [{'term': t, 'count': c} for t, c in term_counts.most_common(50)]})
                 if wordcloud:
                     wordcloud_base64 = wordcloud_to_base64(wordcloud)
             except Exception as e:
                 logger.warning(f"Word cloud generation failed: {e}")
-        
-        # === 🎯 TARGETED ENTITIES (Streamlit-style) ===
+                
         targeted_entities = []
-        if posts.exists():
-            # Entity patterns from your Streamlit app
+        if filtered_posts.exists():
             entity_patterns = [
                 r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b',
                 r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b',
-                r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',  # Amharic names
+                r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',
             ]
             entities_found = Counter()
-            for post in posts[:1000]:  # Limit for performance
+            for post in posts_to_scan:
                 if post.original_text:
                     for pattern in entity_patterns:
                         matches = re.findall(pattern, post.original_text, re.IGNORECASE)
                         for match in matches:
-                            # Handle tuple returns from regex
                             entity = match[0] if isinstance(match, tuple) else match
                             if len(entity.strip()) >= 3:
                                 entities_found[entity.strip()] += 1
             targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
-        
+            
+        # 7. Build Context
         context.update({
             'active_tab': 'lexicons',
             'top_terms': top_terms_with_meta,
             'category_counts': dict(category_counts),
             'severity_counts': dict(severity_counts),
             'total_matches': len(all_matches),
-            'posts_scanned': posts_scanned,
-            'total_posts': total_posts,
-            # NEW: Streamlit-style additions
+            'posts_scanned': len(posts_to_scan),
+            'total_posts': total_posts_in_filter,
             'wordcloud_base64': wordcloud_base64,
             'targeted_entities': targeted_entities,
+            
+            #  Detection Method Breakdown
+            'regex_count': len(regex_post_ids),
+            'gemma_count': len(gemma_post_ids),
+            'both_count': len(both_post_ids),
+            'regex_only': len(regex_post_ids - both_post_ids),
+            'gemma_only': len(gemma_post_ids - both_post_ids),
         })
         return context
-
 
 class PEPsHubView(TemplateView):
     template_name = 'dashboard/peps_hub.html'
