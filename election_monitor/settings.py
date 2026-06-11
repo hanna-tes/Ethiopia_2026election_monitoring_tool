@@ -150,3 +150,4 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
 # Default primary key
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 GEMMA_TTP_MODEL_PATH = './model_cache/gemma-merged-4bit'
+GEMMA_LOKA_MODEL_PATH = os.path.join(BASE_DIR, 'dashboard', 'model_cache', 'gemma_4_multiclass_hate_lexicon_lora')
