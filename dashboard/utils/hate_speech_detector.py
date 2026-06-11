@@ -40,35 +40,35 @@ class GemmaHateSpeechDetector:
             logger.info(f"Loading tokenizer from {self.model_path}...")
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
             
-            # 4-bit Quantization Config (Required for Unsloth BNB models)
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
+            logger.info(f"Loading base model: {self.base_model_name}...")
             
-            logger.info(f"Loading 4-bit base model: {self.base_model_name}...")
+            # The Unsloth model is ALREADY 4-bit quantized.
             base_model = AutoModelForCausalLM.from_pretrained(
                 self.base_model_name,
-                quantization_config=quantization_config,
-                device_map="auto",
+                torch_dtype=torch.float16,
+                device_map=None,  # Changed from "auto"
                 trust_remote_code=True
             )
+            
+            # Explicitly move the model to Mac GPU (MPS) or EC2 GPU (CUDA)
+            base_model = base_model.to(self.device)
             
             logger.info(f"Applying LoRA adapter from {self.model_path}...")
             self.model = PeftModel.from_pretrained(
                 base_model,
-                self.model_path,
-                device_map="auto"
+                self.model_path
+                
             )
+            
+            # Ensure the adapter is also on the correct device
+            self.model.to(self.device)
             self.model.eval()
-            logger.info("✅ Gemma LoRA Hate Speech model loaded successfully in 4-bit!")
+            logger.info("✅ Gemma LoRA Hate Speech model loaded successfully!")
             
         except Exception as e:
             logger.error(f"❌ Failed to load Gemma LoRA model: {e}")
             raise
-
+            
     def detect(self, text: str) -> dict:
         if self.model is None:
             self.load_model()
