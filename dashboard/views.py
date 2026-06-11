@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
+from .utils.hate_speech_detector import get_hate_speech_detector
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.views.generic import TemplateView, View
@@ -45,6 +46,7 @@ from .models import ElectionOfficeholder
 from django.shortcuts import render, get_object_or_404
 from .models import MonitoringReport
 from typing import List, Dict, Any, Optional
+
 
 
 
@@ -2778,12 +2780,12 @@ class LexiconManagementView(TemplateView):
                     )
             lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).order_by('category', 'severity')
         
-        #  RESPECT THE GLOBAL DATE FILTER
+        # RESPECT THE GLOBAL DATE FILTER
         # This automatically handles "View All", custom date ranges, or the default 3 months
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
         
-       # Scan ONLY the filtered posts for lexicon matches
+        # Scan ONLY the filtered posts for lexicon matches
         all_matches = []
         posts_scanned = 0
         
@@ -2814,7 +2816,7 @@ class LexiconManagementView(TemplateView):
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
             
-            # 🔥 Dynamic match statistics based on the active filter
+            # Dynamic match statistics based on the active filter
             'total_matches': len(all_matches),
             'posts_scanned': posts_scanned,
             'total_posts': total_posts_in_filter,
@@ -2830,7 +2832,7 @@ class LexiconManagementView(TemplateView):
     def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
         
-        #  Handle Edit Term
+        # Handle Edit Term
         if action == 'edit_term':
             term_id = request.POST.get('term_id')
             if term_id:
@@ -2874,7 +2876,7 @@ class LexiconManagementView(TemplateView):
                 )
                 messages.success(request, "✅ Term added successfully!")
         
-        #  Handle Scan Text 
+        # Handle Scan Text 
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
             if text and len(text) > 10:
@@ -2885,15 +2887,34 @@ class LexiconManagementView(TemplateView):
                 # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm(text)
                 
-                # 3. Combine results
+                # 3. NEW: Fine-tuned Gemma LoRA Model detection
+                try:
+                    gemma_result = get_hate_speech_detector().detect(text)
+                except Exception as e:
+                    logger.warning(f"Gemma LoRA detection failed: {e}")
+                    gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low'}
+        
+                # 4. Combine all three methods (Lexicon + LLM + Gemma LoRA)
                 is_hate_speech = (
-                    lexicon_risk['score'] > 0 or 
-                    (llm_result.get('is_hate_speech', False) and llm_result.get('confidence', 0) > 0.6)
+                    lexicon_risk['score'] > 0 or
+                    (llm_result.get('is_hate_speech', False) and llm_result.get('confidence', 0) > 0.6) or
+                    (gemma_result.get('category') != 'neutral' and gemma_result.get('confidence', 0) > 0.7)
                 )
                 
+                # Calculate overall confidence
+                confidence_scores = []
+                if lexicon_risk['score'] > 0: 
+                    confidence_scores.append(min(1.0, lexicon_risk['score'] / 10))
+                if llm_result.get('confidence'): 
+                    confidence_scores.append(llm_result['confidence'])
+                if gemma_result.get('confidence'): 
+                    confidence_scores.append(gemma_result['confidence'])
+                overall_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
+                    
                 overall_severity = max(
                     {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity','low'), 1),
-                    {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk['level'], 1)
+                    {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk['level'], 1),
+                    {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
                 )
                 severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
                 
@@ -2902,15 +2923,17 @@ class LexiconManagementView(TemplateView):
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
+                    'gemma_result': gemma_result,  # ADDED
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity],
+                    'overall_confidence': round(overall_confidence, 2),  # ADDED
                     'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
                     'targeted_groups': llm_result.get('targeted_groups', []),
                     'explanation': llm_result.get('explanation', '')
                 }
                 
                 if is_hate_speech:
-                    messages.warning(request, f"⚠️ Potential hate speech detected! Severity: {severity_map[overall_severity].upper()}")
+                    messages.warning(request, f"⚠️ Potential hate speech detected! Severity: {severity_map[overall_severity].upper()} (Confidence: {overall_confidence:.0%})")
                 else:
                     messages.success(request, "✅ No hate speech detected.")
             else:
