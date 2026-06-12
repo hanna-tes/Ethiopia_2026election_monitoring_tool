@@ -1946,7 +1946,7 @@ LEXICON_CONFIG = {
     
     # === Display Configuration ===
     "display": {"max_terms_per_category": 50, "show_amharic_first": True, "highlight_critical": True}
-}
+    }
 # === STREAMLIT-STYLE DATA PROCESSING FUNCTIONS ===
 
 def infer_platform_from_url(url):
