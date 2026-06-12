@@ -1980,12 +1980,12 @@ def report_detail(request, report_id):
     }
     return render(request, 'dashboard/report_detail.html', context)
 
-def get_category_trend_analysis(posts_queryset, days_back=90):
+def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"):
     """
     OPTIMIZED: Uses random sampling and caching to prevent crashes on large datasets.
     """
-    # 1. CHECK CACHE FIRST (Prevents re-scanning on every page load)
-    cache_key = f"trend_analysis_{days_back}_{posts_queryset.query.hash()}"
+    # 1. CHECK CACHE FIRST (Fixed cache key generation)
+    cache_key = f"trend_analysis_{days_back}_{cache_suffix}"
     cached_result = cache.get(cache_key)
     if cached_result:
         return cached_result
@@ -2012,10 +2012,7 @@ def get_category_trend_analysis(posts_queryset, days_back=90):
         }
     
     # 2. RANDOM SAMPLING (The Performance Fix)
-    # We only scan 1,500 random posts. This is statistically accurate but 10x faster.
     sample_size = min(1500, total_available)
-    
-    # Get random IDs to avoid loading all objects into memory
     post_ids = list(recent_posts.values_list('id', flat=True))
     sampled_ids = random.sample(post_ids, sample_size)
     
@@ -2043,7 +2040,7 @@ def get_category_trend_analysis(posts_queryset, days_back=90):
             'message': 'No lexicon matches found'
         }
     
-    # 4. BUILD CHART (Same as before)
+    # 4. BUILD CHART
     dates = sorted(daily_data.keys())
     categories = set()
     for day_data in daily_data.values():
@@ -2125,7 +2122,7 @@ def get_category_trend_analysis(posts_queryset, days_back=90):
     cache.set(cache_key, final_result, 3600) 
     
     return final_result
-
+    
 def _get_category_severity_display(category):
     """Map category to severity level for display"""
     severity_map = {
@@ -2426,7 +2423,9 @@ class HomeView(BaseTabMixin, TemplateView):
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         # 7. TREND ANALYSIS - Track weaponized language categories over time
-        trend_analysis = get_category_trend_analysis(posts, days_back=90)
+        start_str = start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date)
+        end_str = end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date)
+        trend_analysis = get_category_trend_analysis(posts, days_back=90, cache_suffix=f"{start_str}_{end_str}")
         
         # 8. BUILD CONTEXT
         context.update({
