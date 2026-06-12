@@ -143,7 +143,7 @@
             </div>
             {% endif %}
             
-            <!-- 🔥 NEW: Gemma LoRA Model Results -->
+            <!-- 🔥 FIXED: Gemma Model Results -->
             {% if scan_results.gemma_result and scan_results.gemma_result.category != 'error' %}
             <div class="mb-4 p-4 bg-gradient-to-br from-purple-950/40 to-indigo-950/40 rounded-lg border border-purple-800/60">
                 <div class="flex items-start justify-between mb-3">
@@ -156,7 +156,7 @@
                                 {{ scan_results.gemma_result.category|title }}
                             </span>
                             <span class="text-xs text-purple-400">
-                                Confidence: {{ scan_results.gemma_result.confidence|floatformat:2 }} ({{ scan_results.gemma_result.confidence|floatformat:0% }})
+                                Confidence: {{ scan_results.gemma_result.confidence|floatformat:2 }} ({{ scan_results.gemma_confidence_pct }})
                             </span>
                         </div>
                     </div>
@@ -173,13 +173,13 @@
             </div>
             {% endif %}
             
-            <!-- 🔥 NEW: Combined Confidence Score -->
+            <!-- 🔥 FIXED: Combined Confidence Score -->
             {% if scan_results.overall_confidence %}
             <div class="mb-4 p-4 bg-blue-950/40 rounded-lg border border-blue-800/60">
                 <p class="text-sm text-blue-300 mb-2">
                     <strong>📊 Combined Confidence Score:</strong> 
                     <span class="text-white font-bold">{{ scan_results.overall_confidence|floatformat:2 }}</span> 
-                    ({{ scan_results.overall_confidence|floatformat:0% }})
+                    ({{ scan_results.overall_confidence_pct }})
                 </p>
                 <p class="text-xs text-blue-400/80">
                     Aggregated from: <strong>Lexicon Engine</strong> ({{ total_terms }} terms) + <strong>LLM Semantic Analysis</strong> + <strong>Fine-tuned Gemma Model</strong> (19 multiclass categories)
