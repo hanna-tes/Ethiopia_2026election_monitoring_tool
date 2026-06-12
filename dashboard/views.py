@@ -2490,51 +2490,24 @@ class LexiconsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Get filtered posts (respects date filter)
+        # 1. RESPECT DATE FILTER & GET ALL POSTS
+        # This ensures the Lexicons tab respects the same date filters as the Home tab
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-        total_posts_in_filter = filtered_posts.count()
+        total_posts = filtered_posts.count()
         
-        # 2. Initialize tracking sets
+        # 2. FAST REGEX SCAN ON ALL DATA (No 3000 limit!)
+        # We use .iterator() to prevent loading all posts into memory at once
         all_matches = []
-        regex_post_ids = set()
-        gemma_post_ids = set()
+        posts_scanned = 0
         
-        # PERFORMANCE LIMIT: ML inference is heavy. We scan a 3,000 post sample 
-        # to prevent 504 timeouts on EC2 while maintaining statistical accuracy.
-        posts_to_scan = filtered_posts[:5000]
-        
-        # 3. Load Gemma Model (Lazy load to prevent crashing if model is missing)
-        gemma_detector = None
-        try:
-            gemma_detector = get_hate_speech_detector()
-        except Exception as e:
-            logger.warning(f"Gemma model not available for Lexicons view: {e}")
-
-        # 4. Scan Posts
-        for post in posts_to_scan:
-            if not post.original_text:
-                continue
-                
-            # --- A. REGEX LEXICON SCAN ---
-            lex_matches = scan_text_for_lexicon_terms(post.original_text)
-            if lex_matches:
-                all_matches.extend(lex_matches)
-                regex_post_ids.add(post.id)
-                
-            # --- B. GEMMA ML SCAN ---
-            if gemma_detector:
-                try:
-                    gemma_res = gemma_detector.detect(post.original_text)
-                    # If the model says it's NOT neutral, it's a detection
-                    if gemma_res.get('category') != 'neutral':
-                        gemma_post_ids.add(post.id)
-                except Exception:
-                    pass
-
-        # 5. Calculate Overlaps
-        both_post_ids = regex_post_ids.intersection(gemma_post_ids)
-        
-        # 6. Aggregate Analytics (Existing Logic)
+        for post in filtered_posts.iterator():
+            if post.original_text:
+                matches = scan_text_for_lexicon_terms(post.original_text)
+                if matches:
+                    all_matches.extend(matches)
+                    posts_scanned += 1
+                    
+        # 3. Aggregate Regex Analytics
         from collections import Counter
         term_counts = Counter([m['term'] for m in all_matches])
         category_counts = Counter([m['category'] for m in all_matches])
@@ -2550,55 +2523,132 @@ class LexiconsView(TemplateView):
                     break
             top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
             
-        # Word Cloud & Targeted Entities (Existing Logic)
+        # Word Cloud
         wordcloud_base64 = None
         if all_matches:
             try:
                 wordcloud = generate_trigger_wordcloud({'top_terms': [{'term': t, 'count': c} for t, c in term_counts.most_common(50)]})
-                if wordcloud:
-                    wordcloud_base64 = wordcloud_to_base64(wordcloud)
-            except Exception as e:
-                logger.warning(f"Word cloud generation failed: {e}")
+                if wordcloud: wordcloud_base64 = wordcloud_to_base64(wordcloud)
+            except Exception as e: logger.warning(f"Word cloud failed: {e}")
                 
+        # Targeted Entities
         targeted_entities = []
-        if filtered_posts.exists():
-            entity_patterns = [
-                r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b',
-                r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b',
-                r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',
-            ]
-            entities_found = Counter()
-            for post in posts_to_scan:
-                if post.original_text:
-                    for pattern in entity_patterns:
-                        matches = re.findall(pattern, post.original_text, re.IGNORECASE)
-                        for match in matches:
-                            entity = match[0] if isinstance(match, tuple) else match
-                            if len(entity.strip()) >= 3:
-                                entities_found[entity.strip()] += 1
-            targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
+        entity_patterns = [
+            r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b',
+            r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b',
+            r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',
+        ]
+        entities_found = Counter()
+        # Limit entity scanning to 1000 posts to keep this specific part fast
+        for post in filtered_posts[:1000]: 
+            if post.original_text:
+                for pattern in entity_patterns:
+                    matches = re.findall(pattern, post.original_text, re.IGNORECASE)
+                    for match in matches:
+                        entity = match[0] if isinstance(match, tuple) else match
+                        if len(entity.strip()) >= 3: entities_found[entity.strip()] += 1
+        targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
+
+        # ==========================================
+        #  4. BACKGROUND AI PROCESSING LOGIC
+        # ==========================================
+        cache_key = "lexicons_ai_insights_v1"
+        ai_insights = cache.get(cache_key)
+        ai_is_running = cache.get("lexicons_ai_running")
+        
+        # If we don't have AI insights yet, and it's not already running, start it!
+        if not ai_insights and not ai_is_running and total_posts > 10:
+            cache.set("lexicons_ai_running", True, 300) # Lock for 5 mins
             
-        # 7. Build Context
+            # Get 50 random post IDs to analyze (prevents server crash)
+            post_ids = list(filtered_posts.values_list('id', flat=True)[:1000])
+            sample_ids = random.sample(post_ids, min(50, len(post_ids))) 
+            
+            # Start the heavy AI work in a background thread
+            thread = threading.Thread(
+                target=self._run_ai_analysis_background,
+                args=(sample_ids, cache_key)
+            )
+            thread.daemon = True
+            thread.start()
+            logger.info("🤖 Started background analysis for Mapped Lexicons using the pre-trained model ...")
+
+        # 5. BUILD CONTEXT
         context.update({
             'active_tab': 'lexicons',
             'top_terms': top_terms_with_meta,
             'category_counts': dict(category_counts),
             'severity_counts': dict(severity_counts),
             'total_matches': len(all_matches),
-            'posts_scanned': len(posts_to_scan),
-            'total_posts': total_posts_in_filter,
+            'posts_scanned': posts_scanned,
+            'total_posts': total_posts,
             'wordcloud_base64': wordcloud_base64,
             'targeted_entities': targeted_entities,
-            
-            #  Detection Method Breakdown
-            'regex_count': len(regex_post_ids),
-            'gemma_count': len(gemma_post_ids),
-            'both_count': len(both_post_ids),
-            'regex_only': len(regex_post_ids - both_post_ids),
-            'gemma_only': len(gemma_post_ids - both_post_ids),
+            'ai_insights': ai_insights,
+            'ai_is_running': ai_is_running and not ai_insights,
         })
         return context
 
+    @staticmethod
+    def _run_ai_analysis_background(post_ids, cache_key):
+        """Runs the heavy AI model in the background and saves to cache."""
+        try:
+            from .utils.hate_speech_detector import get_hate_speech_detector
+            from .models import ProcessedPost
+            from collections import Counter
+            
+            detector = get_hate_speech_detector()
+            posts = ProcessedPost.objects.filter(id__in=post_ids)
+            
+            category_counts = Counter()
+            total_analyzed = 0
+            
+            # Map Gemma categories to severity levels
+            gemma_severity_map = {
+                'violence': 'critical', 'inciteful': 'critical', 'call for action': 'critical', 'dehumanization': 'critical',
+                'extremism': 'high', 'ethnic slur': 'high', 'slur': 'high', 'misogynistic': 'high',
+                'derogatory': 'medium', 'inflammatory': 'high', 'gender disinformation': 'high',
+                'stereotype': 'high', 'homophobic': 'high', 'ethnicity': 'high', 'xenophobia': 'high', 'religion': 'high',
+                'ancestry': 'low', 'class': 'low', 'structural': 'low'
+            }
+            
+            for post in posts:
+                if post.original_text and len(post.original_text) > 20:
+                    try:
+                        result = detector.detect(post.original_text)
+                        cat = result.get('category')
+                        if cat and cat not in ['neutral', 'error']:
+                            category_counts[cat] += 1
+                        total_analyzed += 1
+                    except Exception as e:
+                        logger.warning(f"scan failed for post {post.id}: {e}")
+            
+            # Calculate percentages
+            total_hateful = sum(category_counts.values())
+            ai_results = []
+            for cat, count in category_counts.most_common(5):
+                pct = (count / total_analyzed * 100) if total_analyzed > 0 else 0
+                ai_results.append({
+                    'category': cat.replace('_', ' ').title(),
+                    'count': count,
+                    'percentage': round(pct, 1),
+                    'severity': gemma_severity_map.get(cat, 'medium')
+                })
+            
+            # Save to cache for 24 hours (86400 seconds)
+            cache.set(cache_key, {
+                'results': ai_results,
+                'total_analyzed': total_analyzed,
+                'total_hateful': total_hateful,
+            }, 86400)
+            
+            logger.info(f"✅ Background analysis complete! Found {total_hateful} hateful posts out of {total_analyzed}.")
+            
+        except Exception as e:
+            logger.error(f"❌ Background analysis failed: {e}")
+        finally:
+            cache.delete("lexicons_ai_running")
+        
 class PEPsHubView(TemplateView):
     template_name = 'dashboard/peps_hub.html'
     
