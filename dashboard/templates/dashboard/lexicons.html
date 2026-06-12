@@ -18,74 +18,48 @@
         </div>
     </div>
     
-    <!-- 🔥 NEW: DETECTION METHODOLOGY BREAKDOWN -->
-    <div class="mb-8 p-6 bg-blue-50/50 rounded-xl border border-blue-100">
-        <div class="flex items-center gap-3 mb-5">
-            <span class="text-2xl">🔬</span>
-            <h2 class="text-xl font-bold text-gray-900">Detection Methodology Breakdown</h2>
-            <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold border border-purple-200">
-                Hybrid Analysis
-            </span>
+    <!-- 🔥 AI INSIGHTS SECTION (Background Processed) -->
+    {% if ai_insights %}
+    <div class="mb-8 p-6 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-200 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2"> AI Model Insights (Gemma 4)</h3>
+            <span class="text-xs font-medium text-purple-700 bg-white px-3 py-1 rounded-full border border-purple-200">Analyzed {{ ai_insights.total_analyzed }} random posts</span>
         </div>
-
-        <p class="text-sm text-gray-600 mb-6 leading-relaxed max-w-3xl">
-            Our system uses a dual-layer approach to identify weaponized language. The <strong>Regex Lexicon Engine</strong> provides 100% precision for known dictionary terms, while the <strong>Fine-Tuned Gemma Model</strong> detects contextual nuance, coded language, and evolving slang. 
-        </p>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <!-- Regex Card -->
-            <div class="bg-white p-5 rounded-lg border border-cyan-200 shadow-sm relative overflow-hidden">
-                <div class="absolute inset-x-0 top-0 h-1 bg-cyan-400"></div>
-                <div class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-2">📚 Found by Lexicon Engine</div>
-                <div class="text-3xl font-bold text-cyan-600 mt-1 leading-none">
-                    {{ regex_count|default:0 }}
-                </div>
-                <div class="text-xs text-gray-500 mt-3">
-                    Posts matched via exact dictionary terms
-                    <span class="block text-[10px] text-gray-400 mt-1">({{ regex_only|default:0 }} unique to this method)</span>
-                </div>
-            </div>
-
-            <!-- Gemma Card -->
-            <div class="bg-white p-5 rounded-lg border border-purple-200 shadow-sm relative overflow-hidden">
-                <div class="absolute inset-x-0 top-0 h-1 bg-purple-400"></div>
-                <div class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-2">🤖 Found by Gemma Model</div>
-                <div class="text-3xl font-bold text-purple-600 mt-1 leading-none">
-                    {{ gemma_count|default:0 }}
-                </div>
-                <div class="text-xs text-gray-500 mt-3">
-                    Posts flagged by contextual analysis
-                    <span class="block text-[10px] text-gray-400 mt-1">({{ gemma_only|default:0 }} unique to this method)</span>
-                </div>
-            </div>
-
-            <!-- Both Card -->
-            <div class="bg-white p-5 rounded-lg border border-green-200 shadow-sm relative overflow-hidden">
-                <div class="absolute inset-x-0 top-0 h-1 bg-green-400"></div>
-                <div class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-2">🎯 Found by BOTH Methods</div>
-                <div class="text-3xl font-bold text-green-600 mt-1 leading-none">
-                    {{ both_count|default:0 }}
-                </div>
-                <div class="text-xs text-gray-500 mt-3">
-                    High-confidence overlapping detections
-                    <span class="block text-[10px] text-gray-400 mt-1">Highest risk priority</span>
-                </div>
-            </div>
-        </div>
+        <p class="text-sm text-gray-600 mb-5">The AI model detected <strong class="text-purple-700">{{ ai_insights.total_hateful }} instances</strong> of weaponized language across the sampled posts.</p>
         
-        <div class="mt-5 p-3 rounded-lg border border-cyan-200 bg-cyan-50/50 flex items-start gap-3">
-            <span class="text-lg">💡</span>
-            <p class="text-xs text-gray-700 leading-relaxed">
-                <strong>Why this matters:</strong> The Model caught <strong class="text-purple-600">{{ gemma_only|default:0 }}</strong> posts that the dictionary missed (likely coded language or slang), while the dictionary caught <strong class="text-cyan-600">{{ regex_only|default:0 }}</strong> posts the model deemed neutral. Using both ensures maximum coverage.
-            </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for item in ai_insights.results %}
+            <div class="bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-semibold text-gray-800 text-sm">{{ item.category }}</span>
+                    <span class="px-2 py-0.5 rounded text-xs font-bold 
+                        {% if item.severity == 'critical' %}bg-red-100 text-red-800
+                        {% elif item.severity == 'high' %}bg-orange-100 text-orange-800
+                        {% elif item.severity == 'medium' %}bg-yellow-100 text-yellow-800
+                        {% else %}bg-green-100 text-green-800{% endif %}">{{ item.severity|upper }}</span>
+                </div>
+                <div class="text-2xl font-bold text-purple-600">{{ item.percentage }}%</div>
+                <div class="text-xs text-gray-500 mt-1">{{ item.count }} posts detected</div>
+            </div>
+            {% endfor %}
         </div>
     </div>
-    <!-- END NEW SECTION -->
+
+    {% elif ai_is_running %}
+    <div class="mb-8 p-5 bg-blue-50 rounded-xl border border-blue-200 flex items-center gap-4">
+        <div class="text-3xl animate-pulse"></div>
+        <div>
+            <h4 class="font-semibold text-blue-800">AI Analysis in Progress...</h4>
+            <p class="text-sm text-blue-600">The AI model is analyzing a sample of your data to detect nuanced weaponized language. This takes about 1-2 minutes. <strong>Please refresh the page</strong> shortly to see the insights.</p>
+        </div>
+    </div>
+    {% endif %}
+    <!-- END AI INSIGHTS SECTION -->
 
     {% if top_terms %}
     <!-- Top Trigger Terms Grid -->
     <div class="mb-8">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">🔥 Top Trigger Terms</h3>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4"> Top Trigger Terms</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {% for term in top_terms %}
             <div class="bg-blue-50 border border-blue-100 rounded-lg p-4 hover:shadow-md transition-shadow">
@@ -117,9 +91,8 @@
     
     <!-- Category & Severity Breakdown -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <!-- Category Counts -->
         <div>
-            <h3 class="text-lg font-semibold text-gray-800 mb-4"> By Category</h3>
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">📂 By Category</h3>
             <div class="grid grid-cols-2 gap-3">
                 {% for category, count in category_counts.items %}
                 <div class="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
@@ -130,7 +103,6 @@
             </div>
         </div>
         
-        <!-- Severity Distribution -->
         <div>
             <h3 class="text-lg font-semibold text-gray-800 mb-4">⚠️ By Severity</h3>
             <div class="flex flex-wrap gap-2">
@@ -147,7 +119,7 @@
         </div>
     </div>
     
-    <!-- Word Cloud (Streamlit-style) -->
+    <!-- Word Cloud -->
     {% if wordcloud_base64 %}
     <div class="mb-8">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">🔥 Trigger Terms Word Cloud</h3>
@@ -157,11 +129,10 @@
                  alt="Trigger Terms Word Cloud" 
                  class="w-full max-w-3xl h-auto max-h-96 object-contain">
         </div>
-        <p class="text-xs text-gray-500 mt-2 text-center">Size = frequency • Color = severity</p>
     </div>
     {% endif %}
     
-    <!-- Targeted Entities (Streamlit-style) -->
+    <!-- Targeted Entities -->
     {% if targeted_entities %}
     <div class="mb-8">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">🎯 Most Targeted Entities</h3>
@@ -181,10 +152,8 @@
     <div class="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
         <div class="text-6xl mb-4">🔍</div>
         <h3 class="text-lg font-semibold text-gray-800 mb-2">No lexicon matches yet</h3>
-        <p class="text-gray-500 mb-2">You have <strong>{{ total_posts }}</strong> posts in the database.</p>
         <p class="text-gray-500 mb-6 max-w-md mx-auto">
-            Upload election-related social media data to scan for hate speech and trigger terms 
-            from the Ethiopia election lexicon.
+            Upload election-related social media data to scan for hate speech and trigger terms.
         </p>
         <a href="{% url 'upload_data' %}" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
             📤 Upload Data
