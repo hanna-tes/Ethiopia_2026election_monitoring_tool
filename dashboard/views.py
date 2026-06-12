@@ -3378,8 +3378,8 @@ class NetworksView(TemplateView):
         # Get coordination groups
         coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
         
-        # Analyze TTPs using Gemma model (with fallback to old method)
-        ttps = detect_ttps_with_gemma(coordination_groups)
+        # Use rule-based TTP analysis (no MLX dependency)
+        ttps = analyze_ttps(coordination_groups, posts)
         
         # Extract DISARM Framework Reference from your 80k JSONL file
         disarm_ttp_reference = get_disarm_ttp_reference()
