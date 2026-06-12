@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from .utils.hate_speech_detector import get_hate_speech_detector
 from .utils.hate_speech_detector import get_hate_speech_detector
+from .utils.json_loader import get_disarm_ttp_reference
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.views.generic import TemplateView, View
@@ -2804,6 +2805,7 @@ class NetworksView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         request = self.request
+        
         min_connections = int(request.GET.get('min_connections', 2))
         top_n = int(request.GET.get('top_n', 30))
         layout_style = request.GET.get('layout', 'spring')
@@ -2814,11 +2816,14 @@ class NetworksView(TemplateView):
         # Generate CLEAN network graph
         graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
         
-        # Get coordination groups with FIXED usernames and URLs
+        # Get coordination groups
         coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
         
         # Analyze TTPs using Gemma model (with fallback to old method)
         ttps = detect_ttps_with_gemma(coordination_groups)
+        
+        # Extract DISARM Framework Reference from your 80k JSONL file
+        disarm_ttp_reference = get_disarm_ttp_reference()
         
         context.update({
             'active_tab': 'networks',
@@ -2828,14 +2833,17 @@ class NetworksView(TemplateView):
             'total_coordinated_accounts': sum(g['account_count'] for g in coordination_groups),
             'total_posts': posts.count(),
             'max_group_size': max([g['account_count'] for g in coordination_groups]) if coordination_groups else 0,
-            # Controls
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
-            # TTPs
             'ttps': ttps,
+            
+            # Pass the extracted TTPs to the UI
+            'disarm_ttp_reference': disarm_ttp_reference,
+            'disarm_dataset_size': 80000, 
         })
-        return context        
+        
+        return context       
 
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
