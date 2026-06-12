@@ -3005,10 +3005,15 @@ class LexiconManagementView(TemplateView):
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
-                    'gemma_result': gemma_result,  # ADDED
+                    'gemma_result': gemma_result,
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity],
-                    'overall_confidence': round(overall_confidence, 2),  # ADDED
+                    'overall_confidence': round(overall_confidence, 2),
+                    
+                    # Pre-format percentages to avoid template syntax errors
+                    'overall_confidence_pct': f"{round(overall_confidence * 100)}%",
+                    'gemma_confidence_pct': f"{round(gemma_result.get('confidence', 0) * 100)}%",
+                    
                     'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
                     'targeted_groups': llm_result.get('targeted_groups', []),
                     'explanation': llm_result.get('explanation', '')
