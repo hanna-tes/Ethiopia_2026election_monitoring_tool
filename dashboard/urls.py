@@ -41,4 +41,9 @@ urlpatterns = [
 
     path('api/ttp-radar-data/', views.ttp_radar_data_api, name='ttp_radar_data_api'),
 
+    # Gephi CSV Exports
+    path('networks/export-gephi-nodes/', views.export_gephi_nodes_csv, name='export_gephi_nodes'),
+    path('networks/export-gephi-edges/', views.export_gephi_edges_csv, name='export_gephi_edges'),
+    path('networks/export-gephi-edges-tweets/', views.export_gephi_edges_tweets_csv, name='export_gephi_edges_tweets'),
+
 ]
