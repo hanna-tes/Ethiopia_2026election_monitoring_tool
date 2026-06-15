@@ -1631,228 +1631,129 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     1. Finds similar posts (not just identical) using TF-IDF
     2. Detects resharing patterns
     3. Calculates exact bot count per group
-    4. Includes robust error handling
+    4. Extracts sub-narratives and hashtags
+    5. NO DATA LIMIT (processes all X/Facebook posts)
     """
-    try:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.metrics.pairwise import cosine_similarity
-    except ImportError:
-        logger.warning("sklearn not available, falling back to exact text matching")
-        return _get_coordination_groups_exact(posts_queryset, min_accounts, max_groups)
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    import numpy as np
 
     coordination = []
-
-    try:
-        # Get all election-related posts with required fields
-        posts_data = list(posts_queryset.filter(
-            is_election_related=True
-        ).values(
-            'id', 'account_id', 'original_text', 'platform',
-            'url', 'timestamp_share', 'risk_level'
-        ).order_by('-timestamp_share')[:2000])  # Limit for performance
-
-        if len(posts_data) < min_accounts:
-            return []
-
-        # Extract texts for similarity analysis
-        texts = [p['original_text'] for p in posts_data if p['original_text'] and len(str(p['original_text'])) > 20]
-
-        if len(texts) < 2:
-            return []
-
-        # Calculate text similarity using TF-IDF
-        vectorizer = TfidfVectorizer(max_features=1000, stop_words='english', ngram_range=(1, 2))
-        tfidf_matrix = vectorizer.fit_transform(texts)
-
-        # Find similar post clusters
-        similarity_groups = []
-        processed_indices = set()
-
-        for i in range(len(texts)):
-            if i in processed_indices:
-                continue
-
-            # Find all posts similar to this one
-            similar_indices = [i]
-            for j in range(i + 1, len(texts)):
-                if j in processed_indices:
-                    continue
-                similarity = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0][0]
-                if similarity >= similarity_threshold:
-                    similar_indices.append(j)
-                    processed_indices.add(j)
-
-            processed_indices.add(i)
-
-            # Only keep groups with enough accounts
-            if len(similar_indices) >= min_accounts:
-                similarity_groups.append(similar_indices)
-
-        # Process each similarity group
-        for group_indices in similarity_groups[:max_groups]:
-            group_posts = [posts_data[idx] for idx in group_indices]
-
-            # Get unique accounts
-            accounts = list(set(p['account_id'] for p in group_posts if p['account_id']))
-
-            if len(accounts) < min_accounts:
-                continue
-
-            # Identify bots in this group
-            bot_accounts = identify_bot_accounts(group_posts)
-            bot_count = len(bot_accounts)
-
-            # Calculate bot percentage
-            bot_percentage = (bot_count / len(accounts) * 100) if accounts else 0
-
-            # Determine coordination type
-            coordination_type = determine_coordination_type(group_posts, bot_count)
-
-            # Get sample posts with URLs
-            sample_posts_with_urls = []
-            platforms = set()
-
-            for post in group_posts[:10]:
-                if post['platform']:
-                    platforms.add(post['platform'])
-
-                sample_posts_with_urls.append({
-                    'username': clean_username(post['account_id']),
-                    'platform': post['platform'],
-                    'url': post['url'] if post['url'] and str(post['url']).startswith('http') else None,
-                    'timestamp': post['timestamp_share'].strftime('%Y-%m-%d %H:%M') if post['timestamp_share'] else 'N/A',
-                    'text_preview': str(post['original_text'])[:150] + '...' if post['original_text'] else '',
-                    'is_bot': post['account_id'] in bot_accounts,
-                    'risk_level': post.get('risk_level', 'unknown')
-                })
-
-            # Get unique URLs being shared
-            unique_urls = list(set(p['url'] for p in group_posts if p['url'] and str(p['url']).startswith('http')))[:5]
-
-            # Get text sample (most common or first)
-            text_sample = str(group_posts[0]['original_text'])[:200] if group_posts and group_posts[0]['original_text'] else '[Similar content]'
-
-            # Extract sub-narrative
-            sub_narrative = extract_sub_narrative(text_sample)
-
-            # Extract hashtags from all posts in group
-            all_hashtags = []
-            for post in group_posts:
-                if post.get('original_text'):
-                    found = re.findall(r'#(\w+)', str(post['original_text']), re.IGNORECASE)
-                    all_hashtags.extend([h.lower() for h in found])
-            unique_hashtags = list(set(all_hashtags))[:10]
-
-            coordination.append({
-                'id': len(coordination) + 1,
-                'accounts': accounts[:10],
-                'account_count': len(accounts),
-                'post_count': len(group_posts),
-                'bot_count': bot_count,
-                'bot_percentage': round(bot_percentage, 1),
-                'text_sample': text_sample,
-                'sample_posts_with_urls': sample_posts_with_urls,
-                'unique_urls': unique_urls,
-                'platforms': list(platforms),
-                'coordination_type': coordination_type,
-                'similarity_score': '≥85%',
-                'sub_narrative': sub_narrative,
-                'hashtags': unique_hashtags,
-                'primary_type': 'amplification_network' if bot_percentage >= 50 else 'coordination',
-                'sources': [],  # Will be populated by the view if needed
-                'amplifiers': [],
-                'source_count': 0,
-                'amplifier_count': 0,
-            })
-
-        # Sort by bot percentage (highest first) then by account count
-        coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
-
-        return coordination[:max_groups]
-
-    except Exception as e:
-        logger.error(f"Error in get_coordination_groups: {e}", exc_info=True)
-        # Fallback to exact matching if TF-IDF fails
-        return _get_coordination_groups_exact(posts_queryset, min_accounts, max_groups)
-
-
-def _get_coordination_groups_exact(posts_queryset, min_accounts=3, max_groups=15):
-    """Fallback: exact text matching coordination detection"""
-    coordination = []
-
-    try:
-        text_groups = posts_queryset.values('original_text').annotate(
-            account_count=Count('account_id', distinct=True),
-            post_count=Count('id')
-        ).filter(account_count__gte=min_accounts).order_by('-account_count')[:max_groups]
-
-        for group in text_groups:
-            text = group['original_text']
-            if not is_primarily_ethiopia_related(text):
-                continue
-
-            account_posts = posts_queryset.filter(original_text=text).values(
-                'account_id', 'platform', 'url', 'timestamp_share'
-            ).distinct()
-
-            accounts = []
-            sample_posts_with_urls = []
-            platforms = set()
-
-            for ap in account_posts[:20]:
-                username = clean_username(ap['account_id'])
-                if ap['platform']:
-                    platforms.add(ap['platform'])
-
-                if username and len(username) > 2:
-                    if username not in accounts:
-                        accounts.append(username)
-
-                    if len(sample_posts_with_urls) < 5:
-                        sample_posts_with_urls.append({
-                            'username': username,
-                            'platform': ap['platform'],
-                            'url': ap['url'] if ap['url'] and str(ap['url']).startswith('http') else None,
-                            'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
-                            'text_preview': text[:100] + '...'
-                        })
-
-            if len(accounts) >= min_accounts:
-                text_sample = text[:200] if text else '[Identical message]'
-                bot_accounts = identify_bot_accounts([
-                    {'account_id': ap['account_id'], 'original_text': text, 'timestamp_share': ap['timestamp_share'], 'risk_level': 'unknown'}
-                    for ap in account_posts[:20]
-                ])
-                bot_count = len([a for a in accounts if a in bot_accounts])
-
-                coordination.append({
-                    'id': len(coordination) + 1,
-                    'accounts': accounts[:8],
-                    'account_count': len(accounts),
-                    'post_count': group['post_count'],
-                    'text_sample': text_sample,
-                    'sample_posts_with_urls': sample_posts_with_urls,
-                    'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5],
-                    'platforms': list(platforms),
-                    'sub_narrative': extract_sub_narrative(text_sample),
-                    'bot_count': bot_count,
-                    'bot_percentage': round((bot_count / len(accounts) * 100), 1) if accounts else 0,
-                    'coordination_type': 'Human Coordination',
-                    'similarity_score': '100%',
-                    'hashtags': [],
-                    'primary_type': 'coordination',
-                    'sources': [],
-                    'amplifiers': [],
-                    'source_count': 0,
-                    'amplifier_count': 0,
-                })
-
-        return coordination[:max_groups]
-
-    except Exception as e:
-        logger.error(f"Error in fallback coordination detection: {e}", exc_info=True)
+    
+    # 🔥 FIX: Exclude TikTok and Media/News, and REMOVE the [:2000] limit to process ALL data
+    posts_data = list(posts_queryset.exclude(
+        platform__iexact='TikTok'
+    ).exclude(
+        platform__iexact='Media'
+    ).exclude(
+        platform__iexact='News'
+    ).values(
+        'id', 'account_id', 'original_text', 'platform',
+        'url', 'timestamp_share', 'risk_level'
+    ).order_by('-timestamp_share'))
+    
+    if len(posts_data) < min_accounts:
         return []
-
+        
+    # Extract texts for similarity analysis
+    texts = [p['original_text'] for p in posts_data if p['original_text'] and len(str(p['original_text'])) > 20]
+    if len(texts) < 2:
+        return []
+        
+    # Calculate text similarity using TF-IDF
+    vectorizer = TfidfVectorizer(max_features=1000, stop_words='english', ngram_range=(1, 2))
+    tfidf_matrix = vectorizer.fit_transform(texts)
+    
+    # Find similar post clusters
+    similarity_groups = []
+    processed_indices = set()
+    for i in range(len(texts)):
+        if i in processed_indices:
+            continue
+        similar_indices = [i]
+        for j in range(i + 1, len(texts)):
+            if j in processed_indices:
+                continue
+            similarity = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0][0]
+            if similarity >= similarity_threshold:
+                similar_indices.append(j)
+                processed_indices.add(j)
+        processed_indices.add(i)
+        if len(similar_indices) >= min_accounts:
+            similarity_groups.append(similar_indices)
+            
+    # Process each similarity group
+    for group_indices in similarity_groups[:max_groups]:
+        group_posts = [posts_data[idx] for idx in group_indices]
+        accounts = list(set(p['account_id'] for p in group_posts if p['account_id']))
+        if len(accounts) < min_accounts:
+            continue
+            
+        # Identify bots in this group
+        bot_accounts = identify_bot_accounts(group_posts)
+        bot_count = len(bot_accounts)
+        bot_percentage = (bot_count / len(accounts) * 100) if accounts else 0
+        
+        # Determine coordination type
+        coordination_type = determine_coordination_type(group_posts, bot_count)
+        
+        # 🔥 FIX: Collect platforms and hashtags from ALL posts in the group
+        all_platforms = set()
+        all_hashtags = []
+        for post in group_posts:
+            if post['platform']:
+                all_platforms.add(post['platform'])
+            if post.get('original_text'):
+                found = re.findall(r'#(\w+)', str(post['original_text']), re.IGNORECASE)
+                all_hashtags.extend([h.lower() for h in found])
+                
+        # Get sample posts with URLs
+        sample_posts_with_urls = []
+        for post in group_posts[:10]:
+            sample_posts_with_urls.append({
+                'username': clean_username(post['account_id']),
+                'platform': post['platform'],
+                'url': post['url'] if post['url'] and str(post['url']).startswith('http') else None,
+                'timestamp': post['timestamp_share'].strftime('%Y-%m-%d %H:%M') if post['timestamp_share'] else 'N/A',
+                'text_preview': str(post['original_text'])[:150] + '...' if post['original_text'] else '',
+                'is_bot': post['account_id'] in bot_accounts,
+                'risk_level': post.get('risk_level', 'unknown')
+            })
+            
+        # Get unique URLs being shared
+        unique_urls = list(set(p['url'] for p in group_posts if p['url'] and str(p['url']).startswith('http')))[:5]
+        
+        # Get text sample
+        text_sample = str(group_posts[0]['original_text'])[:200] if group_posts and group_posts[0]['original_text'] else '[Similar content]'
+        
+        # Extract sub-narrative
+        sub_narrative = extract_sub_narrative(text_sample)
+        
+        coordination.append({
+            'id': len(coordination) + 1,
+            'accounts': accounts[:10],
+            'account_count': len(accounts),
+            'post_count': len(group_posts),
+            'bot_count': bot_count,
+            'bot_percentage': round(bot_percentage, 1),
+            'text_sample': text_sample,
+            'sample_posts_with_urls': sample_posts_with_urls,
+            'unique_urls': unique_urls,
+            'platforms': list(all_platforms), # 🔥 All platforms
+            'coordination_type': coordination_type,
+            'similarity_score': f'≥{int(similarity_threshold*100)}%',
+            'sub_narrative': sub_narrative,
+            'hashtags': list(set(all_hashtags))[:10], # 🔥 All hashtags
+            'primary_type': 'amplification_network' if bot_percentage >= 50 else 'coordination',
+            'sources': [], 
+            'amplifiers': [],
+            'source_count': 0,
+            'amplifier_count': 0,
+        })
+        
+    # Sort by bot percentage (highest first) then by account count
+    coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
+    return coordination[:max_groups]
 
 def identify_bot_accounts(posts):
     """
@@ -4365,7 +4266,7 @@ class NetworksView(TemplateView):
         context = super().get_context_data(**kwargs)
         request = self.request
         
-        # 🔥 BULLETPROOF: Handle empty URL parameters like /networks/?
+        # Handle empty URL parameters like /networks/?
         try:
             min_connections = int(request.GET.get('min_connections') or 2)
             top_n = int(request.GET.get('top_n') or 30)
@@ -4374,34 +4275,41 @@ class NetworksView(TemplateView):
             
         layout_style = request.GET.get('layout', 'spring') or 'spring'
         
-        # 🔥 Wrap EVERY function call individually
-        posts = ProcessedPost.objects.filter(is_election_related=True)
+        # Exclude TikTok and Media/News from the main queryset
+        posts = ProcessedPost.objects.filter(is_election_related=True).exclude(
+            platform__iexact='TikTok'
+        ).exclude(
+            platform__iexact='Media'
+        ).exclude(
+            platform__iexact='News'
+        )
         
+        # Wrap EVERY function call individually to prevent 500 errors
         try:
             graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
         except Exception as e:
             logger.error(f"Graph generation failed: {e}")
             graph_data = {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
-        
+            
         try:
             coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
         except Exception as e:
             logger.error(f"Coordination groups failed: {e}")
             coordination_groups = []
-        
+            
         try:
             ttps = analyze_ttps(coordination_groups, posts)
         except Exception as e:
             logger.error(f"TTP analysis failed: {e}")
             ttps = []
-        
+            
         try:
             disarm_ttp_reference = get_disarm_ttp_reference()
         except Exception as e:
             logger.error(f"DISARM reference failed: {e}")
             disarm_ttp_reference = []
-        
-        # 🔥 Safe context building
+            
+        # Safe context building
         context.update({
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
@@ -4417,7 +4325,6 @@ class NetworksView(TemplateView):
             'disarm_ttp_reference': disarm_ttp_reference,
             'disarm_dataset_size': 80000,
         })
-        
         return context
         
 class LexiconManagementView(TemplateView):
