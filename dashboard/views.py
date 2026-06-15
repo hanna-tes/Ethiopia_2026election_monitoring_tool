@@ -3708,23 +3708,23 @@ class NetworksView(TemplateView):
         request = self.request
         
         try:
-            # 🔥 FIX 1: Safely parse integers to prevent ValueError on empty URL parameters like ?min_connections=
+            #  FIX 1: Safely parse integers to prevent ValueError on empty URL parameters
             try:
                 min_connections = int(request.GET.get('min_connections') or 2)
                 top_n = int(request.GET.get('top_n') or 30)
-            except ValueError:
+            except (ValueError, TypeError):
                 min_connections, top_n = 2, 30
                 
             layout_style = request.GET.get('layout', 'spring')
-            
             posts = ProcessedPost.objects.filter(is_election_related=True)
+            
             graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
             coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
             
             # Use rule-based TTP analysis
             ttps = analyze_ttps(coordination_groups, posts)
             
-            # Extract DISARM Framework Reference
+            # Safely load DISARM reference
             try:
                 disarm_ttp_reference = get_disarm_ttp_reference()
             except Exception:
@@ -3747,10 +3747,10 @@ class NetworksView(TemplateView):
             })
             
         except Exception as e:
-            # 🔥 FIX 2: CATCH ALL ERRORS AND PRINT TO TERMINAL
+            #  FIX 2: CATCH ALL ERRORS AND PRINT TO TERMINAL
             import traceback
             print("\n" + "="*60)
-            print("🚨 NETWORKS VIEW CRASHED - HERE IS THE EXACT ERROR 🚨")
+            print(" NETWORKS VIEW CRASHED - HERE IS THE EXACT ERROR 🚨")
             print("="*60)
             traceback.print_exc()
             print("="*60 + "\n")
@@ -3769,6 +3769,7 @@ class NetworksView(TemplateView):
                 'total_coordinated_accounts': 0,
                 'total_posts': 0,
                 'max_group_size': 0,
+                'disarm_ttp_reference': [],
             })
             
         return context
