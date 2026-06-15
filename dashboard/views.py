@@ -231,45 +231,169 @@ def _get_coordination_edges():
     return edges, nodes_dict
 
 def export_gephi_nodes_csv(request):
-    """Export Nodes CSV for Gephi"""
-    edges, nodes_dict = _get_coordination_edges()
+    """Export Nodes CSV for Gephi with source/amplifier classification"""
+    min_connections = int(request.GET.get('min_connections', 2))
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
     
+    # Collect all unique accounts with their roles
+    all_accounts = {}
+    for group in coordination_groups:
+        # Get posts for this coordination group
+        text = group.get('text_sample', '')
+        if not text:
+            continue
+            
+        account_posts = posts.filter(original_text=text).order_by('timestamp_share')
+        
+        # First poster is Source, rest are Amplifiers
+        for idx, post in enumerate(account_posts):
+            username = clean_username(post.account_id)
+            if username and len(username) > 2:
+                if username not in all_accounts:
+                    all_accounts[username] = {
+                        'post_count': 0,
+                        'group_count': 0,
+                        'platforms': set(),
+                        'is_source': False,
+                        'is_amplifier': False,
+                        'sub_narrative': group.get('sub_narrative', 'General Coordination')
+                    }
+                
+                all_accounts[username]['post_count'] += 1
+                all_accounts[username]['group_count'] += 1
+                
+                if post.platform:
+                    all_accounts[username]['platforms'].add(post.platform)
+                
+                # First poster in time order is Source
+                if idx == 0:
+                    all_accounts[username]['is_source'] = True
+                else:
+                    all_accounts[username]['is_amplifier'] = True
+    
+    # Create HTTP response
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="gephi_nodes.csv"'
-    
     writer = csv.writer(response)
-    writer.writerow(['Id', 'Label', 'Times_Originated', 'Times_Amplified', 'Total_Activity', 'Node_Type'])
     
-    for account, stats in nodes_dict.items():
-        total = stats['originated'] + stats['amplified']
-        node_type = 'Source' if stats['originated'] > stats['amplified'] else 'Amplifier'
-        writer.writerow([account, account, stats['originated'], stats['amplified'], total, node_type])
+    # Write header
+    writer.writerow(['Id', 'Label', 'Post Count', 'Group Count', 'Platforms', 
+                    'Node Type', 'Sub Narrative', 'Is Source', 'Is Amplifier'])
+    
+    for account, data in all_accounts.items():
+        platforms = ', '.join(data['platforms']) if data['platforms'] else 'Unknown'
+        node_type = 'Source' if data['is_source'] and not data['is_amplifier'] else \
+                   'Amplifier' if data['is_amplifier'] else 'Both'
         
+        writer.writerow([
+            account,
+            account,
+            data['post_count'],
+            data['group_count'],
+            platforms,
+            node_type,
+            data['sub_narrative'],
+            data['is_source'],
+            data['is_amplifier']
+        ])
+    
     return response
+
 
 def export_gephi_edges_csv(request):
-    """Export Edges CSV for Gephi"""
-    edges, _ = _get_coordination_edges()
+    """Export Edges CSV for Gephi with tweet content"""
+    min_connections = int(request.GET.get('min_connections', 2))
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
     
-    # Aggregate edges by source-target pair
-    edge_weights = {}
-    for edge in edges:
-        key = (edge['source'], edge['target'])
-        if key not in edge_weights:
-            edge_weights[key] = 0
-        edge_weights[key] += 1
-        
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="gephi_edges.csv"'
-    
     writer = csv.writer(response)
-    writer.writerow(['Source', 'Target', 'Weight', 'Type'])
     
-    for (source, target), weight in edge_weights.items():
-        writer.writerow([source, target, weight, 'Directed'])
+    # Write header
+    writer.writerow(['Source', 'Target', 'Weight', 'Type', 'Tweet', 'Sub Narrative', 'Timestamp'])
+    
+    for group in coordination_groups:
+        accounts = group.get('accounts', [])
+        text_sample = group.get('text_sample', '')
+        post_count = group.get('post_count', 0)
+        sub_narrative = group.get('sub_narrative', 'General Coordination')
         
+        # Get timestamp from sample posts
+        timestamp = ''
+        if group.get('sample_posts_with_urls'):
+            first_post = group['sample_posts_with_urls'][0]
+            timestamp = first_post.get('timestamp', '')
+        
+        # Create edges between all pairs
+        for i in range(len(accounts)):
+            for j in range(i+1, len(accounts)):
+                # Clean tweet text for CSV
+                tweet_clean = text_sample[:200].replace('\n', ' ').replace('\r', '').replace('"', '""')
+                
+                writer.writerow([
+                    accounts[i],
+                    accounts[j],
+                    post_count,
+                    'Undirected',
+                    f'"{tweet_clean}"',  # Quote the tweet
+                    sub_narrative,
+                    timestamp
+                ])
+    
     return response
 
+
+def export_gephi_edges_with_roles_csv(request):
+    """Export Edges CSV showing Source -> Amplifier relationships"""
+    min_connections = int(request.GET.get('min_connections', 2))
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+    
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="gephi_source_amplifier_edges.csv"'
+    writer = csv.writer(response)
+    
+    writer.writerow(['Source Account', 'Amplifier Account', 'Weight', 'Type', 
+                    'Tweet', 'Sub Narrative', 'First Post Time'])
+    
+    for group in coordination_groups:
+        text = group.get('text_sample', '')
+        if not text:
+            continue
+        
+        # Get posts ordered by timestamp to identify source vs amplifier
+        account_posts = posts.filter(original_text=text).order_by('timestamp_share')
+        
+        source_account = None
+        first_time = None
+        
+        for idx, post in enumerate(account_posts):
+            username = clean_username(post.account_id)
+            if not username or len(username) < 2:
+                continue
+            
+            if idx == 0:
+                # This is the source
+                source_account = username
+                first_time = post.timestamp_share.strftime('%Y-%m-%d %H:%M') if post.timestamp_share else ''
+            else:
+                # This is an amplifier
+                tweet_clean = text[:200].replace('\n', ' ').replace('\r', '').replace('"', '""')
+                
+                writer.writerow([
+                    source_account,
+                    username,
+                    1,
+                    'Directed',
+                    f'"{tweet_clean}"',
+                    group.get('sub_narrative', 'General Coordination'),
+                    first_time
+                ])
+    
+    return response
+    
 def export_gephi_edges_tweets_csv(request):
     """Export Edges + Tweets CSV for Gephi"""
     edges, _ = _get_coordination_edges()
@@ -1366,6 +1490,7 @@ def is_primarily_ethiopia_related(text: str) -> bool:
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     """Find accounts posting identical messages - WITH sub-narrative mapping"""
     coordination = []
+    
     text_groups = posts_queryset.values('original_text').annotate(
         account_count=Count('account_id', distinct=True),
         post_count=Count('id')
@@ -1373,9 +1498,10 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     
     for group in text_groups:
         text = group['original_text']
+        
         if not is_primarily_ethiopia_related(text):
             continue
-            
+        
         account_posts = posts_queryset.filter(original_text=text).values(
             'account_id', 'platform', 'url', 'timestamp_share'
         ).distinct()
@@ -1388,9 +1514,11 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
             username = clean_username(ap['account_id'])
             if ap['platform']:
                 platforms.add(ap['platform'])
+            
             if username and len(username) > 2:
                 if username not in accounts:
                     accounts.append(username)
+                
                 if len(sample_posts_with_urls) < 5:
                     sample_posts_with_urls.append({
                         'username': username,
@@ -1410,14 +1538,17 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
                 'sample_posts_with_urls': sample_posts_with_urls,
                 'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5],
                 'platforms': list(platforms),
-                'sub_narrative': extract_sub_narrative(text)  # 🔥 NEW: Sub-narrative mapping
+                'sub_narrative': extract_sub_narrative(text)  # Sub-narrative mapping
             })
     
     return coordination[:max_groups]
 
 def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, layout='spring'):
-    """Generate cleaner network graph - FIXED usernames and platform info"""
+    """Generate network graph with source/amplifier classification"""
     G = nx.Graph()
+    
+    # Track which accounts are sources vs amplifiers
+    account_roles = {}  # {username: 'source' or 'amplifier'}
     
     # Group by exact text to find coordination
     text_groups = posts_queryset.values('original_text').annotate(
@@ -1426,25 +1557,37 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
     
     for group in text_groups:
         text = group['original_text']
-        # Get real account data with URLs
         if not is_primarily_ethiopia_related(text):
             continue
-            
-        accounts_data = list(posts_queryset.filter(original_text=text).values(
-            'account_id', 'platform', 'url'
-        ).distinct())
+        
+        # Get posts ordered by timestamp to determine source vs amplifier
+        posts_ordered = posts_queryset.filter(original_text=text).order_by('timestamp_share').values(
+            'account_id', 'platform', 'url', 'timestamp_share'
+        ).distinct()
         
         accounts = []
-        for acc_data in accounts_data:
-            # --- UPDATED CLEANING LOGIC ---
-            username = clean_username(acc_data['account_id'])
+        first_poster = None
+        
+        for idx, post_data in enumerate(posts_ordered):
+            username = clean_username(post_data['account_id'])
             
-            # Filter out generic artifacts that aren't real usernames
             if username and len(username) > 2 and username.lower() not in ['twitter', 'facebook', 'tiktok', 'source']:
+                # First poster is the source, rest are amplifiers
+                if idx == 0:
+                    role = 'source'
+                    first_poster = username
+                    account_roles[username] = 'source'
+                else:
+                    role = 'amplifier'
+                    # If account was already marked as source in another group, keep it as source
+                    if username not in account_roles:
+                        account_roles[username] = 'amplifier'
+                
                 accounts.append({
                     'id': username,
-                    'platform': acc_data['platform'],
-                    'sample_url': acc_data['url'] if acc_data['url'] and acc_data['url'].startswith('http') else None
+                    'platform': post_data['platform'],
+                    'sample_url': post_data['url'] if post_data['url'] and str(post_data['url']).startswith('http') else None,
+                    'role': role
                 })
         
         # Create edges between coordinated accounts
@@ -1453,7 +1596,6 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
                 u_id = accounts[i]['id']
                 v_id = accounts[j]['id']
                 
-                # Ensure we don't link an account to itself
                 if u_id == v_id:
                     continue
 
@@ -1491,20 +1633,22 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
     else:
         pos = nx.spring_layout(G_top, seed=42)
     
-    # Build clean nodes
+    # Build clean nodes with source/amplifier classification
     nodes = []
     for node in G_top.nodes():
         degree = G_top.degree(node)
-        # Search specifically for this cleaned username
         node_posts = posts_queryset.filter(account_id__icontains=node)
         post_count = node_posts.count()
         
         platforms = list(node_posts.values_list('platform', flat=True).distinct())
         platform = platforms[0] if platforms else 'Unknown'
         
-        # Get first valid URL properly
         sample_url_obj = node_posts.exclude(url='').exclude(url__isnull=True).filter(url__icontains='http').first()
         sample_url = sample_url_obj.url if sample_url_obj else None
+        
+        # Determine node type and color
+        node_type = account_roles.get(node, 'source')  # Default to source if unknown
+        node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'  # Blue for source, orange for amplifier
         
         nodes.append({
             'id': node,
@@ -1512,13 +1656,14 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             'degree': degree,
             'post_count': post_count,
             'platform': platform,
-            'url': sample_url,         
-            'sample_url': sample_url,  
+            'url': sample_url,
+            'sample_url': sample_url,
             'x': float(pos[node][0]),
             'y': float(pos[node][1]),
             'size': max(15, degree * 3),
-            'color': _get_platform_color(platform)
-        })   
+            'color': node_color,
+            'type': node_type  # 🔥 NEW: Add type field for frontend
+        })
     
     # Build clean edges with URLs
     edges = []
@@ -1537,7 +1682,7 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             })
     
     return {
-        'nodes': nodes, 
+        'nodes': nodes,
         'edges': edges,
         'stats': {
             'nodes': len(nodes),
