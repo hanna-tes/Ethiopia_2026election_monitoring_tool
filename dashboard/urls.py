@@ -14,6 +14,9 @@ urlpatterns = [
     path('reports/<int:report_id>/', views.report_detail, name='report_detail'),
     path('peps/analysis/', views.PEPsAnalysisView.as_view(), name='peps_analysis'),
     path('export-network-csv/', views.export_network_csv, name='export_network_csv'),
+    path('export-network-nodes/', views.export_network_nodes_csv, name='export_network_nodes'),
+    path('export-network-edges-tweets/', views.export_network_edges_with_tweets, name='export_network_edges_tweets'),
+
     
     # === PEPs DATA VIEWS (FIXED CONFLICT) ===
     path('peps/registry/', views.PEPsHubView.as_view(), name='peps_hub'),   # File cards (HoPR, RC, Executive)
