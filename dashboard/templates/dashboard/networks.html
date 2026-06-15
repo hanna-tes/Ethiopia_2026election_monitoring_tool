@@ -58,7 +58,7 @@
     <!-- Network Graph -->
     <div class="network-container mb-6">
         <div id="network-graph" class="w-full h-[600px]"></div>
-        {% if network_graph_json.stats.nodes == 0 %}
+        {% if graph_stats.nodes == 0 %}
         <div class="text-center py-12 text-gray-400">
             <p class="text-xl mb-2">📊 No coordination detected</p>
             <p>Try lowering "Min connections" or check your data upload</p>
