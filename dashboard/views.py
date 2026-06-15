@@ -881,26 +881,30 @@ def _get_ttp_severity(technique_id: str) -> str:
         return 'Low'
   
 def analyze_ttps(coordination_groups, posts):
-    """Analyze Tactics, Techniques, and Procedures from coordinated groups - FULLY FIXED"""
+    """Analyze Tactics, Techniques, and Procedures from coordinated groups"""
     ttps = []
     if not coordination_groups:
         return ttps
 
     # TTP 1: Coordinated Inauthentic Behavior (CIB)
-    cib_groups = [g for g in coordination_groups if g['account_count'] >= 5]
+    cib_groups = [g for g in coordination_groups if g.get('account_count', 0) >= 5]
     if cib_groups:
         ttps.append({
             'name': 'Coordinated Inauthentic Behavior (CIB)',
             'description': f'Detected {len(cib_groups)} groups with 5+ accounts sharing identical content.',
             'severity': 'High',
-            'evidence': f'{sum(g["post_count"] for g in cib_groups)} total posts across {sum(g["account_count"] for g in cib_groups)} accounts.'
+            'evidence': f'{sum(g.get("post_count", 0) for g in cib_groups)} total posts across {sum(g.get("account_count", 0) for g in cib_groups)} accounts.'
         })
 
-    # TTP 2: Cross-Platform Amplification - FIXED for new data structure
+    # TTP 2: Cross-Platform Amplification
     cross_platform_groups = []
     for g in coordination_groups:
         # Extract platforms from sample_posts_with_urls
-        platforms = set(p['platform'] for p in g.get('sample_posts_with_urls', []) if p.get('platform'))
+        platforms = set()
+        for p in g.get('sample_posts_with_urls', []):
+            if p.get('platform'):
+                platforms.add(p['platform'])
+        
         if len(platforms) > 1:
             cross_platform_groups.append({
                 'group': g,
@@ -908,7 +912,7 @@ def analyze_ttps(coordination_groups, posts):
             })
 
     if cross_platform_groups:
-        # FIX: Flatten the list of platform lists into a single set of strings
+        # Flatten the list of platform lists into a single set of strings
         all_platforms = set()
         for p in cross_platform_groups:
             all_platforms.update(p['platforms'])
@@ -921,22 +925,22 @@ def analyze_ttps(coordination_groups, posts):
         })
 
     # TTP 3: Rapid Response / Burst Posting
-    burst_groups = [g for g in coordination_groups if g['post_count'] > 10]
+    burst_groups = [g for g in coordination_groups if g.get('post_count', 0) > 10]
     if burst_groups:
-        max_posts = max(g['post_count'] for g in burst_groups)
+        max_posts = max(g.get('post_count', 0) for g in burst_groups)
         ttps.append({
             'name': 'Rapid Response / Burst Posting',
             'description': f'{len(burst_groups)} groups with high-volume posting (max: {max_posts} posts/group).',
             'severity': 'Medium',
-            'evidence': f"Identical content bursts across {sum(g['account_count'] for g in burst_groups)} accounts."
+            'evidence': f"Identical content bursts across {sum(g.get('account_count', 0) for g in burst_groups)} accounts."
         })
 
-    # TTP 4: Hashtag Manipulation (Simplified)
-    hashtag_groups = [g for g in coordination_groups if '#' in g['text_sample']]
+    # TTP 4: Hashtag Manipulation
+    hashtag_groups = [g for g in coordination_groups if '#' in g.get('text_sample', '')]
     if hashtag_groups:
         hashtags = []
-        for g in hashtag_groups[:5]:  # Check top 5 groups
-            text = g['text_sample']
+        for g in hashtag_groups[:5]:
+            text = g.get('text_sample', '')
             found = re.findall(r'#\w+', text, re.IGNORECASE)
             hashtags.extend(found)
         if hashtags:
@@ -948,7 +952,7 @@ def analyze_ttps(coordination_groups, posts):
                 'evidence': f'Found in {len(hashtag_groups)} coordination groups.'
             })
 
-    # TTP 5: URL Amplification (NEW - uses your URL data!)
+    # TTP 5: URL Amplification
     url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
     if url_groups:
         total_unique_urls = sum(len(g.get('unique_urls', [])) for g in url_groups)
