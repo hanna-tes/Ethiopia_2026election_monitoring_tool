@@ -1028,7 +1028,7 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     return False
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
-    """Find accounts posting identical messages - FIXED to show real usernames and URLs"""
+    """Find accounts posting identical messages - FIXED to detect sources vs amplifiers"""
     coordination = []
     
     # Group by exact text
@@ -1042,24 +1042,40 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
         if not is_primarily_ethiopia_related(text):
             continue
             
+        # Get ALL posts with timestamps to determine source vs amplifier
         account_posts = posts_queryset.filter(original_text=text).values(
             'account_id', 'platform', 'url', 'timestamp_share'
-        ).distinct()
+        ).order_by('timestamp_share').distinct()
         
         accounts = []
         sample_posts_with_urls = []
-        platforms = set() # 🔥 FIX: Collect platforms
+        platforms = set()
+        sources = []
+        amplifiers = []
+        
+        # Get the earliest timestamp to determine source accounts
+        timestamps = [ap['timestamp_share'] for ap in account_posts if ap['timestamp_share']]
+        earliest_time = min(timestamps) if timestamps else None
         
         for ap in account_posts[:20]:
             username = clean_username(ap['account_id'])
             
-            # 🔥 FIX: Add platform to the set
             if ap['platform']:
                 platforms.add(ap['platform'])
                 
             if username and len(username) > 2:
                 if username not in accounts:
                     accounts.append(username)
+                    
+                    # Determine if source (earliest) or amplifier (later)
+                    if earliest_time and ap['timestamp_share']:
+                        time_diff = (ap['timestamp_share'] - earliest_time).total_seconds() if earliest_time else 0
+                        if time_diff < 300:  # Within 5 minutes = source
+                            sources.append({'account': username, 'timestamp': ap['timestamp_share']})
+                        else:
+                            amplifiers.append({'account': username, 'timestamp': ap['timestamp_share']})
+                    else:
+                        sources.append({'account': username, 'timestamp': ap['timestamp_share']})
                 
                 if len(sample_posts_with_urls) < 5:
                     sample_posts_with_urls.append({
@@ -1079,7 +1095,12 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
                 'text_sample': text[:200] if text else '[Identical message]',
                 'sample_posts_with_urls': sample_posts_with_urls,
                 'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5],
-                'platforms': list(platforms) # 🔥 FIX: Add platforms to the dictionary!
+                'platforms': list(platforms),
+                'sources': sources,
+                'amplifiers': amplifiers,
+                'source_count': len(sources),
+                'amplifier_count': len(amplifiers),
+                'primary_type': 'amplification_network' if len(amplifiers) > len(sources) else 'coordination'
             })
     
     return coordination[:max_groups]
