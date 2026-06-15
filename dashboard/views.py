@@ -908,12 +908,12 @@ def analyze_ttps(coordination_groups, posts):
                 'platforms': list(platforms)
             })
     
-    if cross_platform_groups:
-        # Flatten the list of platform lists into a single set
+     if cross_platform_groups:
+        # FIX: Flatten the list of platform lists into a single set of strings
         all_platforms = set()
         for p in cross_platform_groups:
-            all_platforms.update(p['platforms'])  # Use update() to add all items from the list
-        
+            all_platforms.update(p['platforms'])
+            
         ttps.append({
             'name': 'Cross-Platform Amplification',
             'description': f'{len(cross_platform_groups)} groups operating across {len(all_platforms)} platforms.',
