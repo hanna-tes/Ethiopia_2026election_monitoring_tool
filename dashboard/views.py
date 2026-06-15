@@ -336,6 +336,34 @@ def export_network_edges_with_tweets(request):
     
     return response
     
+def extract_sub_narrative(text_sample):
+    """Extract the primary sub-narrative from a text sample"""
+    if not text_sample:
+        return "General Coordination"
+    
+    text_lower = text_sample.lower()
+    
+    topic_keywords = {
+        'Election Fraud & Rigging': ['rigged', 'fraud', 'stolen', 'manipulated', 'fake results', 'nebe', 'ballot', 'tally'],
+        'Ethnic Tensions & Hate Speech': ['amhara', 'oromo', 'tigray', 'somali', 'afar', 'ethnic', 'tribal', 'genocide', 'slur'],
+        'Political Violence & Conflict': ['kill', 'attack', 'war', 'conflict', 'militia', 'fano', 'tplf', 'massacre', 'violence'],
+        'Government Criticism': ['government', 'authorities', 'regime', 'corrupt', 'abiy', 'prosperity party', 'oppression'],
+        'Foreign Interference': ['foreign', 'international', 'uae', 'un', 'eu', 'china', 'russia', 'usa', 'egypt', 'turkey'],
+        'Media & Disinformation': ['media', 'social media', 'disinformation', 'fake news', 'propaganda', 'censorship'],
+        'Humanitarian Crisis': ['displaced', 'refugee', 'hunger', 'famine', 'aid', 'crisis', 'suffering'],
+    }
+    
+    topic_scores = {}
+    for topic, keywords in topic_keywords.items():
+        score = sum(1 for kw in keywords if kw in text_lower)
+        if score > 0:
+            topic_scores[topic] = score
+    
+    if topic_scores:
+        return max(topic_scores, key=topic_scores.get)
+    
+    return "General Coordination"
+    
 def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Format coordination groups into the input structure expected by the Gemma model
@@ -1135,7 +1163,7 @@ def _get_ttp_severity(technique_id: str) -> str:
         return 'Low'
   
 def analyze_ttps(coordination_groups, posts):
-    """Analyze Tactics, Techniques, and Procedures from coordinated groups"""
+    """Analyze Tactics, Techniques, and Procedures from coordinated groups - ENHANCED with 9 TTPs"""
     ttps = []
     if not coordination_groups:
         return ttps
@@ -1153,24 +1181,17 @@ def analyze_ttps(coordination_groups, posts):
     # TTP 2: Cross-Platform Amplification
     cross_platform_groups = []
     for g in coordination_groups:
-        # Extract platforms from sample_posts_with_urls
         platforms = set()
         for p in g.get('sample_posts_with_urls', []):
             if p.get('platform'):
                 platforms.add(p['platform'])
-        
         if len(platforms) > 1:
-            cross_platform_groups.append({
-                'group': g,
-                'platforms': list(platforms)
-            })
-
+            cross_platform_groups.append({'group': g, 'platforms': list(platforms)})
+    
     if cross_platform_groups:
-        # Flatten the list of platform lists into a single set of strings
         all_platforms = set()
         for p in cross_platform_groups:
             all_platforms.update(p['platforms'])
-            
         ttps.append({
             'name': 'Cross-Platform Amplification',
             'description': f'{len(cross_platform_groups)} groups operating across {len(all_platforms)} platforms.',
@@ -1215,6 +1236,67 @@ def analyze_ttps(coordination_groups, posts):
             'description': f'{len(url_groups)} groups amplifying {total_unique_urls} URLs.',
             'severity': 'Low',
             'evidence': 'Multiple accounts sharing same external links.'
+        })
+
+    # TTP 6: Narrative Weaponization (NEW)
+    weaponized_keywords = ['genocide', 'kill', 'attack', 'war', 'slur', 'hate', 'ethnic cleansing', 'massacre']
+    weaponized_groups = [g for g in coordination_groups if any(kw in g.get('text_sample', '').lower() for kw in weaponized_keywords)]
+    if weaponized_groups:
+        ttps.append({
+            'name': 'Narrative Weaponization',
+            'description': f'{len(weaponized_groups)} groups using high-risk weaponized keywords (violence, hate, genocide).',
+            'severity': 'Critical',
+            'evidence': 'Coordinated amplification of inflammatory and violent narratives.'
+        })
+
+    # TTP 7: Temporal Coordination / Synchronized Posting (NEW)
+    synchronized_groups = 0
+    for g in coordination_groups:
+        timestamps = []
+        for p in g.get('sample_posts_with_urls', []):
+            if p.get('timestamp') and p['timestamp'] != 'N/A':
+                try:
+                    ts = datetime.strptime(p['timestamp'], '%Y-%m-%d %H:%M')
+                    timestamps.append(ts)
+                except:
+                    pass
+        if len(timestamps) >= 2:
+            timestamps.sort()
+            for i in range(len(timestamps) - 1):
+                diff = (timestamps[i+1] - timestamps[i]).total_seconds() / 60
+                if diff <= 60:
+                    synchronized_groups += 1
+                    break
+    if synchronized_groups > 0:
+        ttps.append({
+            'name': 'Temporal Coordination (Synchronized Posting)',
+            'description': f'{synchronized_groups} groups posted identical content within 1 hour of each other.',
+            'severity': 'High',
+            'evidence': 'Accounts appear to be coordinated in real-time or using scheduling tools.'
+        })
+
+    # TTP 8: Multi-Platform Narrative Seeding (NEW)
+    narrative_seeding_groups = [g for g in coordination_groups if len(g.get('platforms', [])) >= 2 and g.get('account_count', 0) >= 3]
+    if narrative_seeding_groups:
+        ttps.append({
+            'name': 'Multi-Platform Narrative Seeding',
+            'description': f'{len(narrative_seeding_groups)} groups seeding identical narratives across 2+ platforms simultaneously.',
+            'severity': 'High',
+            'evidence': 'Coordinated cross-platform manipulation to maximize reach and legitimacy.'
+        })
+
+    # TTP 9: Bot-like Account Behavior (NEW)
+    bot_like_groups = 0
+    for g in coordination_groups:
+        generic_names = sum(1 for acc in g.get('accounts', []) if any(x in acc.lower() for x in ['user', 'account', 'test', 'bot', '123', 'news']))
+        if generic_names >= 2 or g.get('account_count', 0) >= 8:
+            bot_like_groups += 1
+    if bot_like_groups > 0:
+        ttps.append({
+            'name': 'Bot-like Account Behavior',
+            'description': f'{bot_like_groups} groups contain accounts with generic naming patterns or high coordination density.',
+            'severity': 'Medium',
+            'evidence': 'Potential use of automated or inauthentic accounts to amplify content.'
         })
 
     return ttps
@@ -1282,10 +1364,8 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     return False
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
-    """Find accounts posting identical messages - FIXED to detect sources vs amplifiers"""
+    """Find accounts posting identical messages - WITH sub-narrative mapping"""
     coordination = []
-    
-    # Group by exact text
     text_groups = posts_queryset.values('original_text').annotate(
         account_count=Count('account_id', distinct=True),
         post_count=Count('id')
@@ -1296,41 +1376,21 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
         if not is_primarily_ethiopia_related(text):
             continue
             
-        # Get ALL posts with timestamps to determine source vs amplifier
         account_posts = posts_queryset.filter(original_text=text).values(
             'account_id', 'platform', 'url', 'timestamp_share'
-        ).order_by('timestamp_share').distinct()
+        ).distinct()
         
         accounts = []
         sample_posts_with_urls = []
         platforms = set()
-        sources = []
-        amplifiers = []
-        
-        # Get the earliest timestamp to determine source accounts
-        timestamps = [ap['timestamp_share'] for ap in account_posts if ap['timestamp_share']]
-        earliest_time = min(timestamps) if timestamps else None
         
         for ap in account_posts[:20]:
             username = clean_username(ap['account_id'])
-            
             if ap['platform']:
                 platforms.add(ap['platform'])
-                
             if username and len(username) > 2:
                 if username not in accounts:
                     accounts.append(username)
-                    
-                    # Determine if source (earliest) or amplifier (later)
-                    if earliest_time and ap['timestamp_share']:
-                        time_diff = (ap['timestamp_share'] - earliest_time).total_seconds() if earliest_time else 0
-                        if time_diff < 300:  # Within 5 minutes = source
-                            sources.append({'account': username, 'timestamp': ap['timestamp_share']})
-                        else:
-                            amplifiers.append({'account': username, 'timestamp': ap['timestamp_share']})
-                    else:
-                        sources.append({'account': username, 'timestamp': ap['timestamp_share']})
-                
                 if len(sample_posts_with_urls) < 5:
                     sample_posts_with_urls.append({
                         'username': username,
@@ -1350,11 +1410,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
                 'sample_posts_with_urls': sample_posts_with_urls,
                 'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5],
                 'platforms': list(platforms),
-                'sources': sources,
-                'amplifiers': amplifiers,
-                'source_count': len(sources),
-                'amplifier_count': len(amplifiers),
-                'primary_type': 'amplification_network' if len(amplifiers) > len(sources) else 'coordination'
+                'sub_narrative': extract_sub_narrative(text)  # 🔥 NEW: Sub-narrative mapping
             })
     
     return coordination[:max_groups]
