@@ -1039,18 +1039,24 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
     
     for group in text_groups:
         text = group['original_text']
-        # Get DISTINCT accounts with their posts and URLs
         if not is_primarily_ethiopia_related(text):
             continue
+            
         account_posts = posts_queryset.filter(original_text=text).values(
             'account_id', 'platform', 'url', 'timestamp_share'
         ).distinct()
         
         accounts = []
         sample_posts_with_urls = []
+        platforms = set() # 🔥 FIX: Collect platforms
         
         for ap in account_posts[:20]:
             username = clean_username(ap['account_id'])
+            
+            # 🔥 FIX: Add platform to the set
+            if ap['platform']:
+                platforms.add(ap['platform'])
+                
             if username and len(username) > 2:
                 if username not in accounts:
                     accounts.append(username)
@@ -1059,22 +1065,21 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
                     sample_posts_with_urls.append({
                         'username': username,
                         'platform': ap['platform'],
-                        # FIX: Use 'url' as the key and ensure it's a string
                         'url': ap['url'] if ap['url'] and str(ap['url']).startswith('http') else None,
                         'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
                         'text_preview': text[:100] + '...'
                     })
         
-        # Only include groups that still meet the threshold after cleaning
         if len(accounts) >= min_accounts:
             coordination.append({
                 'id': len(coordination) + 1,
-                'accounts': accounts[:8],  # Show top 8 cleaned usernames
+                'accounts': accounts[:8],
                 'account_count': len(accounts),
                 'post_count': group['post_count'],
                 'text_sample': text[:200] if text else '[Identical message]',
                 'sample_posts_with_urls': sample_posts_with_urls,
-                'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5]
+                'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5],
+                'platforms': list(platforms) # 🔥 FIX: Add platforms to the dictionary!
             })
     
     return coordination[:max_groups]
@@ -3364,7 +3369,7 @@ class PEPsView(TemplateView):
         
         return context        
         
-class NetworksView(BaseTabMixin, TemplateView):
+class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
     
     def get_context_data(self, **kwargs):
@@ -3373,8 +3378,8 @@ class NetworksView(BaseTabMixin, TemplateView):
         
         # Safely parse integers to prevent ValueError on empty URL parameters
         try:
-            min_connections = int(request.GET.get('min_connections', 2) or 2)
-            top_n = int(request.GET.get('top_n', 30) or 30)
+            min_connections = int(request.GET.get('min_connections') or 2)
+            top_n = int(request.GET.get('top_n') or 30)
         except ValueError:
             min_connections, top_n = 2, 30
             
@@ -3384,14 +3389,17 @@ class NetworksView(BaseTabMixin, TemplateView):
         graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
         coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
         
-        # Use rule-based TTP analysis
         ttps = analyze_ttps(coordination_groups, posts)
-        disarm_ttp_reference = get_disarm_ttp_reference()
         
+        try:
+            disarm_ttp_reference = get_disarm_ttp_reference()
+        except Exception:
+            disarm_ttp_reference = []
+            
         context.update({
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'graph_stats': graph_data.get('stats', {}), #  Pass stats separately for the template
+            'graph_stats': graph_data.get('stats', {}), # Pass stats for the template
             'coordination_groups': coordination_groups,
             'total_coordinated_groups': len(coordination_groups),
             'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
