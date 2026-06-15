@@ -3,46 +3,77 @@
 
 {% block extra_head %}
 <style>
+    /* Dark mode styling for Networks tab */
+    .networks-dark-mode .bg-white { background-color: #1e293b !important; color: #e2e8f0 !important; }
+    .networks-dark-mode .text-gray-900 { color: #f1f5f9 !important; }
+    .networks-dark-mode .text-gray-600 { color: #94a3b8 !important; }
+    .networks-dark-mode .text-gray-700 { color: #cbd5e1 !important; }
+    .networks-dark-mode .text-gray-800 { color: #e2e8f0 !important; }
+    .networks-dark-mode .text-gray-500 { color: #64748b !important; }
+    .networks-dark-mode .text-gray-400 { color: #94a3b8 !important; }
+    .networks-dark-mode .border-blue-100 { border-color: #334155 !important; }
+    .networks-dark-mode .bg-gray-50 { background-color: #334155 !important; }
+    .networks-dark-mode .border-gray-200 { border-color: #475569 !important; }
+    .networks-dark-mode .border-gray-100 { border-color: #334155 !important; }
+    .networks-dark-mode .control-panel { background: #1e293b !important; border-color: #334155 !important; }
+    .networks-dark-mode .stat-card { background-color: #1e293b !important; border-color: #334155 !important; }
+    .networks-dark-mode select, .networks-dark-mode input[type="number"] { background-color: #334155 !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+    
     .network-container { background: #0f172a; border-radius: 12px; padding: 1rem; }
     .control-panel { background: #f8fafc; border-radius: 8px; padding: 1rem; border: 1px solid #e2e8f0; }
     .stat-card { background: #f8fafc; border-radius: 8px; padding: 1rem; border: 1px solid #e2e8f0; }
-    .ttp-card { background: #f8fafc; border-radius: 8px; padding: 1rem; border-left: 4px solid #3b82f6; border: 1px solid #e2e8f0; }
     input[type="range"] { width: 100%; accent-color: #3b82f6; }
     select, input[type="number"] { background: #ffffff; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.5rem; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="bg-white rounded-xl shadow-sm p-6 border border-blue-100">
+<div class="networks-dark-mode bg-slate-900 rounded-xl shadow-sm p-6 border border-slate-700">
     
-    <!-- Header & Export Button -->
+    <!-- Error Message Block (Shows if the view caught an exception) -->
+    {% if error_message %}
+    <div class="bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded mb-6">
+        <strong>⚠️ View Error:</strong> {{ error_message }}
+    </div>
+    {% endif %}
+
+    <!-- Header -->
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-            <h2 class="text-2xl font-bold text-gray-900">🕸️ Account Coordination Network</h2>
-            <p class="text-gray-600 mt-1">Visualizing accounts sharing identical election messages. <strong>Node size = connections, edge thickness = coordination strength.</strong></p>
+            <h2 class="text-2xl font-bold text-slate-100">🕸️ Account Coordination Network</h2>
+            <p class="text-slate-400 mt-1">Visualizing accounts sharing identical election messages. <strong class="text-slate-300">Node size = connections, edge thickness = coordination strength.</strong></p>
         </div>
         
-        <a href="#" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm shadow-sm">
-            📥 Download Network CSV
-        </a>
+        <!-- Safe Download Buttons (No broken {% url %} tags) -->
+        <div class="flex flex-wrap gap-2">
+            <a href="#" class="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm">
+                📥 Nodes CSV
+            </a>
+            <a href="#" class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-xs shadow-sm">
+                📥 Edges CSV
+            </a>
+            <a href="#" class="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-xs shadow-sm">
+                📥 Edges + Tweets
+            </a>
+        </div>
     </div>
     
     <!-- Controls -->
     <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 control-panel">
         <div>
-            <label class="text-sm text-gray-700 mb-1 block font-medium">Min connections</label>
+            <label class="text-sm text-slate-300 mb-1 block font-medium">Min connections</label>
             <input type="range" name="min_connections" min="1" max="10" value="{{ min_connections }}" 
                    oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
-            <output class="text-sm text-blue-600 font-bold">{{ min_connections }}</output>
+            <output class="text-sm text-blue-400 font-bold">{{ min_connections }}</output>
         </div>
         <div>
-            <label class="text-sm text-gray-700 mb-1 block font-medium">Top N accounts</label>
+            <label class="text-sm text-slate-300 mb-1 block font-medium">Top N accounts</label>
             <input type="range" name="top_n" min="10" max="100" step="10" value="{{ top_n }}" 
                    oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
-            <output class="text-sm text-blue-600 font-bold">{{ top_n }}</output>
+            <output class="text-sm text-blue-400 font-bold">{{ top_n }}</output>
         </div>
         <div>
-            <label class="text-sm text-gray-700 mb-1 block font-medium">Layout</label>
+            <label class="text-sm text-slate-300 mb-1 block font-medium">Layout</label>
             <select name="layout" onchange="this.form.submit()">
                 <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
                 <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
@@ -51,7 +82,7 @@
         </div>
         <div class="flex items-end">
             <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                🔄 Update View
+                 Update View
             </button>
         </div>
     </form>
@@ -59,32 +90,27 @@
     <!-- Network Graph -->
     <div class="network-container mb-6">
         <div id="network-graph" class="w-full h-[600px]"></div>
-        {% if graph_stats.nodes == 0 %}
-        <div class="text-center py-12 text-gray-400">
-            <p class="text-xl mb-2">📊 No coordination detected</p>
-            <p>Try lowering "Min connections" or check your data upload</p>
-        </div>
-        {% endif %}
+        <!-- Note: The broken {% if network_graph_json.stats.nodes == 0 %} has been removed to prevent 500 errors -->
     </div>
 
     <!-- Network Legend -->
-    <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-        <h4 class="text-sm font-semibold text-gray-800 mb-3">Network Legend</h4>
+    <div class="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
+        <h4 class="text-sm font-semibold text-slate-200 mb-3">Network Legend</h4>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded-full" style="background:#3b82f6;"></div>
-                <span class="text-gray-700">Source Account (Original Poster)</span>
+                <span class="text-slate-300">Source Account (Original Poster)</span>
             </div>
             <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded-full" style="background:#f59e0b;"></div>
-                <span class="text-gray-700">Amplifier Account (Reposter)</span>
+                <span class="text-slate-300">Amplifier Account (Reposter)</span>
             </div>
             <div class="flex items-center gap-2">
                 <div class="w-8 h-1 bg-blue-400 opacity-60"></div>
-                <span class="text-gray-700">Coordination Link</span>
+                <span class="text-slate-300">Coordination Link</span>
             </div>
             <div class="flex items-center gap-2">
-                <span class="text-gray-500 text-xs">Node size indicates total connections</span>
+                <span class="text-slate-400 text-xs">Node size indicates total connections</span>
             </div>
         </div>
     </div>
@@ -92,94 +118,98 @@
     <!-- Stats Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-blue-600">{{ total_coordinated_groups }}</div>
-            <div class="text-sm text-gray-600">Coordination Groups</div>
+            <div class="text-3xl font-bold text-blue-400">{{ total_coordinated_groups|default:"0" }}</div>
+            <div class="text-sm text-slate-400">Coordination Groups</div>
         </div>
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-green-600">{{ total_coordinated_accounts }}</div>
-            <div class="text-sm text-gray-600">Coordinated Accounts</div>
+            <div class="text-3xl font-bold text-green-400">{{ total_coordinated_accounts|default:"0" }}</div>
+            <div class="text-sm text-slate-400">Coordinated Accounts</div>
         </div>
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-purple-600">{{ max_group_size }}</div>
-            <div class="text-sm text-gray-600">Largest Group</div>
+            <div class="text-3xl font-bold text-purple-400">{{ max_group_size|default:"0" }}</div>
+            <div class="text-sm text-slate-400">Largest Group</div>
         </div>
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-orange-600">{{ total_posts }}</div>
-            <div class="text-sm text-gray-600">Election Posts</div>
+            <div class="text-3xl font-bold text-orange-400">{{ total_posts|default:"0" }}</div>
+            <div class="text-sm text-slate-400">Election Posts</div>
         </div>
     </div>
 
-    <!-- Coordination Groups with Sub-Narratives & Source/Amplifier Breakdown -->
+    <!-- Coordination Groups Breakdown -->
     {% if coordination_groups %}
     <div class="mb-8">
-        <h3 class="text-xl font-bold text-gray-900 mb-4">🔗 Coordination Networks Breakdown</h3>
+        <h3 class="text-xl font-bold text-slate-100 mb-4">🔗 Coordination Networks Breakdown</h3>
         <div class="space-y-4">
             {% for group in coordination_groups %}
-            <div class="rounded-xl p-5 border border-gray-200 bg-gray-50 hover:shadow-md transition-shadow">
+            <div class="rounded-xl p-5 border border-slate-700 bg-slate-800 hover:shadow-md transition-shadow">
                 <div class="flex justify-between items-start mb-3">
                     <div>
-                        <h4 class="text-lg font-bold text-gray-900">
+                        <h4 class="text-lg font-bold text-slate-100">
                             Network #{{ group.id }}
                             {% if group.primary_type == 'amplification_network' %}
-                            <span class="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-200">AMPLIFICATION</span>
+                            <span class="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-900/30 text-amber-400 border border-amber-700">AMPLIFICATION</span>
                             {% else %}
-                            <span class="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-200">COORDINATION</span>
+                            <span class="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-blue-900/30 text-blue-400 border border-blue-700">COORDINATION</span>
                             {% endif %}
                         </h4>
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600 mt-1">
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400 mt-1">
                             <span>👥 {{ group.account_count }} accounts</span>
                             <span>📝 {{ group.post_count }} posts</span>
-                            <span>📱 {{ group.platforms|join:', ' }}</span>
+                            <span>📱 {{ group.platforms|default:"Unknown"|join:", " }}</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Sub-narrative -->
+                <!-- Sub-narrative (Safe check) -->
                 {% if group.sub_narrative and group.sub_narrative != 'General Coordination' %}
-                <div class="mb-3 p-2 rounded-lg bg-purple-50 border border-purple-200">
-                    <span class="text-xs font-semibold text-purple-700">📰 Sub-Narrative:</span>
-                    <span class="text-sm text-purple-900 ml-1">{{ group.sub_narrative }}</span>
+                <div class="mb-3 p-2 rounded-lg bg-purple-900/20 border border-purple-700">
+                    <span class="text-xs font-semibold text-purple-400">📰 Sub-Narrative:</span>
+                    <span class="text-sm text-purple-300 ml-1">{{ group.sub_narrative }}</span>
                 </div>
                 {% endif %}
 
-                <!-- Source vs Amplifier Breakdown -->
+                <!-- Source vs Amplifier Breakdown (Safe checks) -->
+                {% if group.sources or group.amplifiers %}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                    <div class="p-3 rounded-lg bg-blue-50 border border-blue-200">
-                        <div class="text-xs font-semibold text-blue-700 mb-1">🔵 Source Accounts ({{ group.source_count|default:0 }})</div>
-                        <div class="text-xs text-gray-600 truncate">
+                    {% if group.sources %}
+                    <div class="p-3 rounded-lg bg-blue-900/20 border border-blue-700">
+                        <div class="text-xs font-semibold text-blue-400 mb-1">🔵 Source Accounts ({{ group.source_count|default:0 }})</div>
+                        <div class="text-xs text-slate-400 truncate">
                             {% for src in group.sources|slice:":3" %}{{ src.account }}{% if not forloop.last %}, {% endif %}{% endfor %}
                             {% if group.sources|length > 3 %}...{% endif %}
-                            {% if not group.sources %}Original posters{% endif %}
                         </div>
                     </div>
-                    <div class="p-3 rounded-lg bg-amber-50 border border-amber-200">
-                        <div class="text-xs font-semibold text-amber-700 mb-1">🟠 Amplifier Accounts ({{ group.amplifier_count|default:0 }})</div>
-                        <div class="text-xs text-gray-600 truncate">
+                    {% endif %}
+                    {% if group.amplifiers %}
+                    <div class="p-3 rounded-lg bg-amber-900/20 border border-amber-700">
+                        <div class="text-xs font-semibold text-amber-400 mb-1">🟠 Amplifier Accounts ({{ group.amplifier_count|default:0 }})</div>
+                        <div class="text-xs text-slate-400 truncate">
                             {% for amp in group.amplifiers|slice:":3" %}{{ amp.account }}{% if not forloop.last %}, {% endif %}{% endfor %}
                             {% if group.amplifiers|length > 3 %}...{% endif %}
-                            {% if not group.amplifiers %}Reposters{% endif %}
                         </div>
                     </div>
+                    {% endif %}
                 </div>
+                {% endif %}
 
                 <!-- Text Sample -->
-                <div class="p-3 bg-white rounded-lg border border-gray-200 mb-3">
-                    <p class="text-sm text-gray-700 italic">"{{ group.text_sample|truncatechars:250 }}"</p>
+                <div class="p-3 bg-slate-900 rounded-lg border border-slate-700 mb-3">
+                    <p class="text-sm text-slate-300 italic">"{{ group.text_sample|truncatechars:250 }}"</p>
                 </div>
 
                 <!-- Sample Posts with URLs -->
                 {% if group.sample_posts_with_urls %}
                 <details class="mt-2">
-                    <summary class="cursor-pointer text-sm text-blue-600 hover:text-blue-800 font-medium">View {{ group.sample_posts_with_urls|length }} Sample Posts & URLs</summary>
+                    <summary class="cursor-pointer text-sm text-blue-400 hover:text-blue-300 font-medium">View {{ group.sample_posts_with_urls|length }} Sample Posts & URLs</summary>
                     <div class="mt-2 space-y-2">
                         {% for post in group.sample_posts_with_urls %}
-                        <div class="p-2 bg-gray-50 rounded border border-gray-100 text-xs">
+                        <div class="p-2 bg-slate-900 rounded border border-slate-700 text-xs">
                             <div class="flex justify-between items-center mb-1">
-                                <span class="font-semibold text-gray-800">{{ post.username }}</span>
-                                <span class="text-gray-500">{{ post.platform }} • {{ post.timestamp }}</span>
+                                <span class="font-semibold text-slate-200">{{ post.username }}</span>
+                                <span class="text-slate-400">{{ post.platform }} • {{ post.timestamp }}</span>
                             </div>
                             {% if post.url %}
-                            <a href="{{ post.url }}" target="_blank" class="text-blue-500 hover:underline break-all">{{ post.url|truncatechars:60 }}</a>
+                            <a href="{{ post.url }}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline break-all">{{ post.url|truncatechars:60 }}</a>
                             {% endif %}
                         </div>
                         {% endfor %}
@@ -192,38 +222,37 @@
     </div>
     {% endif %}
 
-    <!-- 🔥 FIXED: Comprehensive DISARM TTPs Section (Loops directly over flat 'ttps' list) -->
+    <!-- DISARM TTPs Section -->
     {% if ttps %}
-    <div class="bg-white rounded-xl p-6 border border-blue-100 mb-8">
+    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
         <div class="flex justify-between items-center mb-6">
             <div>
-                <h3 class="text-xl font-bold text-gray-900">🎯 DISARM Framework TTP Detection</h3>
-                <p class="text-gray-600 mt-1 text-sm">Comprehensive analysis of Tactics, Techniques, and Procedures based on observable coordination patterns.</p>
+                <h3 class="text-xl font-bold text-slate-100">🎯 DISARM Framework TTP Detection</h3>
+                <p class="text-slate-400 mt-1 text-sm">Comprehensive analysis of Tactics, Techniques, and Procedures based on observable coordination patterns.</p>
             </div>
-            <a href="https://disarmframework.herokuapp.com/" target="_blank" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium border border-gray-200">
+            <a href="https://disarmframework.herokuapp.com/" target="_blank" class="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition-colors text-sm font-medium border border-slate-600">
                 View Full DISARM Framework →
             </a>
         </div>
 
-        <!-- Loop directly over the flat ttps list -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for ttp in ttps %}
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+            <div class="p-4 bg-slate-900 rounded-lg border border-slate-700 hover:shadow-md transition-shadow">
                 <div class="flex justify-between items-start mb-2">
                     <div class="flex-1">
                         <div class="flex items-center gap-2 mb-1">
-                            <span class="font-bold text-gray-900 text-sm">{{ ttp.name }}</span>
+                            <span class="font-bold text-slate-100 text-sm">{{ ttp.name }}</span>
                         </div>
-                        <p class="text-sm text-gray-600">{{ ttp.description }}</p>
+                        <p class="text-sm text-slate-400">{{ ttp.description }}</p>
                         {% if ttp.evidence %}
-                        <p class="text-xs text-gray-500 mt-2 italic">Evidence: {{ ttp.evidence }}</p>
+                        <p class="text-xs text-slate-500 mt-2 italic">Evidence: {{ ttp.evidence }}</p>
                         {% endif %}
                     </div>
                     <span class="px-2 py-1 rounded text-xs font-bold text-white shrink-0 ml-2
-                        {% if ttp.severity == 'Critical' %}bg-red-500
-                        {% elif ttp.severity == 'High' %}bg-orange-500
-                        {% elif ttp.severity == 'Medium' %}bg-yellow-500
-                        {% else %}bg-blue-500{% endif %}">
+                        {% if ttp.severity == 'Critical' %}bg-red-600
+                        {% elif ttp.severity == 'High' %}bg-orange-600
+                        {% elif ttp.severity == 'Medium' %}bg-yellow-600
+                        {% else %}bg-blue-600{% endif %}">
                         {{ ttp.severity }}
                     </span>
                 </div>
@@ -232,30 +261,30 @@
         </div>
     </div>
     {% else %}
-    <div class="bg-white rounded-xl p-6 border border-blue-100 mb-8 text-center">
-        <p class="text-gray-500">No coordination TTPs detected for the current filters.</p>
+    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8 text-center">
+        <p class="text-slate-400">No coordination TTPs detected for the current filters.</p>
     </div>
     {% endif %}
 
-    <!-- DISARM Framework Reference (from 80k JSONL) -->
+    <!-- DISARM Framework Reference -->
     {% if disarm_ttp_reference %}
-    <div class="bg-white rounded-xl p-6 border border-blue-100 mb-8">
-        <h3 class="text-xl font-bold text-gray-900 mb-2">📖 DISARM Framework Reference</h3>
-        <p class="text-sm text-gray-600 mb-4">
+    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
+        <h3 class="text-xl font-bold text-slate-100 mb-2"> DISARM Framework Reference</h3>
+        <p class="text-sm text-slate-400 mb-4">
             Extracted from {{ disarm_dataset_size|default:"80,000" }}+ verified DISARM Radar Suite training records. 
             These are the primary Techniques (TTPs) the system monitors for.
         </p>
         
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {% for ttp in disarm_ttp_reference %}
-            <div class="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50 transition-colors">
+            <div class="p-3 bg-slate-900 rounded-lg border border-slate-700 hover:bg-blue-900/20 transition-colors">
                 <div class="flex justify-between items-center mb-1">
-                    <span class="font-bold text-blue-700 text-sm">{{ ttp.id }}</span>
-                    <span class="text-xs text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">
+                    <span class="font-bold text-blue-400 text-sm">{{ ttp.id }}</span>
+                    <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
                         {{ ttp.count }}x
                     </span>
                 </div>
-                <div class="text-xs text-gray-600">
+                <div class="text-xs text-slate-400">
                     DISARM Technique
                 </div>
             </div>
@@ -302,7 +331,7 @@
                     marker: { size: sourceNodes.map(n => n.size), color: '#3b82f6', line: { width: 2, color: 'white' } },
                     text: sourceNodes.map(n => n.label), textposition: 'middle center',
                     textfont: { family: 'monospace', size: 10, color: '#ffffff' },
-                    name: '🔵 Source Accounts',
+                    name: ' Source Accounts',
                     customdata: sourceNodes.map(n => n.post_count),
                     hovertemplate: '<b>%{text}</b><br>Posts: %{customdata}<extra></extra>',
                     hoverlabel: { bgcolor: 'rgba(0,0,0,0.8)', font: {color: 'white'} }
@@ -362,6 +391,9 @@
             responsive: true,
             displayModeBar: true
         });
+    } else {
+        // Fallback message if no graph data
+        document.getElementById('network-graph').innerHTML = '<div class="flex items-center justify-center h-full text-slate-400"><p class="text-xl">📊 No coordination detected. Try lowering "Min connections".</p></div>';
     }
 </script>
 {% endblock %}
