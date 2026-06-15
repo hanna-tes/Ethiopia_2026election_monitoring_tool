@@ -80,6 +80,68 @@ def load_gemma_model():
     except Exception as e:
         logger.error(f"Failed to load Gemma model: {e}")
         raise
+def export_merged_gephi_csv(request):
+    """Export a single, merged Gephi-ready CSV containing edges, tweets, and roles."""
+    min_connections = int(request.GET.get('min_connections', 2))
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="ethiopia_election_network_merged.csv"'
+    
+    writer = csv.writer(response)
+    # Headers formatted for Gephi's Edge Table importer
+    writer.writerow([
+        'Source', 'Target', 'Weight', 'Type', 
+        'Tweet', 'Timestamp', 'Platform', 'Sub_Narrative', 
+        'Source_Role', 'Target_Role'
+    ])
+    
+    for group in coordination_groups:
+        text = group.get('text_sample', '')
+        if not text:
+            continue
+        
+        # Extract sub-narrative directly from the text
+        sub_narrative = extract_sub_narrative(text)
+        platforms = ', '.join(group.get('platforms', [])) if 'platforms' in group else 'Unknown'
+        
+        # Get posts ordered by timestamp to identify source vs amplifier
+        account_posts = posts.filter(original_text=text).order_by('timestamp_share')
+        
+        source_account = None
+        first_time = None
+        
+        for idx, post in enumerate(account_posts):
+            username = clean_username(post.account_id)
+            if not username or len(username) < 2:
+                continue
+            
+            post_time = post.timestamp_share.strftime('%Y-%m-%d %H:%M') if post.timestamp_share else ''
+            
+            if idx == 0:
+                # First poster is the Source
+                source_account = username
+                first_time = post_time
+            else:
+                # Subsequent posters are Targets/Amplifiers
+                # Clean tweet text for CSV (escape quotes and newlines)
+                tweet_clean = text[:200].replace('\n', ' ').replace('\r', '').replace('"', '""')
+                
+                writer.writerow([
+                    source_account,
+                    username,
+                    1, # Weight
+                    'Directed',
+                    f'"{tweet_clean}"',
+                    first_time,
+                    platforms,
+                    sub_narrative,
+                    'Source',
+                    'Amplifier'
+                ])
+    
+    return response
 
 def export_network_csv(request):
     """Export coordination network data as Gephi-ready CSV files"""
