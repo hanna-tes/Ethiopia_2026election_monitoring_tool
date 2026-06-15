@@ -883,10 +883,9 @@ def _get_ttp_severity(technique_id: str) -> str:
 def analyze_ttps(coordination_groups, posts):
     """Analyze Tactics, Techniques, and Procedures from coordinated groups - FULLY FIXED"""
     ttps = []
-    
     if not coordination_groups:
         return ttps
-    
+
     # TTP 1: Coordinated Inauthentic Behavior (CIB)
     cib_groups = [g for g in coordination_groups if g['account_count'] >= 5]
     if cib_groups:
@@ -896,7 +895,7 @@ def analyze_ttps(coordination_groups, posts):
             'severity': 'High',
             'evidence': f'{sum(g["post_count"] for g in cib_groups)} total posts across {sum(g["account_count"] for g in cib_groups)} accounts.'
         })
-    
+
     # TTP 2: Cross-Platform Amplification - FIXED for new data structure
     cross_platform_groups = []
     for g in coordination_groups:
@@ -907,8 +906,8 @@ def analyze_ttps(coordination_groups, posts):
                 'group': g,
                 'platforms': list(platforms)
             })
-    
-     if cross_platform_groups:
+
+    if cross_platform_groups:
         # FIX: Flatten the list of platform lists into a single set of strings
         all_platforms = set()
         for p in cross_platform_groups:
@@ -920,7 +919,7 @@ def analyze_ttps(coordination_groups, posts):
             'severity': 'Medium',
             'evidence': f"Platforms: {', '.join(sorted(all_platforms))}"
         })
-    
+
     # TTP 3: Rapid Response / Burst Posting
     burst_groups = [g for g in coordination_groups if g['post_count'] > 10]
     if burst_groups:
@@ -931,7 +930,7 @@ def analyze_ttps(coordination_groups, posts):
             'severity': 'Medium',
             'evidence': f"Identical content bursts across {sum(g['account_count'] for g in burst_groups)} accounts."
         })
-    
+
     # TTP 4: Hashtag Manipulation (Simplified)
     hashtag_groups = [g for g in coordination_groups if '#' in g['text_sample']]
     if hashtag_groups:
@@ -940,7 +939,6 @@ def analyze_ttps(coordination_groups, posts):
             text = g['text_sample']
             found = re.findall(r'#\w+', text, re.IGNORECASE)
             hashtags.extend(found)
-        
         if hashtags:
             unique_hashtags = list(set(hashtags))[:5]
             ttps.append({
@@ -949,7 +947,7 @@ def analyze_ttps(coordination_groups, posts):
                 'severity': 'Low',
                 'evidence': f'Found in {len(hashtag_groups)} coordination groups.'
             })
-    
+
     # TTP 5: URL Amplification (NEW - uses your URL data!)
     url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
     if url_groups:
@@ -960,7 +958,7 @@ def analyze_ttps(coordination_groups, posts):
             'severity': 'Low',
             'evidence': 'Multiple accounts sharing same external links.'
         })
-    
+
     return ttps
     
 def get_top_pairs(coordination_groups):
