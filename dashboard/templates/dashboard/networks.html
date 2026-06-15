@@ -1,210 +1,101 @@
 {% extends 'dashboard/base.html' %}
-{% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
+{% block title %}Networks & TTPs{% endblock %}
 
 {% block extra_head %}
 <style>
-    .networks-dark-mode { background-color: #0f172a !important; color: #e2e8f0 !important; }
-    .networks-dark-mode .bg-white, .networks-dark-mode .bg-gray-50 { background-color: #1e293b !important; }
-    .networks-dark-mode .text-gray-900, .networks-dark-mode .text-gray-800 { color: #f1f5f9 !important; }
-    .networks-dark-mode .text-gray-600, .networks-dark-mode .text-gray-500 { color: #94a3b8 !important; }
-    .networks-dark-mode .border-gray-200, .networks-dark-mode .border-blue-100 { border-color: #334155 !important; }
-    .network-container { background: #0f172a; border-radius: 12px; padding: 1rem; }
-    .control-panel { background: #1e293b !important; border-radius: 8px; padding: 1rem; border: 1px solid #334155; }
-    .stat-card { background: #1e293b !important; border-radius: 8px; padding: 1rem; border: 1px solid #334155; }
-    input[type="range"] { width: 100%; accent-color: #3b82f6; }
-    select, input[type="number"] { background: #334155 !important; color: #e2e8f0 !important; border: 1px solid #475569; border-radius: 6px; padding: 0.5rem; }
+    .networks-dark { background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+    .networks-dark h2 { color: #f1f5f9; }
+    .networks-dark p { color: #94a3b8; }
+    .network-graph-container { background: #1e293b; border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+    .stat-card { background: #1e293b; border-radius: 8px; padding: 1rem; text-align: center; }
+    .ttp-card { background: #1e293b; border-radius: 8px; padding: 1rem; margin: 0.5rem 0; }
+    .control-panel { background: #1e293b; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+    select, input[type="range"] { background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 0.5rem; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="networks-dark-mode rounded-xl shadow-sm p-6 border border-slate-700">
-    
-    {% if error_message %}
-    <div class="bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded mb-6">
-        <strong>⚠️ View Error:</strong> {{ error_message }}
-    </div>
-    {% endif %}
-
-    <!-- Header -->
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <div>
-            <h2 class="text-2xl font-bold text-slate-100">🕸️ Account Coordination Network</h2>
-            <p class="text-slate-400 mt-1">Visualizing accounts sharing identical election messages.</p>
-        </div>
-        
-        <!-- Safe Download Buttons - NO {% url %} tags -->
-        <div class="flex flex-wrap gap-2">
-            <a href="#" class="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-xs shadow-sm">
-                📥 Nodes CSV
-            </a>
-            <a href="#" class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-xs shadow-sm">
-                📥 Edges CSV
-            </a>
-        </div>
-    </div>
+<div class="networks-dark">
+    <h2 class="text-2xl font-bold mb-2">🕸️ Account Coordination Network</h2>
+    <p class="mb-4">Visualizing accounts sharing identical election messages.</p>
     
     <!-- Controls -->
-    <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 control-panel">
-        <div>
-            <label class="text-sm text-slate-300 mb-1 block font-medium">Min connections</label>
-            <input type="range" name="min_connections" min="1" max="10" value="{{ min_connections|default:2 }}" 
-                   oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
-            <output class="text-sm text-blue-400 font-bold">{{ min_connections|default:2 }}</output>
-        </div>
-        <div>
-            <label class="text-sm text-slate-300 mb-1 block font-medium">Top N accounts</label>
-            <input type="range" name="top_n" min="10" max="100" step="10" value="{{ top_n|default:30 }}" 
-                   oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
-            <output class="text-sm text-blue-400 font-bold">{{ top_n|default:30 }}</output>
-        </div>
-        <div>
-            <label class="text-sm text-slate-300 mb-1 block font-medium">Layout</label>
-            <select name="layout" onchange="this.form.submit()">
-                <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
-                <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
-                <option value="kamada_kawai" {% if layout_style == 'kamada_kawai' %}selected{% endif %}>Kamada-Kawai</option>
-            </select>
-        </div>
-        <div class="flex items-end">
-            <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                🔄 Update View
-            </button>
+    <form method="get" class="control-panel">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="text-sm text-slate-300 block mb-1">Min connections</label>
+                <input type="range" name="min_connections" min="1" max="10" value="{{ min_connections }}" 
+                       oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
+                <output class="text-sm text-blue-400">{{ min_connections }}</output>
+            </div>
+            <div>
+                <label class="text-sm text-slate-300 block mb-1">Top N accounts</label>
+                <input type="range" name="top_n" min="10" max="100" step="10" value="{{ top_n }}" 
+                       oninput="this.nextElementSibling.value = this.value" onchange="this.form.submit()">
+                <output class="text-sm text-blue-400">{{ top_n }}</output>
+            </div>
+            <div>
+                <label class="text-sm text-slate-300 block mb-1">Layout</label>
+                <select name="layout" onchange="this.form.submit()">
+                    <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
+                    <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
+                    <option value="kamada_kawai" {% if layout_style == 'kamada_kawai' %}selected{% endif %}>Kamada-Kawai</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                    🔄 Update
+                </button>
+            </div>
         </div>
     </form>
     
     <!-- Network Graph -->
-    <div class="network-container mb-6">
-        <div id="network-graph" class="w-full h-[600px]"></div>
-    </div>
-
-    <!-- Network Legend -->
-    <div class="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
-        <h4 class="text-sm font-semibold text-slate-200 mb-3">Network Legend</h4>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded-full" style="background:#3b82f6;"></div>
-                <span class="text-slate-300">Source Account</span>
-            </div>
-            <div class="flex items-center gap-2">
-                <div class="w-4 h-4 rounded-full" style="background:#f59e0b;"></div>
-                <span class="text-slate-300">Amplifier Account</span>
-            </div>
-            <div class="flex items-center gap-2">
-                <div class="w-8 h-1 bg-blue-400 opacity-60"></div>
-                <span class="text-slate-300">Coordination Link</span>
-            </div>
-        </div>
+    <div class="network-graph-container">
+        <div id="network-graph" style="width: 100%; height: 600px;"></div>
     </div>
     
-    <!-- Stats Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-blue-400">{{ total_coordinated_groups|default:"0" }}</div>
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 my-4">
+        <div class="stat-card">
+            <div class="text-3xl font-bold text-blue-400">{{ total_coordinated_groups }}</div>
             <div class="text-sm text-slate-400">Coordination Groups</div>
         </div>
-        <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-green-400">{{ total_coordinated_accounts|default:"0" }}</div>
+        <div class="stat-card">
+            <div class="text-3xl font-bold text-green-400">{{ total_coordinated_accounts }}</div>
             <div class="text-sm text-slate-400">Coordinated Accounts</div>
         </div>
-        <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-purple-400">{{ max_group_size|default:"0" }}</div>
+        <div class="stat-card">
+            <div class="text-3xl font-bold text-purple-400">{{ max_group_size }}</div>
             <div class="text-sm text-slate-400">Largest Group</div>
         </div>
-        <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-orange-400">{{ total_posts|default:"0" }}</div>
+        <div class="stat-card">
+            <div class="text-3xl font-bold text-orange-400">{{ total_posts }}</div>
             <div class="text-sm text-slate-400">Election Posts</div>
         </div>
     </div>
-
-    <!-- Coordination Groups Breakdown -->
-    {% if coordination_groups %}
-    <div class="mb-8">
-        <h3 class="text-xl font-bold text-slate-100 mb-4">🔗 Coordination Networks Breakdown</h3>
-        <div class="space-y-4">
-            {% for group in coordination_groups %}
-            <div class="rounded-xl p-5 border border-slate-700 bg-slate-800 hover:shadow-md transition-shadow">
-                <div class="flex justify-between items-start mb-3">
-                    <div>
-                        <h4 class="text-lg font-bold text-slate-100">
-                            Network #{{ group.id|default:"?" }}
-                            {% if group.primary_type == 'amplification_network' %}
-                            <span class="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-amber-900/30 text-amber-400 border border-amber-700">AMPLIFICATION</span>
-                            {% else %}
-                            <span class="ml-2 px-2 py-0.5 text-xs font-bold rounded-full bg-blue-900/30 text-blue-400 border border-blue-700">COORDINATION</span>
-                            {% endif %}
-                        </h4>
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400 mt-1">
-                            <span>👥 {{ group.account_count|default:"0" }} accounts</span>
-                            <span>📝 {{ group.post_count|default:"0" }} posts</span>
-                            {% if group.platforms %}
-                            <span>📱 {% for platform in group.platforms %}{{ platform }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Text Sample -->
-                <div class="p-3 bg-slate-900 rounded-lg border border-slate-700 mb-3">
-                    <p class="text-sm text-slate-300 italic">"{{ group.text_sample|default:""|truncatechars:250 }}"</p>
-                </div>
-
-                <!-- Sample Posts with URLs -->
-                {% if group.sample_posts_with_urls %}
-                <details class="mt-2">
-                    <summary class="cursor-pointer text-sm text-blue-400 hover:text-blue-300 font-medium">View {{ group.sample_posts_with_urls|length }} Sample Posts & URLs</summary>
-                    <div class="mt-2 space-y-2">
-                        {% for post in group.sample_posts_with_urls %}
-                        <div class="p-2 bg-slate-900 rounded border border-slate-700 text-xs">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="font-semibold text-slate-200">{{ post.username|default:"Unknown" }}</span>
-                                <span class="text-slate-400">{{ post.platform|default:"" }} • {{ post.timestamp|default:"" }}</span>
-                            </div>
-                            {% if post.url %}
-                            <a href="{{ post.url }}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline break-all">{{ post.url|truncatechars:60 }}</a>
-                            {% endif %}
-                        </div>
-                        {% endfor %}
-                    </div>
-                </details>
-                {% endif %}
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- TTPs Section - Loops directly over ttps list -->
+    
+    <!-- TTPs -->
     {% if ttps %}
-    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
-        <div class="flex justify-between items-center mb-6">
-            <div>
-                <h3 class="text-xl font-bold text-slate-100">🎯 DISARM Framework TTP Detection</h3>
-                <p class="text-slate-400 mt-1 text-sm">Comprehensive analysis of Tactics, Techniques, and Procedures.</p>
-            </div>
-            <a href="https://disarmframework.herokuapp.com/" target="_blank" class="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition-colors text-sm font-medium border border-slate-600">
-                View Full DISARM Framework →
-            </a>
-        </div>
-
+    <div class="my-6">
+        <h3 class="text-xl font-bold text-slate-100 mb-4">🎯 DISARM Framework TTP Detection</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for ttp in ttps %}
-            <div class="p-4 bg-slate-900 rounded-lg border border-slate-700 hover:shadow-md transition-shadow">
+            <div class="ttp-card">
                 <div class="flex justify-between items-start mb-2">
                     <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="font-bold text-slate-100 text-sm">{{ ttp.name|default:"Unknown TTP" }}</span>
-                        </div>
-                        <p class="text-sm text-slate-400">{{ ttp.description|default:"" }}</p>
+                        <div class="font-bold text-slate-100 text-sm mb-1">{{ ttp.name }}</div>
+                        <p class="text-sm text-slate-400">{{ ttp.description }}</p>
                         {% if ttp.evidence %}
                         <p class="text-xs text-slate-500 mt-2 italic">Evidence: {{ ttp.evidence }}</p>
                         {% endif %}
                     </div>
-                    <span class="px-2 py-1 rounded text-xs font-bold text-white shrink-0 ml-2
+                    <span class="px-2 py-1 rounded text-xs font-bold text-white ml-2
                         {% if ttp.severity == 'Critical' %}bg-red-600
                         {% elif ttp.severity == 'High' %}bg-orange-600
                         {% elif ttp.severity == 'Medium' %}bg-yellow-600
                         {% else %}bg-blue-600{% endif %}">
-                        {{ ttp.severity|default:"Low" }}
+                        {{ ttp.severity }}
                     </span>
                 </div>
             </div>
@@ -212,107 +103,91 @@
         </div>
     </div>
     {% else %}
-    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8 text-center">
+    <div class="ttp-card text-center">
         <p class="text-slate-400">No coordination TTPs detected for the current filters.</p>
     </div>
     {% endif %}
-
-    <!-- DISARM Framework Reference -->
+    
+    <!-- DISARM Reference -->
     {% if disarm_ttp_reference %}
-    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-8">
-        <h3 class="text-xl font-bold text-slate-100 mb-2">📖 DISARM Framework Reference</h3>
+    <div class="my-6">
+        <h3 class="text-xl font-bold text-slate-100 mb-4">📖 DISARM Framework Reference</h3>
         <p class="text-sm text-slate-400 mb-4">
-            Extracted from {{ disarm_dataset_size|default:"80,000" }}+ verified DISARM Radar Suite training records.
+            Extracted from {{ disarm_dataset_size }}+ verified DISARM Radar Suite training records.
         </p>
-        
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {% for ttp in disarm_ttp_reference %}
-            <div class="p-3 bg-slate-900 rounded-lg border border-slate-700 hover:bg-blue-900/20 transition-colors">
+            <div class="ttp-card">
                 <div class="flex justify-between items-center mb-1">
-                    <span class="font-bold text-blue-400 text-sm">{{ ttp.id|default:"?" }}</span>
-                    <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
-                        {{ ttp.count|default:"0" }}x
+                    <span class="font-bold text-blue-400 text-sm">{{ ttp.id }}</span>
+                    <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+                        {{ ttp.count }}x
                     </span>
                 </div>
-                <div class="text-xs text-slate-400">
-                    DISARM Technique
-                </div>
+                <div class="text-xs text-slate-400">DISARM Technique</div>
             </div>
             {% endfor %}
         </div>
     </div>
     {% endif %}
-    
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
-    const graphData = {{ network_graph_json|safe }};
-    
-    if (graphData && graphData.nodes && graphData.nodes.length > 0) {
-        // Edges
-        const edgeTraces = graphData.edges.map(edge => ({
-            x: [edge.source_x, edge.target_x, null],
-            y: [edge.source_y, edge.target_y, null],
-            mode: 'lines',
-            line: { 
-                width: Math.max(1, edge.weight * 2), 
-                color: 'rgba(148, 163, 184, 0.4)' 
-            },
-            hoverinfo: 'none',
-            showlegend: false,
-            type: 'scatter'
-        }));
+    try {
+        const graphData = {{ network_graph_json|safe }};
         
-        // Nodes
-        const nodeTrace = {
-            x: graphData.nodes.map(n => n.x),
-            y: graphData.nodes.map(n => n.y),
-            mode: 'markers+text',
-            marker: {
-                size: graphData.nodes.map(n => n.size),
-                color: graphData.nodes.map(n => n.color || '#3b82f6'),
-                line: { width: 2, color: 'white' }
-            },
-            text: graphData.nodes.map(n => n.label),
-            textposition: 'middle center',
-            textfont: { family: 'monospace', size: 10, color: '#ffffff' },
-            name: 'Accounts',
-            customdata: graphData.nodes.map(n => n.post_count),
-            hovertemplate: '<b>%{text}</b><br>Posts: %{customdata}<extra></extra>',
-            hoverlabel: { bgcolor: 'rgba(0,0,0,0.8)', font: {color: 'white'} }
-        };
-        
-        const layout = {
-            title: {
-                text: `Network Graph (${graphData.stats.nodes} nodes, ${graphData.stats.edges} edges)`,
-                font: { size: 16, color: 'white' }
-            },
-            showlegend: true,
-            legend: {
-                x: 0, y: 1,
-                bgcolor: 'rgba(15, 23, 42, 0.8)',
-                font: { color: 'white', size: 12 },
-                bordercolor: 'rgba(255,255,255,0.2)',
-                borderwidth: 1
-            },
-            hovermode: 'closest',
-            margin: { t: 50, b: 20, l: 20, r: 20 },
-            xaxis: { showgrid: false, zeroline: false, showticklabels: false },
-            yaxis: { showgrid: false, zeroline: false, showticklabels: false },
-            plot_bgcolor: '#0f172a',
-            paper_bgcolor: '#0f172a',
-            font: { color: 'white' }
-        };
-        
-        Plotly.newPlot('network-graph', [...edgeTraces, nodeTrace], layout, { 
-            responsive: true,
-            displayModeBar: true
-        });
-    } else {
-        document.getElementById('network-graph').innerHTML = '<div class="flex items-center justify-center h-full text-slate-400"><p class="text-xl">📊 No coordination detected. Try lowering "Min connections".</p></div>';
+        if (graphData && graphData.nodes && graphData.nodes.length > 0) {
+            const edgeTraces = graphData.edges.map(edge => ({
+                x: [edge.source_x, edge.target_x, null],
+                y: [edge.source_y, edge.target_y, null],
+                mode: 'lines',
+                line: { width: Math.max(1, edge.weight * 2), color: 'rgba(148, 163, 184, 0.4)' },
+                hoverinfo: 'none',
+                showlegend: false,
+                type: 'scatter'
+            }));
+            
+            const nodeTrace = {
+                x: graphData.nodes.map(n => n.x),
+                y: graphData.nodes.map(n => n.y),
+                mode: 'markers+text',
+                marker: {
+                    size: graphData.nodes.map(n => n.size),
+                    color: graphData.nodes.map(n => n.color || '#3b82f6'),
+                    line: { width: 2, color: 'white' }
+                },
+                text: graphData.nodes.map(n => n.label),
+                textposition: 'middle center',
+                textfont: { family: 'monospace', size: 10, color: '#ffffff' },
+                name: 'Accounts',
+                customdata: graphData.nodes.map(n => n.post_count),
+                hovertemplate: '<b>%{text}</b><br>Posts: %{customdata}<extra></extra>',
+                hoverlabel: { bgcolor: 'rgba(0,0,0,0.8)', font: {color: 'white'} }
+            };
+            
+            const layout = {
+                title: { text: `Network Graph (${graphData.stats.nodes} nodes, ${graphData.stats.edges} edges)`, font: { size: 16, color: 'white' } },
+                showlegend: true,
+                legend: { x: 0, y: 1, bgcolor: 'rgba(15, 23, 42, 0.8)', font: { color: 'white', size: 12 } },
+                hovermode: 'closest',
+                margin: { t: 50, b: 20, l: 20, r: 20 },
+                xaxis: { showgrid: false, zeroline: false, showticklabels: false },
+                yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+                plot_bgcolor: '#0f172a',
+                paper_bgcolor: '#0f172a',
+                font: { color: 'white' }
+            };
+            
+            Plotly.newPlot('network-graph', [...edgeTraces, nodeTrace], layout, { responsive: true, displayModeBar: true });
+        } else {
+            document.getElementById('network-graph').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #94a3b8;"><p style="font-size: 1.25rem;">📊 No coordination detected. Try lowering "Min connections".</p></div>';
+        }
+    } catch (error) {
+        console.error('Graph rendering error:', error);
+        document.getElementById('network-graph').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #94a3b8;"><p>Graph rendering error. Check console for details.</p></div>';
     }
 </script>
 {% endblock %}
