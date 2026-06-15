@@ -1285,13 +1285,73 @@ def _get_ttp_severity(technique_id: str) -> str:
         return 'Medium'
     else:
         return 'Low'
-  
+def detect_llm_ttps(coordination_groups, posts):
+    """Use LLM to detect additional TTPs based on DISARM framework"""
+    if not coordination_groups:
+        return []
+    
+    # Prepare a concise summary for the LLM to avoid token limits
+    data_summary = {
+        "total_groups": len(coordination_groups),
+        "total_accounts": sum(g.get('account_count', 0) for g in coordination_groups),
+        "sample_texts": [g.get('text_sample', '')[:150] for g in coordination_groups[:5]],
+        "platforms": list(set(p for g in coordination_groups for p in g.get('platforms', []))),
+        "has_urls": any(len(g.get('unique_urls', [])) > 0 for g in coordination_groups),
+        "has_hashtags": any('#' in g.get('text_sample', '') for g in coordination_groups)
+    }
+    
+    prompt = f"""You are an expert in the DISARM (Disinformation, Manipulation, and Influence) framework. 
+    Analyze the following coordination network data from an election monitoring tool and identify Tactics, Techniques, and Procedures (TTPs) present in this data.
+    
+    Data Summary:
+    {json.dumps(data_summary, indent=2)}
+    
+    Instructions:
+    1. Identify TTPs based on the DISARM framework (e.g., T0049 Coordinated Behavior, T0060 Multi-Platform Manipulation, T0119 Rapid Response, T0143 Hashtag Hijacking, T0097 Link Manipulation, T0149 Narrative Manipulation, T0084 Automation/Bots, etc.).
+    2. For each TTP identified, provide:
+       - name: The specific DISARM technique name or ID.
+       - description: A brief description of how it applies to this data.
+       - severity: 'High', 'Medium', or 'Low'.
+       - evidence: Specific evidence from the data summary.
+    3. Output ONLY a valid JSON array of objects. Do not include any text outside the JSON array.
+    4. If no additional TTPs are found, return an empty array [].
+    """
+    
+    try:
+        # Use your existing safe_llm_call function
+        response = safe_llm_call(prompt, max_tokens=1024)
+        if not response:
+            return []
+            
+        # Extract JSON from response (handles cases where LLM adds text around the JSON)
+        json_match = re.search(r'\[.*\]', response, re.DOTALL)
+        if json_match:
+            ttps = json.loads(json_match.group(0))
+            # Validate structure
+            valid_ttps = []
+            for ttp in ttps:
+                if isinstance(ttp, dict) and 'name' in ttp and 'description' in ttp:
+                    valid_ttps.append({
+                        'name': ttp.get('name', 'Unknown TTP'),
+                        'description': ttp.get('description', ''),
+                        'severity': ttp.get('severity', 'Medium'),
+                        'evidence': ttp.get('evidence', 'LLM Analysis'),
+                        'source': 'LLM_DISARM'
+                    })
+            return valid_ttps
+    except Exception as e:
+        logger.warning(f"LLM TTP detection failed: {e}")
+        
+    return []
+     
 def analyze_ttps(coordination_groups, posts):
-    """Analyze Tactics, Techniques, and Procedures from coordinated groups - ENHANCED with 9 TTPs"""
+    """Analyze Tactics, Techniques, and Procedures - 9 Rule-Based + LLM DISARM Detection"""
     ttps = []
     if not coordination_groups:
         return ttps
 
+    # === 9 RULE-BASED TTPs ===
+    
     # TTP 1: Coordinated Inauthentic Behavior (CIB)
     cib_groups = [g for g in coordination_groups if g.get('account_count', 0) >= 5]
     if cib_groups:
@@ -1299,7 +1359,8 @@ def analyze_ttps(coordination_groups, posts):
             'name': 'Coordinated Inauthentic Behavior (CIB)',
             'description': f'Detected {len(cib_groups)} groups with 5+ accounts sharing identical content.',
             'severity': 'High',
-            'evidence': f'{sum(g.get("post_count", 0) for g in cib_groups)} total posts across {sum(g.get("account_count", 0) for g in cib_groups)} accounts.'
+            'evidence': f'{sum(g.get("post_count", 0) for g in cib_groups)} total posts across {sum(g.get("account_count", 0) for g in cib_groups)} accounts.',
+            'source': 'Rule-Based'
         })
 
     # TTP 2: Cross-Platform Amplification
@@ -1320,7 +1381,8 @@ def analyze_ttps(coordination_groups, posts):
             'name': 'Cross-Platform Amplification',
             'description': f'{len(cross_platform_groups)} groups operating across {len(all_platforms)} platforms.',
             'severity': 'Medium',
-            'evidence': f"Platforms: {', '.join(sorted(all_platforms))}"
+            'evidence': f"Platforms: {', '.join(sorted(all_platforms))}",
+            'source': 'Rule-Based'
         })
 
     # TTP 3: Rapid Response / Burst Posting
@@ -1331,7 +1393,8 @@ def analyze_ttps(coordination_groups, posts):
             'name': 'Rapid Response / Burst Posting',
             'description': f'{len(burst_groups)} groups with high-volume posting (max: {max_posts} posts/group).',
             'severity': 'Medium',
-            'evidence': f"Identical content bursts across {sum(g.get('account_count', 0) for g in burst_groups)} accounts."
+            'evidence': f"Identical content bursts across {sum(g.get('account_count', 0) for g in burst_groups)} accounts.",
+            'source': 'Rule-Based'
         })
 
     # TTP 4: Hashtag Manipulation
@@ -1348,7 +1411,8 @@ def analyze_ttps(coordination_groups, posts):
                 'name': 'Hashtag Manipulation',
                 'description': f'Coordinated use of {len(unique_hashtags)} hashtags: {", ".join(unique_hashtags)}.',
                 'severity': 'Low',
-                'evidence': f'Found in {len(hashtag_groups)} coordination groups.'
+                'evidence': f'Found in {len(hashtag_groups)} coordination groups.',
+                'source': 'Rule-Based'
             })
 
     # TTP 5: URL Amplification
@@ -1359,10 +1423,11 @@ def analyze_ttps(coordination_groups, posts):
             'name': 'URL Amplification',
             'description': f'{len(url_groups)} groups amplifying {total_unique_urls} URLs.',
             'severity': 'Low',
-            'evidence': 'Multiple accounts sharing same external links.'
+            'evidence': 'Multiple accounts sharing same external links.',
+            'source': 'Rule-Based'
         })
 
-    # TTP 6: Narrative Weaponization (NEW)
+    # TTP 6: Narrative Weaponization
     weaponized_keywords = ['genocide', 'kill', 'attack', 'war', 'slur', 'hate', 'ethnic cleansing', 'massacre']
     weaponized_groups = [g for g in coordination_groups if any(kw in g.get('text_sample', '').lower() for kw in weaponized_keywords)]
     if weaponized_groups:
@@ -1370,10 +1435,11 @@ def analyze_ttps(coordination_groups, posts):
             'name': 'Narrative Weaponization',
             'description': f'{len(weaponized_groups)} groups using high-risk weaponized keywords (violence, hate, genocide).',
             'severity': 'Critical',
-            'evidence': 'Coordinated amplification of inflammatory and violent narratives.'
+            'evidence': 'Coordinated amplification of inflammatory and violent narratives.',
+            'source': 'Rule-Based'
         })
 
-    # TTP 7: Temporal Coordination / Synchronized Posting (NEW)
+    # TTP 7: Temporal Coordination (Synchronized Posting)
     synchronized_groups = 0
     for g in coordination_groups:
         timestamps = []
@@ -1396,20 +1462,22 @@ def analyze_ttps(coordination_groups, posts):
             'name': 'Temporal Coordination (Synchronized Posting)',
             'description': f'{synchronized_groups} groups posted identical content within 1 hour of each other.',
             'severity': 'High',
-            'evidence': 'Accounts appear to be coordinated in real-time or using scheduling tools.'
+            'evidence': 'Accounts appear to be coordinated in real-time or using scheduling tools.',
+            'source': 'Rule-Based'
         })
 
-    # TTP 8: Multi-Platform Narrative Seeding (NEW)
+    # TTP 8: Multi-Platform Narrative Seeding
     narrative_seeding_groups = [g for g in coordination_groups if len(g.get('platforms', [])) >= 2 and g.get('account_count', 0) >= 3]
     if narrative_seeding_groups:
         ttps.append({
             'name': 'Multi-Platform Narrative Seeding',
             'description': f'{len(narrative_seeding_groups)} groups seeding identical narratives across 2+ platforms simultaneously.',
             'severity': 'High',
-            'evidence': 'Coordinated cross-platform manipulation to maximize reach and legitimacy.'
+            'evidence': 'Coordinated cross-platform manipulation to maximize reach and legitimacy.',
+            'source': 'Rule-Based'
         })
 
-    # TTP 9: Bot-like Account Behavior (NEW)
+    # TTP 9: Bot-like Account Behavior
     bot_like_groups = 0
     for g in coordination_groups:
         generic_names = sum(1 for acc in g.get('accounts', []) if any(x in acc.lower() for x in ['user', 'account', 'test', 'bot', '123', 'news']))
@@ -1420,8 +1488,14 @@ def analyze_ttps(coordination_groups, posts):
             'name': 'Bot-like Account Behavior',
             'description': f'{bot_like_groups} groups contain accounts with generic naming patterns or high coordination density.',
             'severity': 'Medium',
-            'evidence': 'Potential use of automated or inauthentic accounts to amplify content.'
+            'evidence': 'Potential use of automated or inauthentic accounts to amplify content.',
+            'source': 'Rule-Based'
         })
+
+    # === LLM-BASED TTP DETECTION ===
+    # This will find additional TTPs not covered by the rules above using DISARM framework knowledge
+    llm_ttps = detect_llm_ttps(coordination_groups, posts)
+    ttps.extend(llm_ttps)
 
     return ttps
     
@@ -1487,61 +1561,161 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
     return False
     
-def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=10):
-    """Find accounts posting identical messages - WITH sub-narrative mapping"""
+def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
+    """Enhanced coordination detection: Finds similar posts & calculates bot counts"""
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    import numpy as np
+
     coordination = []
+    posts_data = list(posts_queryset.filter(
+        is_election_related=True
+    ).values('id', 'account_id', 'original_text', 'platform', 'url', 'timestamp_share', 'risk_level').order_by('-timestamp_share')[:2000])
     
-    text_groups = posts_queryset.values('original_text').annotate(
-        account_count=Count('account_id', distinct=True),
-        post_count=Count('id')
-    ).filter(account_count__gte=min_accounts).order_by('-account_count')[:max_groups]
+    if len(posts_data) < min_accounts: return []
     
-    for group in text_groups:
-        text = group['original_text']
-        
-        if not is_primarily_ethiopia_related(text):
-            continue
-        
-        account_posts = posts_queryset.filter(original_text=text).values(
-            'account_id', 'platform', 'url', 'timestamp_share'
-        ).distinct()
-        
-        accounts = []
-        sample_posts_with_urls = []
-        platforms = set()
-        
-        for ap in account_posts[:20]:
-            username = clean_username(ap['account_id'])
-            if ap['platform']:
-                platforms.add(ap['platform'])
+    texts = [p['original_text'] for p in posts_data if p['original_text'] and len(p['original_text']) > 20]
+    if len(texts) < 2: return []
+    
+    vectorizer = TfidfVectorizer(max_features=1000, stop_words='english', ngram_range=(1, 2))
+    tfidf_matrix = vectorizer.fit_transform(texts)
+    
+    similarity_groups = []
+    processed_indices = set()
+    for i in range(len(texts)):
+        if i in processed_indices: continue
+        similar_indices = [i]
+        for j in range(i + 1, len(texts)):
+            if j in processed_indices: continue
+            similarity = cosine_similarity(tfidf_matrix[i], tfidf_matrix[j])[0][0]
+            if similarity >= similarity_threshold:
+                similar_indices.append(j)
+                processed_indices.add(j)
+        processed_indices.add(i)
+        if len(similar_indices) >= min_accounts:
+            similarity_groups.append(similar_indices)
             
-            if username and len(username) > 2:
-                if username not in accounts:
-                    accounts.append(username)
-                
-                if len(sample_posts_with_urls) < 5:
-                    sample_posts_with_urls.append({
-                        'username': username,
-                        'platform': ap['platform'],
-                        'url': ap['url'] if ap['url'] and str(ap['url']).startswith('http') else None,
-                        'timestamp': ap['timestamp_share'].strftime('%Y-%m-%d %H:%M') if ap['timestamp_share'] else 'N/A',
-                        'text_preview': text[:100] + '...'
-                    })
+    for group_indices in similarity_groups[:max_groups]:
+        group_posts = [posts_data[idx] for idx in group_indices]
+        accounts = list(set(p['account_id'] for p in group_posts if p['account_id']))
+        if len(accounts) < min_accounts: continue
         
-        if len(accounts) >= min_accounts:
-            coordination.append({
-                'id': len(coordination) + 1,
-                'accounts': accounts[:8],
-                'account_count': len(accounts),
-                'post_count': group['post_count'],
-                'text_sample': text[:200] if text else '[Identical message]',
-                'sample_posts_with_urls': sample_posts_with_urls,
-                'unique_urls': list(set([p['url'] for p in sample_posts_with_urls if p['url']]))[:5],
-                'platforms': list(platforms),
-                'sub_narrative': extract_sub_narrative(text)  # Sub-narrative mapping
-            })
-    
+        # Bot Detection Logic
+        bot_accounts = set()
+        for acc in accounts:
+            acc_posts = [p for p in group_posts if p['account_id'] == acc]
+            if len(acc_posts) >= 3: bot_accounts.add(acc) # Simple bot signal: high volume in group
+            
+        text_sample = group_posts[0]['original_text'][:200] if group_posts else ''
+        platforms = list(set(p['platform'] for p in group_posts if p['platform']))
+        
+        coordination.append({
+            'id': len(coordination) + 1,
+            'accounts': accounts[:10],
+            'account_count': len(accounts),
+            'post_count': len(group_posts),
+            'bot_count': len(bot_accounts),
+            'bot_percentage': round((len(bot_accounts) / len(accounts)) * 100, 1) if accounts else 0,
+            'text_sample': text_sample,
+            'platforms': platforms,
+            'sub_narrative': 'General Coordination' # You can add extract_sub_narrative here if needed
+        })
     return coordination[:max_groups]
+
+
+def identify_bot_accounts(posts):
+    """
+    Identify bot accounts based on multiple signals:
+    1. Account name patterns
+    2. Posting frequency
+    3. Content similarity
+    4. Risk level
+    """
+    bot_accounts = set()
+    account_posts = defaultdict(list)
+    
+    # Group posts by account
+    for post in posts:
+        if post['account_id']:
+            account_posts[post['account_id']].append(post)
+    
+    for account_id, account_post_list in account_posts.items():
+        bot_signals = 0
+        
+        # Signal 1: Generic account name patterns
+        clean_name = clean_username(account_id).lower()
+        if any(pattern in clean_name for pattern in [
+            'bot', 'auto', 'news', 'update', 'daily', 
+            'official', 'real', '2024', '2023', 'ethiopia'
+        ]):
+            bot_signals += 2
+        
+        # Signal 2: High volume posting (same account posting multiple similar posts)
+        if len(account_post_list) >= 3:
+            bot_signals += 2
+        
+        # Signal 3: High/critical risk level
+        high_risk_posts = sum(1 for p in account_post_list 
+                            if p.get('risk_level') in ['high', 'critical'])
+        if high_risk_posts > 0:
+            bot_signals += 1
+        
+        # Signal 4: Very short or templated content
+        short_posts = sum(1 for p in account_post_list 
+                        if p['original_text'] and len(p['original_text']) < 50)
+        if short_posts > 0:
+            bot_signals += 1
+        
+        # Signal 5: Posting at unusual hours (check timestamps)
+        unusual_hours = 0
+        for post in account_post_list:
+            if post['timestamp_share']:
+                hour = post['timestamp_share'].hour
+                if hour in [0, 1, 2, 3, 4, 5]:  # Late night/early morning
+                    unusual_hours += 1
+        if unusual_hours >= 2:
+            bot_signals += 1
+        
+        # If 3+ bot signals, mark as bot
+        if bot_signals >= 3:
+            bot_accounts.add(account_id)
+    
+    return bot_accounts
+
+
+def determine_coordination_type(posts, bot_count):
+    """
+    Determine the type of coordination based on patterns
+    """
+    total_accounts = len(set(p['account_id'] for p in posts if p['account_id']))
+    bot_percentage = (bot_count / total_accounts * 100) if total_accounts > 0 else 0
+    
+    # Check for URL sharing
+    urls = [p['url'] for p in posts if p['url']]
+    has_url_coordination = len(urls) > 0 and len(set(urls)) < len(urls)
+    
+    # Check for hashtag coordination
+    hashtags = []
+    for post in posts:
+        if post['original_text']:
+            found = re.findall(r'#\w+', post['original_text'])
+            hashtags.extend(found)
+    
+    has_hashtag_coordination = len(hashtags) > 0 and len(set(hashtags)) < len(hashtags)
+    
+    # Determine type
+    if bot_percentage >= 50:
+        return "🤖 Bot Network"
+    elif has_url_coordination and has_hashtag_coordination:
+        return "🔗 URL + Hashtag Amplification"
+    elif has_url_coordination:
+        return "🔗 URL Amplification"
+    elif has_hashtag_coordination:
+        return "#️⃣ Hashtag Coordination"
+    elif bot_percentage >= 25:
+        return "🤖 Bot-Assisted"
+    else:
+        return "👥 Human Coordination"
 
 def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, layout='spring'):
     """Generate network graph with source/amplifier classification"""
@@ -3185,8 +3359,7 @@ def _get_category_severity_display(category):
     
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
-    Enhanced PEP analysis with platform breakdown, velocity, bot detection,
-    gendered attacks, narrative clusters, and cross-platform coordination.
+    Enhanced PEP analysis with improved bot detection based on posting frequency.
     """
     from collections import defaultdict, Counter
     from datetime import datetime, timedelta
@@ -3208,13 +3381,13 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'top_amplifiers': Counter(),
         'geographic_origin': Counter(),
         'sentiment_trend': [],
+        'posting_frequency': {},  # NEW: Track posting patterns
     })
     
     # Analyze posts
     for post in posts_queryset[:5000]:
         if not post.original_text:
             continue
-            
         text_lower = post.original_text.lower()
         
         # Match PEPs
@@ -3231,6 +3404,16 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                 if post.timestamp_share:
                     hour = post.timestamp_share.hour
                     data['hourly_distribution'][hour] += 1
+                    
+                    # NEW: Track posting frequency patterns
+                    if post.account_id:
+                        if post.account_id not in data['posting_frequency']:
+                            data['posting_frequency'][post.account_id] = {
+                                'timestamps': [],
+                                'total_posts': 0
+                            }
+                        data['posting_frequency'][post.account_id]['timestamps'].append(post.timestamp_share)
+                        data['posting_frequency'][post.account_id]['total_posts'] += 1
                 
                 # Extract hashtags
                 hashtags = re.findall(r'#(\w+)', post.original_text)
@@ -3241,19 +3424,71 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                     if any(term in text_lower for term in ['unqualified', 'emotional', 'weak', 'beautiful', 'sexy', 'mother']):
                         data['is_gendered_target'] = True
                 
-                # Bot detection signals
-                account_age_days = 365  # Default assumption
-                if hasattr(post, 'account_created_at') and post.account_created_at:
-                    account_age_days = (post.timestamp_share - post.account_created_at).days if post.timestamp_share else 365
-                
-                bot_signals = 0
-                if account_age_days < 30:
-                    bot_signals += 2
-                if len(post.original_text) < 50:
-                    bot_signals += 1
-                if post.original_text.count('http') > 2:
-                    bot_signals += 1
-                data['bot_probability'] = min(100, data['bot_probability'] + bot_signals)
+                # NEW: Enhanced Bot Detection based on posting frequency
+                if post.account_id and post.timestamp_share:
+                    bot_signals = 0
+                    
+                    # Get all posts for this account to calculate frequency
+                    account_posts = list(posts_queryset.filter(account_id=post.account_id)[:100])
+                    
+                    if len(account_posts) >= 5:  # Need minimum posts to detect patterns
+                        timestamps = [p.timestamp_share for p in account_posts if p.timestamp_share]
+                        timestamps.sort()
+                        
+                        # Calculate average time between posts
+                        if len(timestamps) >= 2:
+                            time_diffs = []
+                            for i in range(1, len(timestamps)):
+                                diff = (timestamps[i] - timestamps[i-1]).total_seconds()
+                                time_diffs.append(diff)
+                            
+                            if time_diffs:
+                                avg_interval = sum(time_diffs) / len(time_diffs)
+                                
+                                # Bot signal 1: Very high frequency (posting every few seconds/minutes)
+                                if avg_interval < 300:  # Less than 5 minutes average
+                                    bot_signals += 3
+                                elif avg_interval < 1800:  # Less than 30 minutes
+                                    bot_signals += 2
+                                elif avg_interval < 3600:  # Less than 1 hour
+                                    bot_signals += 1
+                                
+                                # Bot signal 2: Very regular intervals (suspicious consistency)
+                                if len(time_diffs) >= 3:
+                                    variance = sum((x - avg_interval) ** 2 for x in time_diffs) / len(time_diffs)
+                                    std_dev = variance ** 0.5
+                                    coefficient_of_variation = std_dev / avg_interval if avg_interval > 0 else 1
+                                    
+                                    # If posting at very regular intervals (CV < 0.3), likely automated
+                                    if coefficient_of_variation < 0.3 and len(account_posts) >= 10:
+                                        bot_signals += 2
+                                
+                                # Bot signal 3: 24/7 activity (posts at all hours)
+                                hours_active = set(ts.hour for ts in timestamps)
+                                if len(hours_active) >= 20:  # Active in 20+ hours of the day
+                                    bot_signals += 2
+                                
+                                # Bot signal 4: Burst posting (many posts in short time)
+                                posts_per_hour = Counter(ts.strftime('%Y-%m-%d %H') for ts in timestamps)
+                                max_posts_in_hour = max(posts_per_hour.values()) if posts_per_hour else 0
+                                if max_posts_in_hour >= 20:  # 20+ posts in one hour
+                                    bot_signals += 2
+                                elif max_posts_in_hour >= 10:
+                                    bot_signals += 1
+                    
+                    # Existing bot signals
+                    account_age_days = 365  # Default assumption
+                    if hasattr(post, 'account_created_at') and post.account_created_at:
+                        account_age_days = (post.timestamp_share - post.account_created_at).days if post.timestamp_share else 365
+                    
+                    if account_age_days < 30:
+                        bot_signals += 2
+                    if len(post.original_text) < 50:
+                        bot_signals += 1
+                    if post.original_text.count('http') > 2:
+                        bot_signals += 1
+                    
+                    data['bot_probability'] = min(100, data['bot_probability'] + bot_signals)
                 
                 # Narrative clustering (simple keyword-based)
                 if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe']):
@@ -3296,9 +3531,51 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         # Narrative clusters summary
         clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
         
-        # Bot score interpretation
+        # Bot score interpretation with frequency-based detection
         bot_score = min(100, data['bot_probability'])
-        bot_level = ' Low' if bot_score < 30 else '🟡 Medium' if bot_score < 60 else '🔴 High'
+        if bot_score >= 60:
+            bot_level = '🔴 High (Likely Bot)'
+        elif bot_score >= 30:
+            bot_level = '🟡 Medium (Suspicious)'
+        else:
+            bot_level = '🟢 Low (Likely Human)'
+        
+        # Analyze posting frequency patterns for top amplifiers
+        top_amplifiers_analysis = []
+        if data['posting_frequency']:
+            sorted_accounts = sorted(
+                data['posting_frequency'].items(),
+                key=lambda x: x[1]['total_posts'],
+                reverse=True
+            )[:5]
+            
+            for account_id, freq_data in sorted_accounts:
+                timestamps = freq_data['timestamps']
+                if len(timestamps) >= 5:
+                    timestamps.sort()
+                    time_diffs = []
+                    for i in range(1, len(timestamps)):
+                        diff = (timestamps[i] - timestamps[i-1]).total_seconds() / 60  # in minutes
+                        time_diffs.append(diff)
+                    
+                    avg_interval = sum(time_diffs) / len(time_diffs) if time_diffs else 0
+                    
+                    # Determine posting pattern
+                    if avg_interval < 5:
+                        pattern = "🤖 Very High Frequency (Bot-like)"
+                    elif avg_interval < 30:
+                        pattern = "⚠️ High Frequency (Suspicious)"
+                    elif avg_interval < 120:
+                        pattern = "⚡ Moderate Frequency"
+                    else:
+                        pattern = "👤 Normal Frequency"
+                    
+                    top_amplifiers_analysis.append({
+                        'account': account_id[:40],
+                        'posts': freq_data['total_posts'],
+                        'avg_interval_min': round(avg_interval, 1),
+                        'pattern': pattern
+                    })
         
         results.append({
             'pep_name': pep_name,
@@ -3313,6 +3590,7 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'narrative_clusters': clusters,
             'sample_posts': data['sample_posts'],
             'risk_score': min(10, data['count'] // 5 + len(clusters)),
+            'top_amplifiers_frequency': top_amplifiers_analysis,  # NEW: Frequency analysis
         })
     
     return results
