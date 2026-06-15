@@ -81,7 +81,138 @@ def load_gemma_model():
         logger.error(f"Failed to load Gemma model: {e}")
         raise
 
+def export_network_csv(request):
+    """Export coordination network data as Gephi-ready CSV files"""
+    import csv
+    from django.http import HttpResponse
+    from django.db.models import Count
+    
+    min_connections = int(request.GET.get('min_connections', 2))
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+    
+    # Create HTTP response with CSV content type
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="coordination_network_edges.csv"'
+    
+    writer = csv.writer(response)
+    # Write header
+    writer.writerow(['Source', 'Target', 'Weight', 'Type', 'Id'])
+    
+    edge_id = 1
+    for group in coordination_groups:
+        # Get all accounts in this coordination group
+        accounts = group.get('accounts', [])
+        
+        # Create edges between all pairs of accounts in the group
+        for i in range(len(accounts)):
+            for j in range(i+1, len(accounts)):
+                source = accounts[i]
+                target = accounts[j]
+                weight = group.get('post_count', 1)
+                
+                writer.writerow([
+                    source,
+                    target,
+                    weight,
+                    'Undirected',
+                    f'edge_{edge_id}'
+                ])
+                edge_id += 1
+    
+    return response
 
+
+def export_network_nodes_csv(request):
+    """Export nodes CSV for Gephi"""
+    import csv
+    from django.http import HttpResponse
+    from django.db.models import Count
+    
+    min_connections = int(request.GET.get('min_connections', 2))
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+    
+    # Collect all unique accounts
+    all_accounts = {}
+    for group in coordination_groups:
+        for account in group.get('accounts', []):
+            if account not in all_accounts:
+                all_accounts[account] = {
+                    'post_count': 0,
+                    'group_count': 0,
+                    'platforms': set()
+                }
+            all_accounts[account]['post_count'] += group.get('post_count', 0)
+            all_accounts[account]['group_count'] += 1
+            # Add platforms if available
+            if 'platforms' in group:
+                all_accounts[account]['platforms'].update(group['platforms'])
+    
+    # Create HTTP response
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="coordination_network_nodes.csv"'
+    
+    writer = csv.writer(response)
+    # Write header - matching Gephi format
+    writer.writerow(['Id', 'Label', 'Post Count', 'Group Count', 'Platforms', 'Type'])
+    
+    for account, data in all_accounts.items():
+        platforms = ', '.join(data['platforms']) if data['platforms'] else 'Unknown'
+        writer.writerow([
+            account,
+            account,  # Label same as Id
+            data['post_count'],
+            data['group_count'],
+            platforms,
+            'Account'
+        ])
+    
+    return response
+
+
+def export_network_edges_with_tweets(request):
+    """Export edges with tweet content for Gephi (similar to notebook)"""
+    import csv
+    from django.http import HttpResponse
+    
+    min_connections = int(request.GET.get('min_connections', 2))
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+    
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="coordination_edges_with_tweets.csv"'
+    
+    writer = csv.writer(response)
+    # Write header matching the notebook format
+    writer.writerow(['Source', 'Target', 'Tweet', 'Post Count', 'Platforms', 'Timestamp'])
+    
+    for group in coordination_groups:
+        accounts = group.get('accounts', [])
+        text_sample = group.get('text_sample', '')
+        post_count = group.get('post_count', 0)
+        platforms = ', '.join(group.get('platforms', [])) if 'platforms' in group else 'Unknown'
+        
+        # Get timestamp from sample posts if available
+        timestamp = ''
+        if group.get('sample_posts_with_urls'):
+            first_post = group['sample_posts_with_urls'][0]
+            timestamp = first_post.get('timestamp', '')
+        
+        # Create edges between all pairs
+        for i in range(len(accounts)):
+            for j in range(i+1, len(accounts)):
+                writer.writerow([
+                    accounts[i],
+                    accounts[j],
+                    text_sample[:200],  # Truncate long tweets
+                    post_count,
+                    platforms,
+                    timestamp
+                ])
+    
+    return response
+    
 def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Format coordination groups into the input structure expected by the Gemma model
