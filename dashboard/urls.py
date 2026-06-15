@@ -16,6 +16,7 @@ urlpatterns = [
     path('export-network-csv/', views.export_network_csv, name='export_network_csv'),
     path('export-network-nodes/', views.export_network_nodes_csv, name='export_network_nodes'),
     path('export-network-edges-tweets/', views.export_network_edges_with_tweets, name='export_network_edges_tweets'),
+    path('export-merged-gephi/', views.export_merged_gephi_csv, name='export_merged_gephi'),
 
     
     # === PEPs DATA VIEWS (FIXED CONFLICT) ===
