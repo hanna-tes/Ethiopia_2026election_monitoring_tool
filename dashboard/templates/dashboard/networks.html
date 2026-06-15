@@ -148,7 +148,7 @@
                         <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400 mt-1">
                             <span>👥 {{ group.account_count|default:"0" }} accounts</span>
                             <span>📝 {{ group.post_count|default:"0" }} posts</span>
-                            <span>📱 {{ group.platforms|default:"Unknown"|join:", " }}</span>
+                            <span>📱 {% if group.platforms %}{{ group.platforms|join:", " }}{% else %}Unknown{% endif %}</span>
                         </div>
                     </div>
                 </div>
