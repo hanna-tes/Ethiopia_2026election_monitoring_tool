@@ -3376,42 +3376,70 @@ class NetworksView(TemplateView):
         context = super().get_context_data(**kwargs)
         request = self.request
         
-        # Safely parse integers to prevent ValueError on empty URL parameters
         try:
-            min_connections = int(request.GET.get('min_connections') or 2)
-            top_n = int(request.GET.get('top_n') or 30)
-        except ValueError:
-            min_connections, top_n = 2, 30
+            # 🔥 FIX 1: Safely parse integers to prevent ValueError on empty URL parameters like ?min_connections=
+            try:
+                min_connections = int(request.GET.get('min_connections') or 2)
+                top_n = int(request.GET.get('top_n') or 30)
+            except ValueError:
+                min_connections, top_n = 2, 30
+                
+            layout_style = request.GET.get('layout', 'spring')
             
-        layout_style = request.GET.get('layout', 'spring')
-        
-        posts = ProcessedPost.objects.filter(is_election_related=True)
-        graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
-        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
-        
-        ttps = analyze_ttps(coordination_groups, posts)
-        
-        try:
-            disarm_ttp_reference = get_disarm_ttp_reference()
-        except Exception:
-            disarm_ttp_reference = []
+            posts = ProcessedPost.objects.filter(is_election_related=True)
+            graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
+            coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
             
-        context.update({
-            'active_tab': 'networks',
-            'network_graph_json': json.dumps(graph_data, default=str),
-            'graph_stats': graph_data.get('stats', {}), # Pass stats for the template
-            'coordination_groups': coordination_groups,
-            'total_coordinated_groups': len(coordination_groups),
-            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
-            'total_posts': posts.count(),
-            'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
-            'min_connections': min_connections,
-            'top_n': top_n,
-            'layout_style': layout_style,
-            'ttps': ttps,
-            'disarm_ttp_reference': disarm_ttp_reference,
-            'disarm_dataset_size': 80000,
-        })
+            # Use rule-based TTP analysis
+            ttps = analyze_ttps(coordination_groups, posts)
+            
+            # Extract DISARM Framework Reference
+            try:
+                disarm_ttp_reference = get_disarm_ttp_reference()
+            except Exception:
+                disarm_ttp_reference = []
+                
+            context.update({
+                'active_tab': 'networks',
+                'network_graph_json': json.dumps(graph_data, default=str),
+                'coordination_groups': coordination_groups,
+                'total_coordinated_groups': len(coordination_groups),
+                'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
+                'total_posts': posts.count(),
+                'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
+                'min_connections': min_connections,
+                'top_n': top_n,
+                'layout_style': layout_style,
+                'ttps': ttps,
+                'disarm_ttp_reference': disarm_ttp_reference,
+                'disarm_dataset_size': 80000,
+            })
+            
+        except Exception as e:
+            # 🔥 FIX 2: CATCH ALL ERRORS AND PRINT TO TERMINAL
+            import traceback
+            print("\n" + "="*60)
+            print("🚨 NETWORKS VIEW CRASHED - HERE IS THE EXACT ERROR 🚨")
+            print("="*60)
+            traceback.print_exc()
+            print("="*60 + "\n")
+            
+            # Fallback context so the page still loads instead of 500
+            context.update({
+                'active_tab': 'networks',
+                'error_message': str(e),
+                'network_graph_json': '{"nodes": [], "edges": [], "stats": {"nodes": 0, "edges": 0}}',
+                'coordination_groups': [],
+                'ttps': [],
+                'min_connections': 2,
+                'top_n': 30,
+                'layout_style': 'spring',
+                'total_coordinated_groups': 0,
+                'total_coordinated_accounts': 0,
+                'total_posts': 0,
+                'max_group_size': 0,
+            })
+            
         return context
         
 class LexiconManagementView(TemplateView):
