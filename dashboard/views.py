@@ -3707,84 +3707,59 @@ class NetworksView(TemplateView):
         context = super().get_context_data(**kwargs)
         request = self.request
         
+        # 🔥 BULLETPROOF: Handle empty URL parameters like /networks/?
         try:
-            # Safely parse integers
-            try:
-                min_connections = int(request.GET.get('min_connections') or 2)
-                top_n = int(request.GET.get('top_n') or 30)
-            except (ValueError, TypeError):
-                min_connections, top_n = 2, 30
-                
-            layout_style = request.GET.get('layout', 'spring')
-            posts = ProcessedPost.objects.filter(is_election_related=True)
+            min_connections = int(request.GET.get('min_connections') or 2)
+            top_n = int(request.GET.get('top_n') or 30)
+        except (ValueError, TypeError):
+            min_connections, top_n = 2, 30
             
-            # Wrap each function call individually to find the exact culprit
-            try:
-                graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
-            except Exception as e:
-                logger.error(f"Graph generation failed: {e}")
-                graph_data = {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
-            
-            try:
-                coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
-            except Exception as e:
-                logger.error(f"Coordination groups failed: {e}")
-                coordination_groups = []
-            
-            try:
-                ttps = analyze_ttps(coordination_groups, posts)
-            except Exception as e:
-                logger.error(f"TTP analysis failed: {e}")
-                ttps = []
-            
-            try:
-                disarm_ttp_reference = get_disarm_ttp_reference()
-            except Exception as e:
-                logger.error(f"DISARM reference failed: {e}")
-                disarm_ttp_reference = []
-            
-            context.update({
-                'active_tab': 'networks',
-                'network_graph_json': json.dumps(graph_data, default=str),
-                'coordination_groups': coordination_groups,
-                'total_coordinated_groups': len(coordination_groups),
-                'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
-                'total_posts': posts.count(),
-                'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
-                'min_connections': min_connections,
-                'top_n': top_n,
-                'layout_style': layout_style,
-                'ttps': ttps,
-                'disarm_ttp_reference': disarm_ttp_reference,
-                'disarm_dataset_size': 80000,
-            })
-            
+        layout_style = request.GET.get('layout', 'spring') or 'spring'
+        
+        # 🔥 Wrap EVERY function call individually
+        posts = ProcessedPost.objects.filter(is_election_related=True)
+        
+        try:
+            graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
         except Exception as e:
-            # if any CATCH ALL ERRORS AND PRINT TO TERMINAL
-            import traceback
-            print("\n" + "="*60)
-            print("🚨 NETWORKS VIEW CRASHED - HERE IS THE EXACT ERROR 🚨")
-            print("="*60)
-            traceback.print_exc()
-            print("="*60 + "\n")
-            
-            # Fallback context so the page still loads
-            context.update({
-                'active_tab': 'networks',
-                'error_message': str(e),
-                'network_graph_json': '{"nodes": [], "edges": [], "stats": {"nodes": 0, "edges": 0}}',
-                'coordination_groups': [],
-                'ttps': [],
-                'min_connections': 2,
-                'top_n': 30,
-                'layout_style': 'spring',
-                'total_coordinated_groups': 0,
-                'total_coordinated_accounts': 0,
-                'total_posts': 0,
-                'max_group_size': 0,
-                'disarm_ttp_reference': [],
-            })
-            
+            logger.error(f"Graph generation failed: {e}")
+            graph_data = {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
+        
+        try:
+            coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+        except Exception as e:
+            logger.error(f"Coordination groups failed: {e}")
+            coordination_groups = []
+        
+        try:
+            ttps = analyze_ttps(coordination_groups, posts)
+        except Exception as e:
+            logger.error(f"TTP analysis failed: {e}")
+            ttps = []
+        
+        try:
+            disarm_ttp_reference = get_disarm_ttp_reference()
+        except Exception as e:
+            logger.error(f"DISARM reference failed: {e}")
+            disarm_ttp_reference = []
+        
+        # 🔥 Safe context building
+        context.update({
+            'active_tab': 'networks',
+            'network_graph_json': json.dumps(graph_data, default=str),
+            'coordination_groups': coordination_groups,
+            'total_coordinated_groups': len(coordination_groups),
+            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
+            'total_posts': posts.count(),
+            'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
+            'min_connections': min_connections,
+            'top_n': top_n,
+            'layout_style': layout_style,
+            'ttps': ttps,
+            'disarm_ttp_reference': disarm_ttp_reference,
+            'disarm_dataset_size': 80000,
+        })
+        
         return context
         
 class LexiconManagementView(TemplateView):
