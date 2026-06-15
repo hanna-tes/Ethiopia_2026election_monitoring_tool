@@ -3369,21 +3369,26 @@ class NetworksView(TemplateView):
         top_n = int(request.GET.get('top_n', 30))
         layout_style = request.GET.get('layout', 'spring')
         
-        # Use election-related posts only
         posts = ProcessedPost.objects.filter(is_election_related=True)
         
-        # Generate CLEAN network graph
         graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
-        
-        # Get coordination groups
         coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
         
-        # Use rule-based TTP analysis (no MLX dependency)
+        # Use rule-based TTP analysis
         ttps = analyze_ttps(coordination_groups, posts)
         
-        # Extract DISARM Framework Reference from your 80k JSONL file
+        # Extract DISARM Framework Reference
         disarm_ttp_reference = get_disarm_ttp_reference()
         
+        # Group TTPs so the template doesn't crash
+        disarm_by_tactic = {
+            'Coordination & Inauthentic Behavior': [t for t in ttps if 'CIB' in t['name'] or 'Burst' in t['name']],
+            'Amplification & Manipulation': [t for t in ttps if 'Amplification' in t['name'] or 'Hashtag' in t['name'] or 'URL' in t['name']]
+        }
+        # Fallback if lists are empty
+        if not disarm_by_tactic['Coordination & Inauthentic Behavior'] and not disarm_by_tactic['Amplification & Manipulation']:
+            disarm_by_tactic['Detected TTPs'] = ttps
+
         context.update({
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
@@ -3396,10 +3401,9 @@ class NetworksView(TemplateView):
             'top_n': top_n,
             'layout_style': layout_style,
             'ttps': ttps,
-            
-            # Pass the extracted TTPs to the UI
             'disarm_ttp_reference': disarm_ttp_reference,
-            'disarm_dataset_size': 80000, 
+            'disarm_dataset_size': 80000,
+            'disarm_by_tactic': disarm_by_tactic, 
         })
         
         return context       
