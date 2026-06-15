@@ -170,7 +170,130 @@ def export_network_nodes_csv(request):
     
     return response
 
+# === GEPHI CSV EXPORT FUNCTIONS ===
+def _get_coordination_edges():
+    """Helper to extract coordination edges based on identical text."""
+    # Find texts posted by multiple accounts
+    coordinated_texts = ProcessedPost.objects.filter(is_election_related=True) \
+        .values('original_text') \
+        .annotate(account_count=Count('account_id', distinct=True)) \
+        .filter(account_count__gte=2) \
+        .filter(original_text__isnull=False) \
+        .exclude(original_text='')
+    
+    edges = []
+    nodes_dict = {} # account -> {'originated': 0, 'amplified': 0}
+    
+    for text_group in coordinated_texts:
+        text = text_group['original_text']
+        # Skip very short texts to avoid noise
+        if len(text.strip()) < 20:
+            continue
+            
+        # Get all posts for this text, ordered by timestamp
+        posts = list(ProcessedPost.objects.filter(original_text=text)
+                     .order_by('timestamp_share')
+                     .values('account_id', 'timestamp_share', 'url', 'platform'))
+        
+        if not posts:
+            continue
+            
+        # The first poster is the Source (Originator)
+        source_account = posts[0]['account_id']
+        first_date = posts[0]['timestamp_share']
+        url = posts[0]['url']
+        platform = posts[0]['platform']
+        
+        # Initialize nodes
+        if source_account not in nodes_dict:
+            nodes_dict[source_account] = {'originated': 0, 'amplified': 0}
+        nodes_dict[source_account]['originated'] += 1
+        
+        # The rest are Targets (Amplifiers)
+        for post in posts[1:]:
+            target_account = post['account_id']
+            if target_account == source_account:
+                continue # Skip self-loops
+                
+            if target_account not in nodes_dict:
+                nodes_dict[target_account] = {'originated': 0, 'amplified': 0}
+            nodes_dict[target_account]['amplified'] += 1
+            
+            edges.append({
+                'source': source_account,
+                'target': target_account,
+                'tweet': text,
+                'date': first_date.strftime('%Y-%m-%d %H:%M') if first_date else '',
+                'platform': platform,
+                'url': url or ''
+            })
+            
+    return edges, nodes_dict
 
+def export_gephi_nodes_csv(request):
+    """Export Nodes CSV for Gephi"""
+    edges, nodes_dict = _get_coordination_edges()
+    
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="gephi_nodes.csv"'
+    
+    writer = csv.writer(response)
+    writer.writerow(['Id', 'Label', 'Times_Originated', 'Times_Amplified', 'Total_Activity', 'Node_Type'])
+    
+    for account, stats in nodes_dict.items():
+        total = stats['originated'] + stats['amplified']
+        node_type = 'Source' if stats['originated'] > stats['amplified'] else 'Amplifier'
+        writer.writerow([account, account, stats['originated'], stats['amplified'], total, node_type])
+        
+    return response
+
+def export_gephi_edges_csv(request):
+    """Export Edges CSV for Gephi"""
+    edges, _ = _get_coordination_edges()
+    
+    # Aggregate edges by source-target pair
+    edge_weights = {}
+    for edge in edges:
+        key = (edge['source'], edge['target'])
+        if key not in edge_weights:
+            edge_weights[key] = 0
+        edge_weights[key] += 1
+        
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="gephi_edges.csv"'
+    
+    writer = csv.writer(response)
+    writer.writerow(['Source', 'Target', 'Weight', 'Type'])
+    
+    for (source, target), weight in edge_weights.items():
+        writer.writerow([source, target, weight, 'Directed'])
+        
+    return response
+
+def export_gephi_edges_tweets_csv(request):
+    """Export Edges + Tweets CSV for Gephi"""
+    edges, _ = _get_coordination_edges()
+    
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="gephi_edges_tweets.csv"'
+    
+    writer = csv.writer(response)
+    writer.writerow(['Source', 'Target', 'Tweet', 'Date', 'Platform', 'URL'])
+    
+    for edge in edges:
+        # Truncate long tweets to prevent CSV issues
+        tweet_text = edge['tweet'][:200].replace('\n', ' ').replace('\r', '')
+        writer.writerow([
+            edge['source'], 
+            edge['target'], 
+            tweet_text,
+            edge['date'],
+            edge['platform'],
+            edge['url']
+        ])
+        
+    return response
+    
 def export_network_edges_with_tweets(request):
     """Export edges with tweet content for Gephi (similar to notebook)"""
     import csv
