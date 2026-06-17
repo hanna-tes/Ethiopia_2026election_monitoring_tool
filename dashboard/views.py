@@ -4399,14 +4399,18 @@ class LexiconManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Load lexicon terms from DB (user-added + CONFIG defaults)
-          lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).exclude(term__regex=r'^.$').order_by('category', 'severity')
+        # Load lexicon terms from DB, excluding single characters
+        lexicon_terms = LexiconTerm.objects.filter(
+            is_election_related=True
+        ).exclude(
+            term__regex=r'^.$'
+        ).order_by('category', 'severity')
         
         # If DB is empty, seed from CONFIG (one-time migration)
         if not lexicon_terms.exists():
             for category, terms in CONFIG['lexicon'].items():
                 for term, metadata in terms.items():
-                    # 🔥 Skip single characters when seeding
+                    #  Skip single characters when seeding
                     if len(term.strip()) > 1:
                         LexiconTerm.objects.get_or_create(
                             term=term,
@@ -4418,10 +4422,14 @@ class LexiconManagementView(TemplateView):
                                 'is_election_related': True
                             }
                         )
-         lexicon_terms = LexiconTerm.objects.filter(is_election_related=True).exclude(term__regex=r'^.$').order_by('category', 'severity')
+            # Reload after seeding
+            lexicon_terms = LexiconTerm.objects.filter(
+                is_election_related=True
+            ).exclude(
+                term__regex=r'^.$'
+            ).order_by('category', 'severity')
         
         # RESPECT THE GLOBAL DATE FILTER
-        # This automatically handles "View All", custom date ranges, or the default 3 months
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
         
@@ -4434,7 +4442,8 @@ class LexiconManagementView(TemplateView):
             if post.original_text:
                 matches = scan_text_for_lexicon_terms(post.original_text)
                 if matches:
-                    all_matches.extend(matches)
+                    #  Filter out single-character terms
+                    all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
                     posts_scanned += 1
         
         # Get distinct categories for filter dropdown
@@ -4455,12 +4464,10 @@ class LexiconManagementView(TemplateView):
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
-            
             # Dynamic match statistics based on the active filter
             'total_matches': len(all_matches),
             'posts_scanned': posts_scanned,
             'total_posts': total_posts_in_filter,
-            
             # Filter context for the UI text
             'view_all': view_all,
             'has_custom_date_filter': has_custom_date_filter,
