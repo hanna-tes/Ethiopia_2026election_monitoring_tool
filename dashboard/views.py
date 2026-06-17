@@ -4012,20 +4012,20 @@ class LexiconsView(TemplateView):
         # 1. TRY TO LOAD CACHED RESULTS FIRST (Instant load)
         cache_key = "lexicon_dashboard_data_v2"
         cached_data = cache.get(cache_key)
-        
         if cached_data:
             context.update(cached_data)
             context['ai_insights'] = cache.get("lexicons_ai_insights_v1")
             context['ai_is_running'] = cache.get("lexicons_ai_running")
+            # Add lexicon count to cached context
+            context['lexicon_term_count'] = self._get_lexicon_term_count()
             return context
-
-        # 2. GET POSTS (Limit to recent 5000 for performance)
+        
+        # 2. GET POSTS
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
             total_posts = filtered_posts.count()
         except Exception as e:
             logger.error(f"Error getting posts: {e}")
-            # Fallback to empty context
             context.update({
                 'active_tab': 'lexicons',
                 'top_terms': [],
@@ -4038,24 +4038,21 @@ class LexiconsView(TemplateView):
                 'targeted_entities': [],
                 'ai_insights': None,
                 'ai_is_running': False,
+                'lexicon_term_count': self._get_lexicon_term_count(),
             })
             return context
-
-        # Only scan the most recent 5,000 posts to prevent timeout
+        
+        # 3. SCAN POSTS
         posts_to_scan = filtered_posts[:5000]
-
-        # 3. FAST REGEX SCAN
         all_matches = []
         posts_scanned = 0
         
         try:
-            # Use iterator to save memory
             for post in posts_to_scan.iterator():
                 if post.original_text:
                     try:
                         matches = scan_text_for_lexicon_terms(post.original_text)
                         if matches:
-                            # Filter out single-character terms
                             all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
                             posts_scanned += 1
                     except Exception as e:
@@ -4063,18 +4060,16 @@ class LexiconsView(TemplateView):
                         continue
         except Exception as e:
             logger.error(f"Error during lexicon scan: {e}")
-
+        
         # 4. AGGREGATE ANALYTICS
         try:
             from collections import Counter
             term_counts = Counter([m['term'] for m in all_matches])
             category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
-            
             top_terms = term_counts.most_common(15)
             top_terms_with_meta = []
             for term, count in top_terms:
-                # Skip single characters just in case they slipped through
                 if len(term.strip()) <= 1:
                     continue
                 metadata = {}
@@ -4088,20 +4083,19 @@ class LexiconsView(TemplateView):
             top_terms_with_meta = []
             category_counts = Counter()
             severity_counts = Counter()
-
+        
         # Word Cloud
         wordcloud_base64 = None
         if all_matches:
             try:
-                # Filter single characters out of the word cloud generation too
                 valid_terms = [{'term': t, 'count': c} for t, c in term_counts.most_common(50) if len(t.strip()) > 1]
                 wordcloud = generate_trigger_wordcloud({'top_terms': valid_terms})
                 if wordcloud:
                     wordcloud_base64 = wordcloud_to_base64(wordcloud)
             except Exception as e:
                 logger.warning(f"Word cloud failed: {e}")
-
-        # Targeted Entities (Limit to 1000 posts for speed)
+        
+        # Targeted Entities
         targeted_entities = []
         try:
             entity_patterns = [
@@ -4121,17 +4115,16 @@ class LexiconsView(TemplateView):
             targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
         except Exception as e:
             logger.error(f"Error extracting entities: {e}")
-
-        # 5. TRIGGER AI ANALYSIS (Non-blocking)
+        
+        # 5. TRIGGER AI ANALYSIS
         cache_key_ai = "lexicons_ai_insights_v1"
         ai_insights = cache.get(cache_key_ai)
         ai_is_running = cache.get("lexicons_ai_running")
         
         if not ai_insights and not ai_is_running and total_posts > 10:
-            cache.set("lexicons_ai_running", True, 300)  # Lock for 5 mins
+            cache.set("lexicons_ai_running", True, 300)
             post_ids = list(filtered_posts.values_list('id', flat=True)[:1000])
             sample_ids = random.sample(post_ids, min(50, len(post_ids)))
-            
             thread = threading.Thread(
                 target=self._run_ai_analysis_background,
                 args=(sample_ids, cache_key_ai)
@@ -4139,7 +4132,7 @@ class LexiconsView(TemplateView):
             thread.daemon = True
             thread.start()
             logger.info("Started background analysis...")
-
+        
         # 6. PREPARE DATA TO CACHE
         results_to_cache = {
             'active_tab': 'lexicons',
@@ -4153,40 +4146,44 @@ class LexiconsView(TemplateView):
             'targeted_entities': targeted_entities,
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
+            'lexicon_term_count': self._get_lexicon_term_count(),  # Add lexicon count
         }
         
-        # SAVE TO CACHE FOR 1 HOUR (3600 seconds)
         cache.set(cache_key, results_to_cache, 3600)
-        
         context.update(results_to_cache)
         context['ai_insights'] = ai_insights
         context['ai_is_running'] = ai_is_running and not ai_insights
         
         return context
-
+    
+    def _get_lexicon_term_count(self):
+        """Count total terms in CONFIG lexicon"""
+        try:
+            total = 0
+            for category, terms in CONFIG.get('lexicon', {}).items():
+                total += len(terms)
+            return total
+        except:
+            return "1000+"
+    
     @staticmethod
     def _run_ai_analysis_background(post_ids, cache_key):
         """Runs the heavy AI model in the background and saves to cache."""
         import traceback
-
-        # Add logging to track progress
         logger.info(f"Background AI analysis STARTED for {len(post_ids)} posts")
-
         try:
             from .utils.hate_speech_detector import get_hate_speech_detector
             from .models import ProcessedPost
             from collections import Counter
-
-            # Load model (this is the slow part - about 15-20 minutes)
-            logger.info("Loading Gemma model (this may take 15-20 minutes)...")
+            
+            logger.info("Loading Gemma model...")
             detector = get_hate_speech_detector()
             logger.info("Gemma model loaded successfully!")
-
+            
             posts = ProcessedPost.objects.filter(id__in=post_ids)
             category_counts = Counter()
             total_analyzed = 0
-
-            # Map Gemma categories to severity levels
+            
             gemma_severity_map = {
                 'violence': 'critical', 'inciteful': 'critical', 'call for action': 'critical', 'dehumanization': 'critical',
                 'extremism': 'high', 'ethnic slur': 'high', 'slur': 'high', 'misogynistic': 'high',
@@ -4194,9 +4191,8 @@ class LexiconsView(TemplateView):
                 'stereotype': 'high', 'homophobic': 'high', 'ethnicity': 'high', 'xenophobia': 'high', 'religion': 'high',
                 'ancestry': 'low', 'class': 'low', 'structural': 'low'
             }
-
+            
             logger.info(f"Analyzing {posts.count()} posts...")
-
             for idx, post in enumerate(posts):
                 if post.original_text and len(post.original_text) > 20:
                     try:
@@ -4205,15 +4201,21 @@ class LexiconsView(TemplateView):
                         if cat and cat not in ['neutral', 'error']:
                             category_counts[cat] += 1
                             total_analyzed += 1
-
-                        # Log progress every 10 posts
+                        
+                        # Update progress in cache every 10 posts
+                        if (idx + 1) % 10 == 0:
+                            cache.set("lexicon_analysis_progress", {
+                                'current': idx + 1,
+                                'total': posts.count(),
+                                'percentage': round((idx + 1) / posts.count() * 100, 1)
+                            }, 300)
+                        
                         if (idx + 1) % 10 == 0:
                             logger.info(f"Progress: {idx + 1}/{posts.count()} posts analyzed")
-
                     except Exception as e:
                         logger.warning(f"Scan failed for post {post.id}: {e}")
                         continue
-
+            
             # Calculate percentages
             total_hateful = sum(category_counts.values())
             ai_results = []
@@ -4225,31 +4227,30 @@ class LexiconsView(TemplateView):
                     'percentage': round(pct, 1),
                     'severity': gemma_severity_map.get(cat, 'medium')
                 })
-
-            # Save to cache for 24 hours (86400 seconds)
+            
+            # Save to cache
             cache.set(cache_key, {
                 'results': ai_results,
                 'total_analyzed': total_analyzed,
                 'total_hateful': total_hateful,
             }, 86400)
-
+            
+            # Clear progress
+            cache.delete("lexicon_analysis_progress")
+            
             logger.info(f"Background analysis COMPLETE! Found {total_hateful} hateful posts out of {total_analyzed}.")
-
         except Exception as e:
             logger.error(f"Background analysis FAILED: {e}")
             logger.error(traceback.format_exc())
-
-            # Save an error state to cache so the UI knows it failed
             cache.set(cache_key, {
                 'results': [],
                 'total_analyzed': 0,
                 'total_hateful': 0,
                 'error': str(e)
-            }, 3600)  # Cache error for 1 hour
-
+            }, 3600)
         finally:
-            # Always clear the running flag, even if there was an error
             cache.delete("lexicons_ai_running")
+            cache.delete("lexicon_analysis_progress")
             logger.info("Background thread FINISHED and cleaned up") 
 
 class PEPsHubView(TemplateView):
