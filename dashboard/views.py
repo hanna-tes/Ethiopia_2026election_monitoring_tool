@@ -4720,7 +4720,7 @@ class LexiconManagementView(TemplateView):
         # Handle Scan Text
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
-            if text and len(text) > 10:
+            if text:  # 🔥 Removed the len(text) > 10 limit - any text length is accepted
                 # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
@@ -4789,8 +4789,8 @@ class LexiconManagementView(TemplateView):
                     'overall_confidence_pct': f"{round((llm_result.get('confidence', 0) + gemma_result.get('confidence', 0)) / 2 * 100)}%",
                     'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
                     'targeted_groups': llm_result.get('targeted_groups', []),
-                    'explanation': llm_result.get('explanation', ''),  # Keep this for backward compatibility
-                    'analysis': combined_analysis,  # NEW: Combined analysis
+                    'explanation': llm_result.get('explanation', ''),
+                    'analysis': combined_analysis,
                     'has_lexicon_matches': len(lexicon_matches) > 0
                 }
                 
@@ -4802,10 +4802,10 @@ class LexiconManagementView(TemplateView):
                     else:
                         messages.success(request, "✅ No hate speech detected.")
             else:
-                messages.warning(request, "⚠️ Please enter text to scan (minimum 10 characters)")
+                messages.warning(request, "⚠️ Please enter text to scan")  
             
             return redirect('lexicon_management')
-        
+           
 class UploadDataView(TemplateView):
     """UI for uploading CSV files - handles both GET and POST"""
     template_name = 'dashboard/upload_data.html'
