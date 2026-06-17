@@ -94,6 +94,17 @@ Category:"""
             
             prediction = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip().lower()
             
+            # Detect if the model is stuck in a repetition loop
+            if prediction.count('category') > 2 or (len(prediction) > 10 and len(set(prediction.split())) < 3):
+                logger.warning(f"Gemma model stuck in repetition loop. Falling back to LLM/Lexicon.")
+                return {
+                    'category': 'error', 
+                    'severity': 'low', 
+                    'confidence': 0.0,
+                    'raw_prediction': prediction[:100], 
+                    'is_hate_speech': False
+                }
+            
             detected_category = self._parse_category(prediction)
             severity = CATEGORY_SEVERITY.get(detected_category, 'medium')
             confidence = self._estimate_confidence(prediction, detected_category)
