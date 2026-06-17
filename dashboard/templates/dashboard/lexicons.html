@@ -7,15 +7,15 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
-            <h2 class="text-2xl font-bold text-white">📊 Mapped Lexicons</h2>
-            <p class="text-gray-400 mt-1">Dual-engine detection: Rule-based + AI-powered</p>
+            <h2 class="text-2xl font-bold text-white"> Mapped Lexicons</h2>
+            <p class="text-gray-400 mt-1">Dual-engine detection: Rule-based + Gemma LoRA Model-powered</p>
         </div>
         <div class="flex gap-2">
             <span class="px-3 py-1 bg-blue-900 text-blue-200 rounded-full text-sm font-medium border border-blue-700">
-                📋 {{ posts_scanned|default:0 }} posts scanned
+                 {{ posts_scanned|default:0 }} posts scanned
             </span>
             <span class="px-3 py-1 bg-purple-900 text-purple-200 rounded-full text-sm font-medium border border-purple-700">
-                🎯 {{ total_matches|default:0 }} lexicon matches
+                 {{ total_matches|default:0 }} lexicon matches
             </span>
         </div>
     </div>
@@ -75,28 +75,28 @@
                 </div>
             </div>
             <span class="px-4 py-2 bg-blue-600 text-white rounded-full text-sm font-bold shadow-lg">
-                {{ total_matches }} matches
+                {{ total_matches|default:0 }} matches
             </span>
         </div>
 
         <!-- Stats Cards Grid -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-blue-500 transition-colors">
-                <div class="text-3xl font-bold text-blue-400">{{ total_matches }}</div>
+                <div class="text-3xl font-bold text-blue-400">{{ total_matches|default:0 }}</div>
                 <div class="text-sm text-gray-400 mt-1">Total Lexicon Hits</div>
             </div>
             <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-blue-500 transition-colors">
-                <div class="text-3xl font-bold text-blue-400">{{ category_counts|length }}</div>
+                <div class="text-3xl font-bold text-blue-400">{{ category_counts|length|default:0 }}</div>
                 <div class="text-sm text-gray-400 mt-1">Categories Triggered</div>
             </div>
             <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-blue-500 transition-colors">
-                <div class="text-3xl font-bold text-blue-400">{{ posts_scanned }}</div>
+                <div class="text-3xl font-bold text-blue-400">{{ posts_scanned|default:0 }}</div>
                 <div class="text-sm text-gray-400 mt-1">Posts Scanned</div>
             </div>
             <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-blue-500 transition-colors">
                 <div class="text-3xl font-bold text-blue-400">
                     {% if posts_scanned > 0 %}
-                        {{ total_matches|floatformat:0 }}%
+                        {{ total_matches|floatformat:"0" }}%
                     {% else %}
                         0%
                     {% endif %}
@@ -128,13 +128,13 @@
                     </div>
                     
                     <div class="flex flex-wrap gap-2 mt-3">
-                        <!-- Category Badge -->
+                        <!-- Category Badge - FIXED: removed invalid replace filter -->
                         <span class="px-2 py-1 bg-gray-700 text-gray-300 rounded text-xs font-medium border border-gray-600">
-                            {{ term_data.metadata.category|default:"general"|replace:"_":" "|title }}
+                            {{ term_data.metadata.category|default:"general"|title }}
                         </span>
                         
                         <!-- Severity Badge -->
-                        {% with sev=term_data.metadata.severity %}
+                        {% with sev=term_data.metadata.severity|default:"medium" %}
                         <span class="px-2 py-1 rounded text-xs font-bold
                             {% if sev == 'critical' %}bg-red-600 text-white border border-red-500
                             {% elif sev == 'high' %}bg-orange-500 text-white border border-orange-400
@@ -173,7 +173,7 @@
             <div class="flex items-center gap-3">
                 <span class="text-3xl">🤖</span>
                 <div>
-                    <h3 class="text-xl font-bold text-purple-300">AI Model Detection Results</h3>
+                    <h3 class="text-xl font-bold text-purple-300">Model Detection Results</h3>
                     <p class="text-sm text-gray-400">Context-aware hate speech classification from fine-tuned Gemma model</p>
                 </div>
             </div>
@@ -183,7 +183,7 @@
             </span>
             {% elif ai_insights %}
             <span class="px-4 py-2 bg-purple-600 text-white rounded-full text-sm font-bold shadow-lg">
-                ✅ {{ ai_insights.total_analyzed }} analyzed
+                ✅ {{ ai_insights.total_analyzed|default:0 }} analyzed
             </span>
             {% endif %}
         </div>
@@ -192,17 +192,17 @@
         <!-- AI Stats Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-purple-500 transition-colors">
-                <div class="text-3xl font-bold text-purple-400">{{ ai_insights.total_analyzed }}</div>
+                <div class="text-3xl font-bold text-purple-400">{{ ai_insights.total_analyzed|default:0 }}</div>
                 <div class="text-sm text-gray-400 mt-1">Posts Analyzed</div>
             </div>
             <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-purple-500 transition-colors">
-                <div class="text-3xl font-bold text-purple-400">{{ ai_insights.total_hateful }}</div>
+                <div class="text-3xl font-bold text-purple-400">{{ ai_insights.total_hateful|default:0 }}</div>
                 <div class="text-sm text-gray-400 mt-1">Hate Speech Detected</div>
             </div>
             <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-purple-500 transition-colors">
                 <div class="text-3xl font-bold text-purple-400">
                     {% if ai_insights.total_analyzed > 0 %}
-                        {{ ai_insights.total_hateful|floatformat:0 }}%
+                        {{ ai_insights.total_hateful|floatformat:"0" }}%
                     {% else %}0%{% endif %}
                 </div>
                 <div class="text-sm text-gray-400 mt-1">Detection Rate</div>
@@ -212,7 +212,7 @@
         <!-- AI Categories - CARD GRID -->
         <div class="mb-6">
             <h4 class="text-lg font-bold text-purple-300 mb-4 flex items-center gap-2">
-                <span>🧠</span> Top AI-Detected Categories
+                <span>🧠</span> Top Model Detected Categories
             </h4>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {% for result in ai_insights.results %}
@@ -254,7 +254,7 @@
             <p class="text-yellow-200">
                 The Gemma LoRA model is running in the background. Results will appear automatically when complete.
             </p>
-            <p class="text-sm text-yellow-300 mt-3">💡 Refresh the page in a few minutes to see results.</p>
+            <p class="text-sm text-yellow-300 mt-3"> Refresh the page in a few minutes to see results.</p>
         </div>
         {% endif %}
     </div>
