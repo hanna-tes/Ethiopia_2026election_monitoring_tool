@@ -763,8 +763,13 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
     categories_to_check = category_filter if category_filter else lexicon.keys()
     
     for category in categories_to_check:
-        if category not in lexicon: continue
+        if category not in lexicon: 
+            continue
         for term, metadata in lexicon[category].items():
+            # FIX: Skip single-character terms (except for Amharic which can be meaningful)
+            if len(term.strip()) < 2 and not re.match(r'^[\u1200-\u137F]+$', term):
+                continue
+                
             if metadata.get("language") == "amharic" or re.match(r'^[\u1200-\u137F]+$', term):
                 pattern = re.escape(term)
             else:
@@ -772,7 +777,8 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
             
             if re.search(pattern, text_lower, re.IGNORECASE):
                 matches.append({
-                    'term': term, 'category': category,
+                    'term': term, 
+                    'category': category,
                     'severity': metadata.get('severity', 'medium'),
                     'target_entity': metadata.get('target_entity', ''),
                     'language': metadata.get('language', 'english')
@@ -4526,115 +4532,95 @@ class LexiconManagementView(TemplateView):
                 messages.success(request, "✅ Term added successfully!")
             else:
                 messages.warning(request, "⚠️ Term must be at least 2 characters long. Single characters are skipped.")
-        
-        # Handle Scan Text 
+      
+        # Handle Scan Text
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
-            if text:  
-                # 1. Lexicon-based detection (Used for highlighting terms, NOT the final verdict)
+            if text and len(text) > 10:
+                # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
                 
-                # 2. LLM-based detection (Secondary fallback)
+                # 2. LLM-based detection (provides detailed explanation)
                 llm_result = detect_hate_speech_llm(text)
                 
-                # 3. Fine-tuned Gemma LoRA Model detection (PRIMARY decision maker)
+                # 3. Fine-tuned Gemma Model detection
                 try:
                     gemma_result = get_hate_speech_detector().detect(text)
                 except Exception as e:
                     logger.warning(f"Gemma LoRA detection failed: {e}")
-                    gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'is_hate_speech': False}
+                    gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low'}
                 
-                # 4. Determine final verdict based PRIMARILY on Gemma Model's contextual understanding
-                # This differentiates between normal news reporting containing sensitive words and actual hate speech.
-                gemma_category = str(gemma_result.get('category', 'neutral')).lower()
-                gemma_confidence = float(gemma_result.get('confidence', 0.0))
-                gemma_severity = gemma_result.get('severity', 'low')
-                
+                # 4. Determine final verdict
                 is_hate_speech = False
-                overall_severity = 'low'
-                overall_confidence = 0.0
-                explanation = ""
+                overall_severity_num = 1
                 
-                if gemma_category == 'error':
-                    # Fallback if model crashed
-                    if llm_result.get('is_hate_speech') and llm_result.get('confidence', 0) > 0.7:
-                        is_hate_speech = True
-                        overall_severity = llm_result.get('severity', 'medium')
-                        overall_confidence = llm_result.get('confidence')
-                        explanation = "Gemma model failed. Fallback to LLM detection."
-                    elif lexicon_risk['level'] in ['high', 'critical']:
-                        is_hate_speech = True
-                        overall_severity = lexicon_risk['level']
-                        overall_confidence = 0.5
-                        explanation = "Gemma model failed. Fallback to Lexicon detection (High/Critical terms found)."
-                    else:
-                        explanation = "Gemma model failed. No confident fallback."
-                else:
-                    # Gemma model succeeded
-                    if gemma_category == 'neutral':
-                        # Model says it's neutral (e.g., normal news reporting)
-                        is_hate_speech = False
-                        overall_severity = 'low'
-                        overall_confidence = gemma_confidence
-                        if lexicon_matches:
-                            explanation = f"Model classified as 'neutral' (likely news reporting), despite {len(lexicon_matches)} lexicon term(s) found."
-                        else:
-                            explanation = "Model classified as 'neutral'. No hate speech detected."
-                    else:
-                        # Model detected a hateful category
-                        if gemma_confidence >= 0.5:
-                            is_hate_speech = True
-                            overall_severity = gemma_severity
-                            overall_confidence = gemma_confidence
-                            explanation = f"Model classified as '{gemma_category}' with {gemma_confidence*100:.0f}% confidence."
-                        else:
-                            # Model detected something but with low confidence
-                            is_hate_speech = False
-                            overall_severity = 'low'
-                            overall_confidence = gemma_confidence
-                            explanation = f"Model detected '{gemma_category}' but with low confidence ({gemma_confidence*100:.0f}%). Treated as neutral."
+                # Use LLM explanation as primary if it has high confidence
+                if llm_result.get('is_hate_speech') and llm_result.get('confidence', 0) > 0.7:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'low'), 1)
                 
-                # 5. Save results to session
+                # Also check Gemma model
+                if gemma_result.get('category') != 'neutral' and gemma_result.get('confidence', 0) > 0.7:
+                    is_hate_speech = True
+                    gemma_sev = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
+                    overall_severity_num = max(overall_severity_num, gemma_sev)
+                
+                # Also check lexicon
+                if lexicon_risk['score'] > 5:  # High lexicon confidence
+                    is_hate_speech = True
+                    lex_sev = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk['level'], 1)
+                    overall_severity_num = max(overall_severity_num, lex_sev)
+                
+                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
+                
+                # 5. Create combined analysis
+                analysis_parts = []
+                
+                # Use LLM explanation if available
+                if llm_result.get('explanation'):
+                    analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
+                
+                # Add lexicon matches
+                if lexicon_matches:
+                    terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
+                    analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
+                
+                # Add Gemma classification
+                if gemma_result.get('category') and gemma_result.get('category') != 'error':
+                    analysis_parts.append(f"Gemma model classified as: {gemma_result['category']} ({gemma_result.get('confidence', 0)*100:.0f}% confidence)")
+                
+                combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
+                
+                # 6. Save to session
                 request.session['scan_results'] = {
                     'text': text[:200] + '...' if len(text) > 200 else text,
-                    
-                    # Primary Model Verdict
-                    'is_hate_speech': is_hate_speech,
-                    'overall_severity': overall_severity,
-                    'overall_confidence': round(overall_confidence, 2),
-                    'overall_confidence_pct': f"{round(overall_confidence * 100)}%",
-                    'primary_model': 'Gemma LoRA',
-                    'explanation': explanation,
-                    
-                    # Model Details
-                    'gemma_result': gemma_result,
-                    'gemma_category': gemma_category,
-                    'gemma_confidence_pct': f"{round(gemma_confidence * 100)}%",
-                    'llm_result': llm_result,
-                    
-                    # Lexicon Details (for highlighting terms, but NOT the primary verdict)
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
-                    'has_lexicon_matches': len(lexicon_matches) > 0,
-                    
-                    # Other
-                    'all_categories': list(set([m['category'] for m in lexicon_matches] + [gemma_category] + llm_result.get('categories', []))),
+                    'llm_result': llm_result,
+                    'gemma_result': gemma_result,
+                    'is_hate_speech': is_hate_speech,
+                    'overall_severity': severity_map[overall_severity_num],
+                    'overall_confidence': round((llm_result.get('confidence', 0) + gemma_result.get('confidence', 0)) / 2, 2),
+                    'overall_confidence_pct': f"{round((llm_result.get('confidence', 0) + gemma_result.get('confidence', 0)) / 2 * 100)}%",
+                    'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
                     'targeted_groups': llm_result.get('targeted_groups', []),
+                    'explanation': llm_result.get('explanation', ''),  # Keep this for backward compatibility
+                    'analysis': combined_analysis,  # NEW: Combined analysis
+                    'has_lexicon_matches': len(lexicon_matches) > 0
                 }
                 
-                # User feedback messages
                 if is_hate_speech:
-                    messages.warning(request, f"⚠️ Hate speech detected! Severity: {overall_severity.upper()} (Confidence: {overall_confidence:.0%})")
+                    messages.warning(request, f"⚠️ Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {request.session['scan_results']['overall_confidence']*100:.0f}%)")
                 else:
                     if lexicon_matches:
                         messages.info(request, f"ℹ️ No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
                     else:
                         messages.success(request, "✅ No hate speech detected.")
             else:
-                messages.warning(request, "⚠️ Please enter text to scan")
-                
-        return redirect('lexicon_management')
+                messages.warning(request, "⚠️ Please enter text to scan (minimum 10 characters)")
+            
+            return redirect('lexicon_management')
         
 class UploadDataView(TemplateView):
     """UI for uploading CSV files - handles both GET and POST"""
