@@ -4410,7 +4410,7 @@ class LexiconManagementView(TemplateView):
         if not lexicon_terms.exists():
             for category, terms in CONFIG['lexicon'].items():
                 for term, metadata in terms.items():
-                    #  Skip single characters when seeding
+                    # 🔥 Skip single characters when seeding
                     if len(term.strip()) > 1:
                         LexiconTerm.objects.get_or_create(
                             term=term,
@@ -4442,7 +4442,7 @@ class LexiconManagementView(TemplateView):
             if post.original_text:
                 matches = scan_text_for_lexicon_terms(post.original_text)
                 if matches:
-                    #  Filter out single-character terms
+                    # 🔥 Filter out single-character terms
                     all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
                     posts_scanned += 1
         
@@ -4476,7 +4476,7 @@ class LexiconManagementView(TemplateView):
         })
         return context
         
-     def post(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
         
         # Handle Edit Term
