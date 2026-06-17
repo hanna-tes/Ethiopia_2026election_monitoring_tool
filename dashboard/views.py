@@ -4738,73 +4738,47 @@ class LexiconManagementView(TemplateView):
                 # 4. Determine final verdict
                 is_hate_speech = False
                 overall_severity_num = 1
+                explanation = ""
                 
-                # Use LLM explanation as primary if it has high confidence
-                if llm_result.get('is_hate_speech') and llm_result.get('confidence', 0) > 0.7:
+                # Get AI model verdicts
+                llm_is_hate = llm_result.get('is_hate_speech', False)
+                llm_confidence = llm_result.get('confidence', 0)
+                gemma_category = gemma_result.get('category', 'neutral')
+                gemma_confidence = gemma_result.get('confidence', 0)
+                lexicon_score = lexicon_risk.get('score', 0)
+                
+                # If BOTH AI models confidently say it's NOT hate speech, trust them.
+                # The lexicon CANNOT override a confident AI "neutral" verdict.
+                if (not llm_is_hate and llm_confidence > 0.6 and 
+                    gemma_category == 'neutral' and gemma_confidence > 0.7):
+                    is_hate_speech = False
+                    overall_severity_num = 1
+                    explanation = f"Both AI models agree: LLM says objective news, Gemma says neutral ({gemma_confidence*100:.0f}% confidence). Lexicon found {len(lexicon_matches)} terms but they appear in news context."
+                
+                # If AI models confidently say it IS hate speech
+                elif (llm_is_hate and llm_confidence > 0.7) or (gemma_category != 'neutral' and gemma_confidence > 0.7):
                     is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'low'), 1)
+                    if llm_is_hate and llm_confidence > 0.7:
+                        overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'low'), 1)
+                    if gemma_category != 'neutral' and gemma_confidence > 0.7:
+                        gemma_sev = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
+                        overall_severity_num = max(overall_severity_num, gemma_sev)
+                    explanation = f"AI models detected hate speech. LLM: {llm_is_hate} ({llm_confidence*100:.0f}%), Gemma: {gemma_category} ({gemma_confidence*100:.0f}%)."
                 
-                # Also check Gemma model
-                if gemma_result.get('category') != 'neutral' and gemma_result.get('confidence', 0) > 0.7:
+                # If AI models are uncertain (low confidence), fall back to lexicon
+                elif lexicon_score > 5 and llm_confidence < 0.6 and gemma_confidence < 0.6:
                     is_hate_speech = True
-                    gemma_sev = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
-                    overall_severity_num = max(overall_severity_num, gemma_sev)
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'low'), 1)
+                    explanation = f"AI models uncertain (LLM: {llm_confidence*100:.0f}%, Gemma: {gemma_confidence*100:.0f}%). Falling back to lexicon which found {len(lexicon_matches)} high-risk terms."
                 
-                # Also check lexicon
-                if lexicon_risk['score'] > 5:  # High lexicon confidence
-                    is_hate_speech = True
-                    lex_sev = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk['level'], 1)
-                    overall_severity_num = max(overall_severity_num, lex_sev)
-                
-                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
-                
-                # 5. Create combined analysis
-                analysis_parts = []
-                
-                # Use LLM explanation if available
-                if llm_result.get('explanation'):
-                    analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
-                
-                # Add lexicon matches
-                if lexicon_matches:
-                    terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
-                    analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
-                
-                # Add Gemma classification
-                if gemma_result.get('category') and gemma_result.get('category') != 'error':
-                    analysis_parts.append(f"Gemma model classified as: {gemma_result['category']} ({gemma_result.get('confidence', 0)*100:.0f}% confidence)")
-                
-                combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
-                
-                # 6. Save to session
-                request.session['scan_results'] = {
-                    'text': text[:200] + '...' if len(text) > 200 else text,
-                    'lexicon_matches': lexicon_matches,
-                    'lexicon_risk': lexicon_risk,
-                    'llm_result': llm_result,
-                    'gemma_result': gemma_result,
-                    'is_hate_speech': is_hate_speech,
-                    'overall_severity': severity_map[overall_severity_num],
-                    'overall_confidence': round((llm_result.get('confidence', 0) + gemma_result.get('confidence', 0)) / 2, 2),
-                    'overall_confidence_pct': f"{round((llm_result.get('confidence', 0) + gemma_result.get('confidence', 0)) / 2 * 100)}%",
-                    'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
-                    'targeted_groups': llm_result.get('targeted_groups', []),
-                    'explanation': llm_result.get('explanation', ''),
-                    'analysis': combined_analysis,
-                    'has_lexicon_matches': len(lexicon_matches) > 0
-                }
-                
-                if is_hate_speech:
-                    messages.warning(request, f"⚠️ Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {request.session['scan_results']['overall_confidence']*100:.0f}%)")
+                # Default to not hate speech
                 else:
+                    is_hate_speech = False
+                    overall_severity_num = 1
                     if lexicon_matches:
-                        messages.info(request, f"ℹ️ No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
+                        explanation = f"AI models classify as neutral/objective. Lexicon found {len(lexicon_matches)} terms but they appear in legitimate context."
                     else:
-                        messages.success(request, "✅ No hate speech detected.")
-            else:
-                messages.warning(request, "⚠️ Please enter text to scan")  
-            
-            return redirect('lexicon_management')
+                        explanation = "No hate speech detected by any method."
            
 class UploadDataView(TemplateView):
     """UI for uploading CSV files - handles both GET and POST"""
