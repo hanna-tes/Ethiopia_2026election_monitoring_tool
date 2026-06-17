@@ -4564,6 +4564,7 @@ class LexiconManagementView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
         # Load lexicon terms from DB, excluding single characters
         lexicon_terms = LexiconTerm.objects.filter(
             is_election_related=True
