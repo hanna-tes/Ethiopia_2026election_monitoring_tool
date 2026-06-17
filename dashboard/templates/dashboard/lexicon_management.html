@@ -38,7 +38,7 @@
                     <h4 class="font-semibold text-white">1. Lexicon Engine</h4>
                 </div>
                 <p class="text-sm text-slate-400 leading-relaxed">
-                    Curated dictionary of {{ total_terms }} known ethnic slurs, violence incitement, and election interference terms in English and Amharic. Provides <strong>100% precision</strong> for known high-risk keywords.
+                    Curated dictionary of {{ total_terms|default:0 }} known ethnic slurs, violence incitement, and election interference terms in English and Amharic. Provides <strong>100% precision</strong> for known high-risk keywords.
                 </p>
             </div>
             
@@ -109,7 +109,7 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="scan_text">
             <textarea name="scan_text" rows="3" class="w-full p-3 dark-lex-input rounded-lg mb-3" 
-                      placeholder="Paste text to scan for hate speech terms (e.g., 'Kill them all' or 'የወያኔ ድስት')..."></textarea>
+                      placeholder="Paste text to scan for hate speech terms (e.g., 'Kill them all' or 'የወያኔ ድስት'). Any length accepted..."></textarea>
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-semibold transition">🔎 Scan Text</button>
         </form>
         {% if messages %}
@@ -122,7 +122,9 @@
         
         {% if scan_results %}
         <div class="mt-4 p-4 bg-slate-900/60 rounded-lg border border-slate-800/60">
-            <h4 class="font-semibold text-white mb-3">Scan Results for: "{{ scan_results.text }}"</h4>
+            <h4 class="font-semibold text-white mb-3">Scan Results for: "{{ scan_results.text|default:'' }}"</h4>
+            
+            <!-- 🔥 FIXED: Main Verdict Box (Now driven by Gemma model context) -->
             <div class="mb-4 p-3 rounded-lg {% if scan_results.is_hate_speech %}bg-red-950/40 border border-red-900/60{% else %}bg-green-950/40 border border-green-900/60{% endif %}">
                 <div class="flex items-center justify-between">
                     <div>
@@ -130,16 +132,21 @@
                             {% if scan_results.is_hate_speech %}⚠️ Potential Hate Speech Detected{% else %}✅ No Hate Speech Detected{% endif %}
                         </p>
                         <p class="text-sm {% if scan_results.is_hate_speech %}text-red-400/80{% else %}text-green-400/80{% endif %}">
-                            Severity: <strong class="underline">{{ scan_results.overall_severity|upper }}</strong>
-                            {% if scan_results.llm_result.confidence %}| LLM Confidence: {{ scan_results.llm_result.confidence|floatformat:2 }}{% endif %}
+                            Severity: <strong class="underline">{{ scan_results.overall_severity|default:'low'|upper }}</strong>
+                            {% if scan_results.gemma_confidence_pct %}| Gemma Confidence: {{ scan_results.gemma_confidence_pct }}{% endif %}
                         </p>
                     </div>
                 </div>
             </div>
             
-            {% if scan_results.llm_result.llm_detected %}
+            <!-- 🔥 FIXED: Analysis/Explanation Section (Shows what the text actually says) -->
+            {% if scan_results.analysis %}
             <div class="mb-4 p-3 bg-blue-950/40 rounded border border-blue-900/60">
-                <p class="text-sm text-blue-300"><strong>🤖 Analysis:</strong> {{ scan_results.explanation }}</p>
+                <p class="text-sm text-blue-300"><strong>🤖 AI Analysis:</strong> {{ scan_results.analysis }}</p>
+            </div>
+            {% elif scan_results.explanation %}
+            <div class="mb-4 p-3 bg-blue-950/40 rounded border border-blue-900/60">
+                <p class="text-sm text-blue-300"><strong>🤖 LLM Analysis:</strong> {{ scan_results.explanation }}</p>
             </div>
             {% endif %}
             
@@ -153,15 +160,15 @@
                         </p>
                         <div class="flex items-center gap-3">
                             <span class="px-3 py-1 bg-purple-600/30 border border-purple-500/50 rounded-full text-purple-200 text-sm font-semibold">
-                                {{ scan_results.gemma_result.category|title }}
+                                {{ scan_results.gemma_result.category|default:'neutral'|title }}
                             </span>
                             <span class="text-xs text-purple-400">
-                                Confidence: {{ scan_results.gemma_result.confidence|floatformat:2 }} ({{ scan_results.gemma_confidence_pct }})
+                                Confidence: {{ scan_results.gemma_result.confidence|default:0|floatformat:2 }} ({{ scan_results.gemma_confidence_pct|default:'0%' }})
                             </span>
                         </div>
                     </div>
                     <span class="px-2 py-1 rounded text-xs font-bold {% if scan_results.gemma_result.severity == 'critical' %}bg-red-950 text-red-400 border border-red-800{% elif scan_results.gemma_result.severity == 'high' %}bg-orange-950 text-orange-400 border border-orange-800{% elif scan_results.gemma_result.severity == 'medium' %}bg-yellow-950 text-yellow-400 border border-yellow-800{% else %}bg-green-950 text-green-400 border border-green-800{% endif %}">
-                        {{ scan_results.gemma_result.severity|upper }}
+                        {{ scan_results.gemma_result.severity|default:'low'|upper }}
                     </span>
                 </div>
                 
@@ -179,11 +186,28 @@
                 <p class="text-sm text-blue-300 mb-2">
                     <strong>📊 Combined Confidence Score:</strong> 
                     <span class="text-white font-bold">{{ scan_results.overall_confidence|floatformat:2 }}</span> 
-                    ({{ scan_results.overall_confidence_pct }})
+                    ({{ scan_results.overall_confidence_pct|default:'0%' }})
                 </p>
                 <p class="text-xs text-blue-400/80">
-                    Aggregated from: <strong>Lexicon Engine</strong> ({{ total_terms }} terms) + <strong>LLM Semantic Analysis</strong> + <strong>Fine-tuned Gemma Model</strong> (19 multiclass categories)
+                    Aggregated from: <strong>Lexicon Engine</strong> ({{ total_terms|default:0 }} terms) + <strong>LLM Semantic Analysis</strong> + <strong>Fine-tuned Gemma Model</strong> (19 multiclass categories)
                 </p>
+            </div>
+            {% endif %}
+            
+            <!-- 🔥 NEW: Specific Harmful Terms Extracted -->
+            {% if scan_results.lexicon_matches %}
+            <div class="mb-4 p-4 bg-orange-950/20 rounded-lg border border-orange-800/40">
+                <p class="text-sm font-semibold text-orange-300 mb-3">
+                    🎯 Specific Harmful Terms Extracted ({{ scan_results.lexicon_matches|length }}):
+                </p>
+                <div class="flex flex-wrap gap-2">
+                    {% for match in scan_results.lexicon_matches %}
+                    <span class="px-3 py-1.5 rounded-lg text-xs font-medium {% if match.severity == 'critical' %}bg-red-950/60 text-red-300 border border-red-800/60{% elif match.severity == 'high' %}bg-orange-950/60 text-orange-300 border border-orange-800/60{% elif match.severity == 'medium' %}bg-yellow-950/60 text-yellow-300 border border-yellow-800/60{% else %}bg-green-950/60 text-green-300 border border-green-800/60{% endif %}">
+                        <strong>"{{ match.term }}"</strong> 
+                        <span class="opacity-70 ml-1">({{ match.category|title }})</span>
+                    </span>
+                    {% endfor %}
+                </div>
             </div>
             {% endif %}
             
@@ -209,27 +233,17 @@
             </div>
             {% endif %}
             
-            {% if scan_results.lexicon_matches %}
-            <div class="mb-4">
-                <p class="text-sm font-semibold text-slate-400 mb-2">📚 Lexicon Matches ({{ scan_results.lexicon_matches|length }}):</p>
-                <div class="flex flex-wrap gap-2">
-                    {% for match in scan_results.lexicon_matches %}
-                    <span class="px-2 py-1 rounded text-xs font-medium {% if match.severity == 'critical' %}bg-red-950 text-red-400 border border-red-900/60{% elif match.severity == 'high' %}bg-orange-950 text-orange-400 border border-orange-900/60{% elif match.severity == 'medium' %}bg-yellow-950 text-yellow-400 border border-yellow-900/60{% else %}bg-green-950 text-green-400 border border-green-900/60{% endif %}">{{ match.term }} ({{ match.category }})</span>
-                    {% endfor %}
-                </div>
-            </div>
-            {% else %}
-            <p class="text-sm text-slate-500 mb-4">📚 No lexicon matches found</p>
-            {% endif %}
-            
             <details class="mt-4">
                 <summary class="cursor-pointer text-blue-400 hover:underline text-sm font-medium">🔍 View Detection Details</summary>
                 <div class="mt-2 p-3 bg-slate-950/40 rounded text-sm text-slate-300 space-y-1 border border-slate-800">
-                    <p><strong>Is Hate Speech:</strong> {{ scan_results.llm_result.is_hate_speech }}</p>
-                    <p><strong>Confidence:</strong> {{ scan_results.llm_result.confidence|floatformat:2 }}</p>
-                    <p><strong>Severity:</strong> {{ scan_results.llm_result.severity }}</p>
-                    <p><strong>Categories:</strong> {{ scan_results.llm_result.categories|join:", " }}</p>
-                    {% if scan_results.llm_result.explanation %}<p class="mt-2 pt-2 border-t border-slate-800"><strong>Explanation:</strong> {{ scan_results.llm_result.explanation }}</p>{% endif %}
+                    <p><strong>Is Hate Speech:</strong> {{ scan_results.is_hate_speech|yesno:"Yes,No" }}</p>
+                    <p><strong>Overall Severity:</strong> {{ scan_results.overall_severity|default:'low'|title }}</p>
+                    <p><strong>LLM Confidence:</strong> {{ scan_results.llm_result.confidence|default:0|floatformat:2 }}</p>
+                    <p><strong>Gemma Category:</strong> {{ scan_results.gemma_result.category|default:'neutral'|title }}</p>
+                    <p><strong>Gemma Confidence:</strong> {{ scan_results.gemma_result.confidence|default:0|floatformat:2 }}</p>
+                    <p><strong>Categories Detected:</strong> {{ scan_results.all_categories|join:", "|default:"None" }}</p>
+                    {% if scan_results.explanation %}<p class="mt-2 pt-2 border-t border-slate-800"><strong>LLM Explanation:</strong> {{ scan_results.explanation }}</p>{% endif %}
+                    {% if scan_results.analysis %}<p class="mt-2 pt-2 border-t border-slate-800"><strong>AI Analysis:</strong> {{ scan_results.analysis }}</p>{% endif %}
                 </div>
             </details>
         </div>
@@ -241,7 +255,7 @@
         <form method="post" class="grid grid-cols-1 md:grid-cols-5 gap-4">
             {% csrf_token %}
             <input type="hidden" name="action" value="add_term">
-            <input type="text" name="term" placeholder="Term (supports Amharic)" required class="p-2 dark-lex-input rounded text-sm">
+            <input type="text" name="term" placeholder="Term (supports Amharic, min 2 chars)" required class="p-2 dark-lex-input rounded text-sm">
             <select name="category" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
                 {% for cat in categories %}<option value="{{ cat }}">{{ cat|title }}</option>{% endfor %}
                 <option value="uncategorized">Uncategorized</option>
@@ -276,11 +290,11 @@
                     Scanned <strong class="text-white">all {{ total_posts|default:0 }}</strong> posts in the database
                 {% elif has_custom_date_filter %}
                     Scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from 
-                    <strong class="text-white">{{ start_date }}</strong> to <strong class="text-white">{{ end_date }}</strong>
+                    <strong class="text-white">{{ start_date|default:'start' }}</strong> to <strong class="text-white">{{ end_date|default:'end' }}</strong>
                 {% else %}
                     Scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from the last 3 months
                 {% endif %}
-                using a dictionary of <strong class="text-white">{{ total_terms }}</strong> monitored trigger words 
+                using a dictionary of <strong class="text-white">{{ total_terms|default:0 }}</strong> monitored trigger words 
                 <span class="text-slate-500">(ethnic slurs, violence terms, election keywords, etc.)</span>
             </span>
         </p>
