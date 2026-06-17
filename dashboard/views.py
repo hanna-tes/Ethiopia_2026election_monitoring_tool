@@ -4131,62 +4131,93 @@ class LexiconsView(TemplateView):
         
         return context
 
-    @staticmethod
-    def _run_ai_analysis_background(post_ids, cache_key):
-        """Runs the heavy model in the background and saves to cache."""
-        try:
-            from .utils.hate_speech_detector import get_hate_speech_detector
-            from .models import ProcessedPost
-            from collections import Counter
-            
-            # Load model (this is the slow part, but it happens in background)
-            detector = get_hate_speech_detector()
-            posts = ProcessedPost.objects.filter(id__in=post_ids)
-            category_counts = Counter()
-            total_analyzed = 0
-            
-            gemma_severity_map = {
-                'violence': 'critical', 'inciteful': 'critical', 'call for action': 'critical', 'dehumanization': 'critical',
-                'extremism': 'high', 'ethnic slur': 'high', 'slur': 'high', 'misogynistic': 'high',
-                'derogatory': 'high', 'inflammatory': 'high', 'gender disinformation': 'high',
-                'stereotype': 'high', 'homophobic': 'high', 'ethnicity': 'high', 'xenophobia': 'high', 'religion': 'high',
-                'ancestry': 'low', 'class': 'low', 'structural': 'low'
-            }
-            
-            for post in posts:
-                if post.original_text and len(post.original_text) > 20:
-                    try:
-                        result = detector.detect(post.original_text)
-                        cat = result.get('category')
-                        if cat and cat not in ['neutral', 'error']:
-                            category_counts[cat] += 1
-                            total_analyzed += 1
-                    except Exception as e:
-                        logger.warning(f"scan failed for post {post.id}: {e}")
-            
-            total_hateful = sum(category_counts.values())
-            ai_results = []
-            for cat, count in category_counts.most_common(5):
-                pct = (count / total_analyzed * 100) if total_analyzed > 0 else 0
-                ai_results.append({
-                    'category': cat.replace('_', ' ').title(),
-                    'count': count,
-                    'percentage': round(pct, 1),
-                    'severity': gemma_severity_map.get(cat, 'medium')
-                })
-            
-            # Cache for 24 hours
-            cache.set(cache_key, {
-                'results': ai_results,
-                'total_analyzed': total_analyzed,
-                'total_hateful': total_hateful,
-            }, 86400)
-            logger.info(f"✅ Analysis complete! Found {total_hateful} hateful posts.")
-            
-        except Exception as e:
-            logger.error(f"❌ Analysis failed: {e}")
-        finally:
-            cache.delete("lexicons_model_running") 
+   @staticmethod
+   def _run_ai_analysis_background(post_ids, cache_key):
+       """Runs the heavy AI model in the background and saves to cache."""
+       import traceback
+       
+       # Add logging to track progress
+       logger.info(f"🤖 Background AI analysis STARTED for {len(post_ids)} posts")
+       
+       try:
+           from .utils.hate_speech_detector import get_hate_speech_detector
+           from .models import ProcessedPost
+           from collections import Counter
+           
+           # Load model (this is the slow part - about 15-20 minutes)
+           logger.info("🔄 Loading Gemma model (this may take 15-20 minutes)...")
+           detector = get_hate_speech_detector()
+           logger.info("✅ Gemma model loaded successfully!")
+           
+           posts = ProcessedPost.objects.filter(id__in=post_ids)
+           category_counts = Counter()
+           total_analyzed = 0
+           
+           # Map Gemma categories to severity levels
+           gemma_severity_map = {
+               'violence': 'critical', 'inciteful': 'critical', 'call for action': 'critical', 'dehumanization': 'critical',
+               'extremism': 'high', 'ethnic slur': 'high', 'slur': 'high', 'misogynistic': 'high',
+               'derogatory': 'medium', 'inflammatory': 'high', 'gender disinformation': 'high',
+               'stereotype': 'high', 'homophobic': 'high', 'ethnicity': 'high', 'xenophobia': 'high', 'religion': 'high',
+               'ancestry': 'low', 'class': 'low', 'structural': 'low'
+           }
+           
+           logger.info(f"🔍 Analyzing {posts.count()} posts...")
+           
+           for idx, post in enumerate(posts):
+               if post.original_text and len(post.original_text) > 20:
+                   try:
+                       result = detector.detect(post.original_text)
+                       cat = result.get('category')
+                       if cat and cat not in ['neutral', 'error']:
+                           category_counts[cat] += 1
+                           total_analyzed += 1
+                       
+                       # Log progress every 10 posts
+                       if (idx + 1) % 10 == 0:
+                           logger.info(f"📊 Progress: {idx + 1}/{posts.count()} posts analyzed")
+                           
+                   except Exception as e:
+                       logger.warning(f"⚠️ Scan failed for post {post.id}: {e}")
+                       continue
+           
+           # Calculate percentages
+           total_hateful = sum(category_counts.values())
+           ai_results = []
+           for cat, count in category_counts.most_common(5):
+               pct = (count / total_analyzed * 100) if total_analyzed > 0 else 0
+               ai_results.append({
+                   'category': cat.replace('_', ' ').title(),
+                   'count': count,
+                   'percentage': round(pct, 1),
+                   'severity': gemma_severity_map.get(cat, 'medium')
+               })
+           
+           # Save to cache for 24 hours (86400 seconds)
+           cache.set(cache_key, {
+               'results': ai_results,
+               'total_analyzed': total_analyzed,
+               'total_hateful': total_hateful,
+           }, 86400)
+           
+           logger.info(f"✅ Background analysis COMPLETE! Found {total_hateful} hateful posts out of {total_analyzed}.")
+           
+       except Exception as e:
+           logger.error(f"❌ Background analysis FAILED: {e}")
+           logger.error(traceback.format_exc())
+           
+           # Save an error state to cache so the UI knows it failed
+           cache.set(cache_key, {
+               'results': [],
+               'total_analyzed': 0,
+               'total_hateful': 0,
+               'error': str(e)
+           }, 3600)  # Cache error for 1 hour
+           
+       finally:
+           # Always clear the running flag, even if there was an error
+           cache.delete("lexicons_model_running")
+           logger.info("🏁 Background thread FINISHED and cleaned up") 
 
 class PEPsHubView(TemplateView):
     template_name = 'dashboard/peps_hub.html'
