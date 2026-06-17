@@ -771,7 +771,8 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                 continue
                 
             if metadata.get("language") == "amharic" or re.match(r'^[\u1200-\u137F]+$', term):
-                pattern = re.escape(term)
+                # Prevent matching inside larger Amharic words using lookarounds
+                pattern = r'(?<![\u1200-\u137F])' + re.escape(term) + r'(?![\u1200-\u137F])'
             else:
                 pattern = r'\b' + re.escape(term) + r'\b'
             
