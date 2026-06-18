@@ -527,32 +527,42 @@ def export_network_edges_with_tweets(request):
     return response
     
 def extract_sub_narrative(text_sample):
-    """Extract the primary sub-narrative from a text sample"""
-    if not text_sample:
-        return "General Coordination"
+    """
+    Extract the primary sub-narrative from a text sample using the CONFIG lexicon.
+    1. Uses 1,000+ terms across Amharic, Oromo, and English
+    2. Leverages the existing scan_text_for_lexicon_terms function
+    3. Counts category matches to determine the dominant narrative
+    """
+    if not text_sample or len(text_sample.strip()) < 10:
+        return "General News"
     
-    text_lower = text_sample.lower()
+    # Scan the text against the full lexicon
+    matches = scan_text_for_lexicon_terms(text_sample)
     
-    topic_keywords = {
-        'Election Fraud & Rigging': ['rigged', 'fraud', 'stolen', 'manipulated', 'fake results', 'nebe', 'ballot', 'tally'],
-        'Ethnic Tensions & Hate Speech': ['amhara', 'oromo', 'tigray', 'somali', 'afar', 'ethnic', 'tribal', 'genocide', 'slur'],
-        'Political Violence & Conflict': ['kill', 'attack', 'war', 'conflict', 'militia', 'fano', 'tplf', 'massacre', 'violence'],
-        'Government Criticism': ['government', 'authorities', 'regime', 'corrupt', 'abiy', 'prosperity party', 'oppression'],
-        'Foreign Interference': ['foreign', 'international', 'uae', 'un', 'eu', 'china', 'russia', 'usa', 'egypt', 'turkey'],
-        'Media & Disinformation': ['media', 'social media', 'disinformation', 'fake news', 'propaganda', 'censorship'],
-        'Humanitarian Crisis': ['displaced', 'refugee', 'hunger', 'famine', 'aid', 'crisis', 'suffering'],
+    if not matches:
+        return "General News"
+    
+    # Count matches by category
+    category_counts = Counter([m['category'] for m in matches])
+    
+    # Get the top category
+    top_category = category_counts.most_common(1)[0][0]
+    
+    # Map lexicon categories to readable sub-narrative names
+    narrative_map = {
+        'ethnic_identity': 'Ethnic Tensions',
+        'political_groups': 'Political Conflict',
+        'violence_incitement': 'Violence & Incitement',
+        'dehumanizing': 'Dehumanizing Language',
+        'election_governance': 'Election & Governance',
+        'foreign_interference': 'Foreign Interference',
+        'religious_cultural': 'Religious/Cultural',
+        'gender_misogynistic': 'Gender-Based Attacks',
+        'discriminatory_homophobic': 'Discrimination',
+        'socio_economic_caste': 'Socio-Economic'
     }
     
-    topic_scores = {}
-    for topic, keywords in topic_keywords.items():
-        score = sum(1 for kw in keywords if kw in text_lower)
-        if score > 0:
-            topic_scores[topic] = score
-    
-    if topic_scores:
-        return max(topic_scores, key=topic_scores.get)
-    
-    return "General Coordination"
+    return narrative_map.get(top_category, 'General News')
     
 def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -1358,67 +1368,172 @@ def _get_ttp_severity(technique_id: str) -> str:
         return 'Medium'
     else:
         return 'Low'
+def is_likely_normal_news(text):
+    """Check if text appears to be normal news rather than coordinated manipulation"""
+    if not text or len(text.strip()) < 20:
+        return False
+    
+    text_lower = text.lower()
+    
+    # Strong indicators of legitimate news/media
+    news_indicators = [
+        'ambassador', 'briefing', 'press', 'spokesperson', 'ministry',
+        'official', 'statement', 'announced', 'reported', 'according to',
+        'development', 'progress', 'achievement', 'inauguration', 'ceremony',
+        'award', 'recognition', 'honor', 'appointed', 'champion',
+        'expo', 'exhibition', 'airline', 'flight', 'service',
+        'diplomatic', 'bilateral', 'cooperation', 'partnership', 'agreement',
+        'current affairs', 'news', 'media', 'journalist', 'reporter'
+    ]
+    
+    # Count news indicators
+    news_score = sum(1 for indicator in news_indicators if indicator in text_lower)
+    
+    # Check for URLs to news sites (legitimate sources)
+    news_domains = ['bbc.com', 'reuters.com', 'aljazeera.com', 'nytimes.com', 'washingtonpost.com']
+    has_news_url = any(domain in text_lower for domain in news_domains)
+    
+    # If 3+ news indicators OR has news URL, likely normal news
+    return news_score >= 3 or has_news_url
+
+
 def detect_llm_ttps(coordination_groups, posts):
-    """Use LLM to detect additional TTPs based on DISARM framework"""
-    if not coordination_groups:
+    """Use LLM to detect additional TTPs - HIGHLY CONSERVATIVE VERSION"""
+    if not coordination_groups or len(coordination_groups) < 3:
         return []
     
-    # Prepare a concise summary for the LLM to avoid token limits
+    # Check if groups appear to be normal news
+    normal_news_count = sum(1 for g in coordination_groups if is_likely_normal_news(g.get('text_sample', '')))
+    
+    # If majority are normal news, don't detect TTPs
+    if normal_news_count > len(coordination_groups) * 0.5:
+        logger.info(f"Skipping TTP detection: {normal_news_count}/{len(coordination_groups)} groups appear to be normal news")
+        return []
+    
+    # Prepare a concise summary for the LLM
     data_summary = {
         "total_groups": len(coordination_groups),
         "total_accounts": sum(g.get('account_count', 0) for g in coordination_groups),
-        "sample_texts": [g.get('text_sample', '')[:150] for g in coordination_groups[:5]],
+        "sample_texts": [g.get('text_sample', '')[:200] for g in coordination_groups[:5]],
         "platforms": list(set(p for g in coordination_groups for p in g.get('platforms', []))),
         "has_urls": any(len(g.get('unique_urls', [])) > 0 for g in coordination_groups),
-        "has_hashtags": any('#' in g.get('text_sample', '') for g in coordination_groups)
+        "has_hashtags": any('#' in g.get('text_sample', '') for g in coordination_groups),
+        "avg_posts_per_group": sum(g.get('post_count', 0) for g in coordination_groups) / len(coordination_groups)
     }
     
-    prompt = f"""You are an expert in the DISARM (Disinformation, Manipulation, and Influence) framework.
-    Analyze the following coordination network data from an election monitoring tool and identify Tactics, Techniques, and Procedures (TTPs) present in this data.
-    
-    Data Summary:
-    {json.dumps(data_summary, indent=2)}
-    
-    Instructions:
-    1. Identify TTPs based on the DISARM framework (e.g., T0049 Coordinated Behavior, T0060 Multi-Platform Manipulation, T0119 Rapid Response, T0143 Hashtag Hijacking, T0097 Link Manipulation, T0084 Automation/Bots, etc.).
-    2. For each TTP identified, provide:
-       - name: The specific DISARM technique name or ID.
-       - description: A brief description of how it applies to this data.
-       - severity: 'High', 'Medium', or 'Low'.
-       - evidence: Specific evidence from the data summary.
-    3. CRITICAL: Do NOT flag "Narrative Manipulation" (T0149) just because texts cover diverse topics. Normal news reporting covers multiple topics (politics, sports, business, etc.). Only flag T0149 if there is CLEAR evidence of coordinated deceptive messaging designed to manipulate public opinion (e.g., spreading false narratives, coordinated disinformation campaigns with misleading content).
-    4. CRITICAL: Only flag TTPs if there is concrete evidence in the data. Prefer false negatives over false positives.
-    5. Output ONLY a valid JSON array of objects. Do not include any text outside the JSON array.
-    6. If no additional TTPs are found, return an empty array [].
-    """
+    prompt = f"""You are an expert DISARM framework analyst detecting coordinated inauthentic behavior.
+
+Data Summary:
+{json.dumps(data_summary, indent=2)}
+
+CRITICAL INSTRUCTIONS:
+1. ONLY detect TTPs if there is UNAMBIGUOUS evidence of coordinated manipulation.
+2. DO NOT flag:
+   - Normal news sharing or legitimate media coverage
+   - Official government announcements or diplomatic statements
+   - Legitimate political discourse or campaign messaging
+   - Content about development, achievements, or positive events
+   - Posts with URLs to legitimate news sources
+3. ONLY flag if you see:
+   - Identical text posted by 5+ accounts within hours
+   - Bot-like accounts (generic names like "user123", "news_bot")
+   - Coordinated hashtag campaigns with no organic engagement
+   - Cross-platform amplification of the same manipulative content
+   - Temporal coordination (posts within minutes of each other)
+
+KNOWN DISARM TECHNIQUES (only use these IDs):
+- T0049: Coordinated Inauthentic Behavior
+- T0049.002: Controlled Profiles
+- T0049.003: Bot Networks
+- T0060: Multi-Platform Manipulation
+- T0119: Rapid Response
+- T0143: Hashtag Hijacking
+
+OUTPUT FORMAT:
+Return a JSON array of detected TTPs. Each object must have:
+- "technique_id": One of the IDs listed above
+- "name": Human-readable name
+- "description": Brief explanation of how it applies
+- "severity": "High", "Medium", or "Low"
+- "confidence": 0.0 to 1.0
+- "evidence": Specific evidence from the data
+
+If no clear manipulation is detected, return an empty array: []
+
+EXAMPLE VALID RESPONSE:
+[
+  {{
+    "technique_id": "T0049.003",
+    "name": "Bot Network Amplification",
+    "description": "Multiple accounts with generic names posting identical content",
+    "severity": "High",
+    "confidence": 0.85,
+    "evidence": "5 accounts with names like 'user123' posted same text within 2 hours"
+  }}
+]
+
+Return ONLY the JSON array, no other text."""
     
     try:
-        # Use your existing safe_llm_call function
         response = safe_llm_call(prompt, max_tokens=1024)
         if not response:
             return []
-            
-        # Extract JSON from response (handles cases where LLM adds text around the JSON)
+        
+        # Extract JSON from response
         json_match = re.search(r'\[.*\]', response, re.DOTALL)
         if json_match:
             ttps = json.loads(json_match.group(0))
-            # Validate structure
+            
+            # Validate and filter TTPs
             valid_ttps = []
+            valid_technique_ids = ['T0049', 'T0049.002', 'T0049.003', 'T0060', 'T0119', 'T0143']
+            
             for ttp in ttps:
-                if isinstance(ttp, dict) and 'name' in ttp and 'description' in ttp:
-                    valid_ttps.append({
-                        'name': ttp.get('name', 'Unknown TTP'),
-                        'description': ttp.get('description', ''),
-                        'severity': ttp.get('severity', 'Medium'),
-                        'evidence': ttp.get('evidence', 'LLM Analysis'),
-                        'source': 'LLM_DISARM'
-                    })
+                if not isinstance(ttp, dict):
+                    continue
+                
+                technique_id = ttp.get('technique_id', '')
+                
+                # Only accept known technique IDs
+                if technique_id not in valid_technique_ids:
+                    logger.warning(f"Skipping unknown technique ID: {technique_id}")
+                    continue
+                
+                # Require minimum confidence
+                confidence = ttp.get('confidence', 0)
+                if confidence < 0.6:
+                    logger.info(f"Skipping low-confidence TTP: {technique_id} (confidence: {confidence})")
+                    continue
+                
+                # Require evidence
+                evidence = ttp.get('evidence', '')
+                if not evidence or len(evidence) < 10:
+                    logger.warning(f"Skipping TTP without evidence: {technique_id}")
+                    continue
+                
+                valid_ttps.append({
+                    'name': ttp.get('name', technique_id),
+                    'description': ttp.get('description', ''),
+                    'severity': ttp.get('severity', 'Medium'),
+                    'evidence': evidence,
+                    'confidence': confidence,
+                    'source': 'LLM_DISARM',
+                    'technique_id': technique_id
+                })
+            
+            if valid_ttps:
+                logger.info(f"LLM detected {len(valid_ttps)} valid TTPs")
+            else:
+                logger.info("LLM found no valid TTPs (all filtered out)")
+            
             return valid_ttps
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse LLM TTP response: {e}")
     except Exception as e:
         logger.warning(f"LLM TTP detection failed: {e}")
-        
+    
     return []
-     
+   
 def analyze_ttps(coordination_groups, posts):
     """Analyze Tactics, Techniques, and Procedures - 9 Rule-Based + LLM DISARM Detection"""
     ttps = []
