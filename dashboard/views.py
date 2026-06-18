@@ -4734,12 +4734,15 @@ class LexiconManagementView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        # Load lexicon terms from DB, excluding single characters
         lexicon_terms = LexiconTerm.objects.filter(
             is_election_related=True
         ).exclude(
             term__regex=r'^.$'
         ).order_by('category', 'severity')
 
+        # If DB is empty, seed from CONFIG (one-time migration)
         if not lexicon_terms.exists():
             for category, terms in CONFIG['lexicon'].items():
                 for term, metadata in terms.items():
@@ -4760,20 +4763,35 @@ class LexiconManagementView(TemplateView):
                 term__regex=r'^.$'
             ).order_by('category', 'severity')
 
+        # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
 
+        # Only scan the most recent 3000 posts instead of all
+        posts_to_scan = filtered_posts[:3000]
+        
         all_matches = []
         posts_scanned = 0
-        for post in filtered_posts.iterator():
+        
+        # Scan only the limited dataset
+        for post in posts_to_scan.iterator():
             if post.original_text:
-                matches = scan_text_for_lexicon_terms(post.original_text)
-                if matches:
-                    all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
-                    posts_scanned += 1
+                try:
+                    matches = scan_text_for_lexicon_terms(post.original_text)
+                    if matches:
+                        all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
+                        posts_scanned += 1
+                except Exception as e:
+                    logger.warning(f"Error scanning post {post.id}: {e}")
+                    continue
 
+        # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
+
+        # Get scan results from session (if any) and clear immediately
         scan_results = self.request.session.pop('scan_results', None)
+
+        # Determine filter state for the template text
         view_all = self.request.GET.get('view_all') == 'true'
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 
@@ -4798,6 +4816,7 @@ class LexiconManagementView(TemplateView):
     def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
 
+        # Handle Edit Term
         if action == 'edit_term':
             term_id = request.POST.get('term_id')
             if term_id:
@@ -4818,6 +4837,7 @@ class LexiconManagementView(TemplateView):
                 except LexiconTerm.DoesNotExist:
                     messages.error(request, "Term not found.")
 
+        # Handle Delete Term
         elif action == 'delete_term':
             term_id = request.POST.get('term_id')
             if term_id:
@@ -4828,6 +4848,7 @@ class LexiconManagementView(TemplateView):
                 except Exception as e:
                     messages.error(request, f"Error: {e}")
 
+        # Handle Add Term
         elif action == 'add_term':
             term = request.POST.get('term', '').strip()
             if term and len(term) > 1:
@@ -4846,22 +4867,28 @@ class LexiconManagementView(TemplateView):
             else:
                 messages.warning(request, "Term must be at least 2 characters long. Single characters are skipped.")
 
+        # Handle Scan Text
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
             if text:
+                # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
 
+                # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm(text)
 
+                # 3. Fine-tuned Gemma Model detection
                 try:
                     gemma_result = get_hate_speech_detector().detect(text)
                 except Exception as e:
                     logger.warning(f"Gemma LoRA detection failed: {e}")
                     gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low'}
 
+                # 4. Determine final verdict - AI MODELS HAVE PRIORITY
                 is_hate_speech = False
                 overall_severity_num = 1
+                explanation = ""
 
                 llm_is_hate = llm_result.get('is_hate_speech', False)
                 llm_confidence = llm_result.get('confidence', 0)
@@ -4869,22 +4896,50 @@ class LexiconManagementView(TemplateView):
                 gemma_confidence = gemma_result.get('confidence', 0)
                 lexicon_score = lexicon_risk.get('score', 0)
 
-                if llm_is_hate and llm_confidence > 0.7:
+                # PRIORITY 1: Both AI models agree it's neutral/objective
+                if (not llm_is_hate and llm_confidence > 0.6 and
+                    gemma_category == 'neutral' and gemma_confidence > 0.7):
+                    is_hate_speech = False
+                    overall_severity_num = 1
+                    explanation = f"Both AI models agree: LLM says objective news, Gemma says neutral ({gemma_confidence*100:.0f}% confidence). Lexicon found {len(lexicon_matches)} terms but they appear in news context."
+
+                # PRIORITY 2: Both AI models agree it's hate speech
+                elif llm_is_hate and llm_confidence > 0.7 and gemma_category != 'neutral' and gemma_confidence > 0.7:
                     is_hate_speech = True
-                    overall_severity_num = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}.get(llm_result.get('severity', 'low'), 1)
+                    overall_severity_num = max(
+                        {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'low'), 1),
+                        {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
+                    )
+                    explanation = f"Both AI models agree: LLM detected hate speech ({llm_confidence*100:.0f}% confidence), Gemma classified as {gemma_category} ({gemma_confidence*100:.0f}% confidence)."
 
-                if gemma_category != 'neutral' and gemma_confidence > 0.7:
+                # PRIORITY 3: One AI model with high confidence
+                elif (llm_is_hate and llm_confidence > 0.8) or (gemma_category != 'neutral' and gemma_confidence > 0.8):
                     is_hate_speech = True
-                    gemma_sev = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}.get(gemma_result.get('severity', 'low'), 1)
-                    overall_severity_num = max(overall_severity_num, gemma_sev)
+                    if llm_is_hate and llm_confidence > 0.8:
+                        overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'low'), 1)
+                        explanation = f"LLM detected hate speech with high confidence ({llm_confidence*100:.0f}%). Gemma classified as {gemma_category}."
+                    else:
+                        overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
+                        explanation = f"Gemma classified as {gemma_category} with high confidence ({gemma_confidence*100:.0f}%). LLM: {'hate speech' if llm_is_hate else 'not hate speech'}."
 
-                if lexicon_score > 5:
+                # PRIORITY 4: Lexicon fallback only when AI uncertain
+                elif lexicon_score > 5 and llm_confidence < 0.6 and gemma_confidence < 0.6:
                     is_hate_speech = True
-                    lex_sev = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}.get(lexicon_risk['level'], 1)
-                    overall_severity_num = max(overall_severity_num, lex_sev)
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'low'), 1)
+                    explanation = f"AI models uncertain (LLM: {llm_confidence*100:.0f}%, Gemma: {gemma_confidence*100:.0f}%). Lexicon detected {len(lexicon_matches)} high-risk terms."
 
-                severity_map = {1: 'low', 2: 'medium', 3: 'high', 4: 'critical'}
+                # PRIORITY 5: Default to not hate speech
+                else:
+                    is_hate_speech = False
+                    overall_severity_num = 1
+                    if lexicon_matches:
+                        explanation = f"AI models classify as neutral/objective. Lexicon found {len(lexicon_matches)} terms but they appear in legitimate context."
+                    else:
+                        explanation = "No hate speech detected by any method."
 
+                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
+
+                # 5. Create combined analysis
                 analysis_parts = []
                 if llm_result.get('explanation'):
                     analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
@@ -4892,9 +4947,10 @@ class LexiconManagementView(TemplateView):
                     terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
                     analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
                 if gemma_result.get('category') and gemma_result.get('category') != 'error':
-                    analysis_parts.append(f"Gemma model classified as: {gemma_result['category']} ({gemma_result.get('confidence', 0) * 100:.0f}% confidence)")
+                    analysis_parts.append(f"Gemma model classified as: {gemma_result['category']} ({gemma_result.get('confidence', 0)*100:.0f}% confidence)")
                 combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
 
+                # 6. Save to session
                 request.session['scan_results'] = {
                     'text': text[:200] + '...' if len(text) > 200 else text,
                     'lexicon_matches': lexicon_matches,
@@ -4913,7 +4969,7 @@ class LexiconManagementView(TemplateView):
                 }
 
                 if is_hate_speech:
-                    messages.warning(request, f"Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {request.session['scan_results']['overall_confidence'] * 100:.0f}%)")
+                    messages.warning(request, f"Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {request.session['scan_results']['overall_confidence']*100:.0f}%)")
                 else:
                     if lexicon_matches:
                         messages.info(request, f"No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
