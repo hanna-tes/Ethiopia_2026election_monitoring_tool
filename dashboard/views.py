@@ -4667,48 +4667,41 @@ class PEPsView(TemplateView):
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
-    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         request = self.request
-        
         try:
             min_connections = int(request.GET.get('min_connections') or 2)
             top_n = int(request.GET.get('top_n') or 30)
         except (ValueError, TypeError):
             min_connections, top_n = 2, 30
-            
         layout_style = request.GET.get('layout', 'spring') or 'spring'
         
         # Generate a cache key based on parameters
         posts_count = ProcessedPost.objects.filter(is_election_related=True).count()
         cache_key = f"networks_{min_connections}_{top_n}_{layout_style}_{posts_count}"
         
-        # Check cache first (instant load on repeat visits!)
+        # Check cache first
         cached = cache.get(cache_key)
         if cached:
-            logger.info("⚡ Loading networks from cache (instant)")
             context.update(cached)
             context['active_tab'] = 'networks'
             return context
             
-        logger.info("🧠 Computing networks from scratch...")
+        logger.info("Computing networks from scratch...")
         posts = ProcessedPost.objects.filter(is_election_related=True).exclude(
             platform__iexact='TikTok'
         ).exclude(platform__iexact='Media').exclude(platform__iexact='News')
         
-        # 🔥 WRAP HEAVY COMPUTATION IN TRY-EXCEPT TO PREVENT 500 ERRORS
-        try:
-            graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
-            coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
-            ttps = analyze_ttps(coordination_groups, posts)
-        except Exception as e:
-            logger.error(f"Error computing networks: {e}", exc_info=True)
-            # Fallback to empty data if computation fails
-            graph_data = {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
-            coordination_groups = []
-            ttps = []
-            
+        # 1. Get Coordination Groups FIRST (This uses TF-IDF Similarity)
+        # We increase max_groups to 50 to give the graph more data to work with
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
+        
+        # 2. Generate Graph FROM the groups (This ensures the graph matches the list)
+        graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
+        
+        ttps = analyze_ttps(coordination_groups, posts)
+        
         try:
             disarm_ttp_reference = get_disarm_ttp_reference()
         except Exception:
@@ -4717,7 +4710,7 @@ class NetworksView(TemplateView):
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups,
+            'coordination_groups': coordination_groups[:15], # Show top 15 in the list
             'total_coordinated_groups': len(coordination_groups),
             'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
             'total_posts': posts.count(),
@@ -4730,7 +4723,6 @@ class NetworksView(TemplateView):
             'disarm_dataset_size': 80000,
         }
         
-        # Cache for 30 minutes (invalidated when new data is uploaded)
         cache.set(cache_key, context_data, 1800)
         context.update(context_data)
         return context
