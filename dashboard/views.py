@@ -665,15 +665,21 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
 def clean_username(raw_name):
     if not raw_name or pd.isna(raw_name):
         return "Unknown"
+    
     # Convert to string and preserve the full name
     name = str(raw_name).strip()
-    # Remove common artifacts from the END only
-    name = re.sub(r'\s+(?i)(name|source|nan|none)$', '', name).strip()
+    
+    # 🔥 FIX: Use flags=re.IGNORECASE instead of inline (?i)
+    # This prevents the Python 3.11+ "global flags not at start" crash
+    name = re.sub(r'\s+(name|source|nan|none)$', '', name, flags=re.IGNORECASE).strip()
+    
     # Remove leading/trailing special characters
     name = re.sub(r'^[@\s]+|[\s@]+$', '', name)
+    
     # If name is empty after cleaning, return Unknown
     if not name or name.lower() in ['nan', 'none', '-', '', 'unknown']:
         return "Unknown"
+    
     return name
    
 def normalize_platform(platform_name):
