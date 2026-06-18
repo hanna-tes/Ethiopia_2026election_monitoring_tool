@@ -4691,21 +4691,29 @@ class NetworksView(TemplateView):
             context.update(cached)
             context['active_tab'] = 'networks'
             return context
-        
-        logger.info("🔄 Computing networks from scratch...")
+            
+        logger.info("🧠 Computing networks from scratch...")
         posts = ProcessedPost.objects.filter(is_election_related=True).exclude(
             platform__iexact='TikTok'
         ).exclude(platform__iexact='Media').exclude(platform__iexact='News')
         
-        graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
-        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
-        ttps = analyze_ttps(coordination_groups, posts)
-        
+        # 🔥 WRAP HEAVY COMPUTATION IN TRY-EXCEPT TO PREVENT 500 ERRORS
+        try:
+            graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
+            coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+            ttps = analyze_ttps(coordination_groups, posts)
+        except Exception as e:
+            logger.error(f"Error computing networks: {e}", exc_info=True)
+            # Fallback to empty data if computation fails
+            graph_data = {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
+            coordination_groups = []
+            ttps = []
+            
         try:
             disarm_ttp_reference = get_disarm_ttp_reference()
         except Exception:
             disarm_ttp_reference = []
-        
+            
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
@@ -4724,7 +4732,6 @@ class NetworksView(TemplateView):
         
         # Cache for 30 minutes (invalidated when new data is uploaded)
         cache.set(cache_key, context_data, 1800)
-        
         context.update(context_data)
         return context
         
