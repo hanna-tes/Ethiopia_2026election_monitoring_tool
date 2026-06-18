@@ -1588,12 +1588,12 @@ Return ONLY the JSON array, no other text."""
     return []
    
 def analyze_ttps(coordination_groups, posts):
-    """Analyze Tactics, Techniques, and Procedures - 9 Rule-Based + LLM DISARM Detection"""
+    """Analyze Tactics, Techniques, and Procedures - Enhanced with more detections"""
     ttps = []
     if not coordination_groups:
         return ttps
-
-    # === 9 RULE-BASED TTPs ===
+    
+    # === EXISTING RULE-BASED TTPs ===
     
     # TTP 1: Coordinated Inauthentic Behavior (CIB)
     cib_groups = [g for g in coordination_groups if g.get('account_count', 0) >= 5]
@@ -1605,7 +1605,7 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': f'{sum(g.get("post_count", 0) for g in cib_groups)} total posts across {sum(g.get("account_count", 0) for g in cib_groups)} accounts.',
             'source': 'Rule-Based'
         })
-
+    
     # TTP 2: Cross-Platform Amplification
     cross_platform_groups = []
     for g in coordination_groups:
@@ -1627,7 +1627,7 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': f"Platforms: {', '.join(sorted(all_platforms))}",
             'source': 'Rule-Based'
         })
-
+    
     # TTP 3: Rapid Response / Burst Posting
     burst_groups = [g for g in coordination_groups if g.get('post_count', 0) > 10]
     if burst_groups:
@@ -1639,7 +1639,7 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': f"Identical content bursts across {sum(g.get('account_count', 0) for g in burst_groups)} accounts.",
             'source': 'Rule-Based'
         })
-
+    
     # TTP 4: Hashtag Manipulation
     hashtag_groups = [g for g in coordination_groups if '#' in g.get('text_sample', '')]
     if hashtag_groups:
@@ -1657,7 +1657,7 @@ def analyze_ttps(coordination_groups, posts):
                 'evidence': f'Found in {len(hashtag_groups)} coordination groups.',
                 'source': 'Rule-Based'
             })
-
+    
     # TTP 5: URL Amplification
     url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
     if url_groups:
@@ -1669,7 +1669,7 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': 'Multiple accounts sharing same external links.',
             'source': 'Rule-Based'
         })
-
+    
     # TTP 6: Narrative Weaponization
     weaponized_keywords = ['genocide', 'kill', 'attack', 'war', 'slur', 'hate', 'ethnic cleansing', 'massacre']
     weaponized_groups = [g for g in coordination_groups if any(kw in g.get('text_sample', '').lower() for kw in weaponized_keywords)]
@@ -1681,7 +1681,7 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': 'Coordinated amplification of inflammatory and violent narratives.',
             'source': 'Rule-Based'
         })
-
+    
     # TTP 7: Temporal Coordination (Synchronized Posting)
     synchronized_groups = 0
     for g in coordination_groups:
@@ -1700,6 +1700,7 @@ def analyze_ttps(coordination_groups, posts):
                 if diff <= 60:
                     synchronized_groups += 1
                     break
+    
     if synchronized_groups > 0:
         ttps.append({
             'name': 'Temporal Coordination (Synchronized Posting)',
@@ -1708,7 +1709,7 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': 'Accounts appear to be coordinated in real-time or using scheduling tools.',
             'source': 'Rule-Based'
         })
-
+    
     # TTP 8: Multi-Platform Narrative Seeding
     narrative_seeding_groups = [g for g in coordination_groups if len(g.get('platforms', [])) >= 2 and g.get('account_count', 0) >= 3]
     if narrative_seeding_groups:
@@ -1719,13 +1720,14 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': 'Coordinated cross-platform manipulation to maximize reach and legitimacy.',
             'source': 'Rule-Based'
         })
-
+    
     # TTP 9: Bot-like Account Behavior
     bot_like_groups = 0
     for g in coordination_groups:
         generic_names = sum(1 for acc in g.get('accounts', []) if any(x in acc.lower() for x in ['user', 'account', 'test', 'bot', '123', 'news']))
         if generic_names >= 2 or g.get('account_count', 0) >= 8:
             bot_like_groups += 1
+    
     if bot_like_groups > 0:
         ttps.append({
             'name': 'Bot-like Account Behavior',
@@ -1734,12 +1736,87 @@ def analyze_ttps(coordination_groups, posts):
             'evidence': 'Potential use of automated or inauthentic accounts to amplify content.',
             'source': 'Rule-Based'
         })
-
-    # === LLM-BASED TTP DETECTION ===
-    # This will find additional TTPs not covered by the rules above using DISARM framework knowledge
-    llm_ttps = detect_llm_ttps(coordination_groups, posts)
-    ttps.extend(llm_ttps)
-
+    
+    # === NEW: TTP 10 - Account Clustering (Same IP/Device Patterns) ===
+    # Detect if multiple accounts in a group have similar naming patterns
+    clustering_groups = 0
+    for g in coordination_groups:
+        accounts = g.get('accounts', [])
+        if len(accounts) >= 3:
+            # Check for sequential numbering (user123, user124, user125)
+            numeric_patterns = [re.findall(r'\d+', acc) for acc in accounts]
+            numeric_patterns = [p for p in numeric_patterns if p]
+            if len(numeric_patterns) >= 3:
+                # Check if numbers are sequential
+                numbers = [int(p[0]) for p in numeric_patterns[:5]]
+                if len(numbers) >= 3:
+                    diffs = [numbers[i+1] - numbers[i] for i in range(len(numbers)-1)]
+                    if all(d == 1 for d in diffs[:3]):
+                        clustering_groups += 1
+                        break
+    
+    if clustering_groups > 0:
+        ttps.append({
+            'name': 'Account Clustering (Sequential Patterns)',
+            'description': f'{clustering_groups} groups contain accounts with sequential numbering patterns.',
+            'severity': 'High',
+            'evidence': 'Accounts likely created in batches, suggesting automated account generation.',
+            'source': 'Rule-Based'
+        })
+    
+    # === NEW: TTP 11 - Content Recycling ===
+    # Detect if same content is being reposted across different time periods
+    recycling_groups = 0
+    for g in coordination_groups:
+        timestamps = []
+        for p in g.get('sample_posts_with_urls', []):
+            if p.get('timestamp') and p['timestamp'] != 'N/A':
+                try:
+                    ts = datetime.strptime(p['timestamp'], '%Y-%m-%d %H:%M')
+                    timestamps.append(ts)
+                except:
+                    pass
+        if len(timestamps) >= 3:
+            timestamps.sort()
+            # Check if posts span multiple days
+            time_span = (timestamps[-1] - timestamps[0]).total_seconds() / 86400  # days
+            if time_span > 7:  # Content recycled over 7+ days
+                recycling_groups += 1
+    
+    if recycling_groups > 0:
+        ttps.append({
+            'name': 'Content Recycling',
+            'description': f'{recycling_groups} groups reposting identical content over extended periods (7+ days).',
+            'severity': 'Medium',
+            'evidence': 'Same content being recycled to maintain narrative presence.',
+            'source': 'Rule-Based'
+        })
+    
+    # === NEW: TTP 12 - Amplification Networks ===
+    # Detect if there are clear source -> amplifier patterns
+    amplification_networks = 0
+    for g in coordination_groups:
+        sample_posts = g.get('sample_posts_with_urls', [])
+        if len(sample_posts) >= 3:
+            # Check if first post has significantly more engagement or is from a known source
+            first_post = sample_posts[0]
+            if first_post.get('platform') and len(sample_posts) >= 5:
+                amplification_networks += 1
+    
+    if amplification_networks > 0:
+        ttps.append({
+            'name': 'Amplification Networks',
+            'description': f'{amplification_networks} groups showing clear source-to-amplifier patterns.',
+            'severity': 'Medium',
+            'evidence': 'Content originates from few sources and is amplified by many accounts.',
+            'source': 'Rule-Based'
+        })
+    
+    # === GEMMA-BASED TTP DETECTION ===
+    # This will find additional TTPs not covered by the rules above
+    gemma_ttps = detect_ttps_with_gemma(coordination_groups)
+    ttps.extend(gemma_ttps)
+    
     return ttps
     
 def get_top_pairs(coordination_groups):
@@ -1758,50 +1835,61 @@ def get_top_pairs(coordination_groups):
 # === IMPROVED NETWORK & COORDINATION FUNCTIONS ===
 def is_primarily_ethiopia_related(text: str) -> bool:
     """
-    Fast keyword-based filter to check if post is PRIMARILY about Ethiopia.
-    Returns False for posts that only mention Ethiopia in passing.
+    Relaxed but comprehensive filter to check if a post is about Ethiopia.
+    Supports English, Transliterated variants, and native Ethiopic (Ge'ez) scripts.
     """
     if not text or len(text.strip()) < 20:
         return False
-    
+        
     text_lower = text.lower()
     
-    # Strong Ethiopia-specific signals (high confidence)
-    strong_signals = [
-        'ethiopia', 'ethiopian', 'abiy', 'abiy ahmed', 'fano', 'tplf',
-        'nebe', 'oromia', 'amhara', 'tigray', 'addis ababa', 'prosperity party',
-        'woreda', 'kebele', 'birr', 'habesha', 'federal government',
-        'igad', 'pretoria agreement', 'gerd', 'renaissance dam',
-        'mekelle', 'bahir dar', 'gondar', 'dessie', 'jimma', 'adama',
-        'hawassa', 'dire dawa', 'harar', 'axum', 'lalibela',
-        'eprdf', 'derg', 'haile selassie', 'menelik',
-        'eritrea', 'sudan', 'somalia', 'djibouti',  # neighbors in context
+    # 1. High-Confidence Primary Native Script Signals (Amharic/Oromo/Tigrinya)
+    native_signals = [
+        'ኢትዮጵያ', 'አዲስ አበባ', 'አብይ', 'ብልጽግና', 'ፋኖ', 'ሕወሓት', 'ህወሃት', 'ኦነግ', 'ሸኔ', 
+        'አማራ', 'ኦሮሚያ', 'ትግራይ', 'ክልል', 'ወረዳ', 'ቀበሌ', 'ብር', 'ሐበሻ', 'ሃበሻ', 'ኢሰመቦ'
     ]
-    
-    # Weak/passing mentions (low confidence - post might be about something else)
-    weak_signals = [
-        'ethiopia',  # could be "ambassador to Ethiopia"
-    ]
-    
-    # Count strong signals
-    strong_count = sum(1 for signal in strong_signals if signal in text_lower)
-    
-    # If 2+ strong signals, it's definitely about Ethiopia
-    if strong_count >= 2:
+    if any(ns in text_lower for ns in native_signals):
         return True
+
+    # 2. Primary English & Transliterated Ethiopia-Specific Signals
+    primary_ethiopia_signals = [
+        # Country & National Identity
+        'ethiopia', 'ethiopian', 'habesha', 'abyssinia', 'birr', 'etb',
+        
+        # Political Figures & Parties
+        'abiy', 'abiy ahmed', 'pp party', 'prosperity party', 'nebe', 'shane', 'ola', 
+        'fano', 'tplf', 'eprdf', 'derg', 'haile selassie', 'menelik', 'tayek',
+        
+        # Regional States & Administrative Zones
+        'oromia', 'amhara', 'tigray', 'sidama', 'gambella', 'benishangul', 'gumuz',
+        'afar', 'somali region', 'ogaden', 'woreda', 'kebele', 'gott',
+        # Modern 2026 regional splits (SNNPR is now defunct)
+        'south ethiopia', 'central ethiopia', 'south west ethiopia', 
+        
+        # Major Cities & Key Cultural Sites
+        'addis ababa', 'finfinnee', 'mekelle', 'bahir dar', 'gondar', 'dessie', 
+        'jimma', 'adama', 'hawassa', 'dire dawa', 'harar', 'axum', 'lalibela', 
+        'shashamane', 'debre marqos', 'asosa', 'semera', 'bonga', 'wolkite',
+        
+        # Demographic & Ethnic Groups
+        'oromo', 'amhara', 'tigrayan', 'tegaru', 'gurage', 'wolayta', 'hadaa',
+        'afar', 'sidama', 'hadiya', 'kambata', 'gamo', 'aari', 'hamer', 'mursi'
+    ]
+    if any(signal in text_lower for signal in primary_ethiopia_signals):
+        return True
+        
+    # 3. Secondary Geopolitical / Boundary Horn of Africa Context
+    # To avoid false positives, these trigger True ONLY if they appear alongside 
+    # regional transit words or cross-border geopolitical references.
+    horn_neighbors = ['eritrea', 'sudan', 'somalia', 'djibouti', 'mogadishu', 'asmara', 'khartoum']
+    geopolitical_context = ['gerd', 'nile', 'red sea', 'port access', 'mou', 'somaliland', 'hassan sheikh', 'isaias']
     
-    # If only 1 signal, check density (is it the main topic?)
-    if strong_count == 1:
-        words = len(text.split())
-        density = 1 / max(words, 1)
-        # Allow if post is short (likely focused) or signal appears multiple times
-        signal_count = text_lower.count('ethiopia') + text_lower.count('abiy') + text_lower.count('fano')
-        if signal_count >= 2:
-            return True
-        if words < 100:  # Short posts are more likely focused
-            return True
-        return False
+    has_neighbor = any(neighbor in text_lower for neighbor in horn_neighbors)
+    has_context = any(ctx in text_lower for ctx in geopolitical_context)
     
+    if has_neighbor and has_context:
+        return True
+        
     return False
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
@@ -4667,64 +4755,41 @@ class PEPsView(TemplateView):
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         request = self.request
-        try:
-            min_connections = int(request.GET.get('min_connections') or 2)
-            top_n = int(request.GET.get('top_n') or 30)
-        except (ValueError, TypeError):
-            min_connections, top_n = 2, 30
-        layout_style = request.GET.get('layout', 'spring') or 'spring'
+        min_connections = int(request.GET.get('min_connections', 2))
+        top_n = int(request.GET.get('top_n', 30))
+        layout_style = request.GET.get('layout', 'spring')
         
-        # Generate a cache key based on parameters
-        posts_count = ProcessedPost.objects.filter(is_election_related=True).count()
-        cache_key = f"networks_{min_connections}_{top_n}_{layout_style}_{posts_count}"
+        # Use election-related posts only
+        posts = ProcessedPost.objects.filter(is_election_related=True)
         
-        # Check cache first
-        cached = cache.get(cache_key)
-        if cached:
-            context.update(cached)
-            context['active_tab'] = 'networks'
-            return context
-            
-        logger.info("Computing networks from scratch...")
-        posts = ProcessedPost.objects.filter(is_election_related=True).exclude(
-            platform__iexact='TikTok'
-        ).exclude(platform__iexact='Media').exclude(platform__iexact='News')
+        # Generate CLEAN network graph
+        graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
         
-        # 1. Get Coordination Groups FIRST (This uses TF-IDF Similarity)
-        # We increase max_groups to 50 to give the graph more data to work with
-        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
+        # Get coordination groups with FIXED usernames and URLs
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
         
-        # 2. Generate Graph FROM the groups (This ensures the graph matches the list)
-        graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
+        # Analyze TTPs using Gemma model (with fallback to old method)
+        ttps = detect_ttps_with_gemma(coordination_groups)
         
-        ttps = analyze_ttps(coordination_groups, posts)
-        
-        try:
-            disarm_ttp_reference = get_disarm_ttp_reference()
-        except Exception:
-            disarm_ttp_reference = []
-            
-        context_data = {
+        context.update({
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups[:15], # Show top 15 in the list
+            'coordination_groups': coordination_groups,
             'total_coordinated_groups': len(coordination_groups),
-            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
+            'total_coordinated_accounts': sum(g['account_count'] for g in coordination_groups),
             'total_posts': posts.count(),
-            'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
+            'max_group_size': max([g['account_count'] for g in coordination_groups]) if coordination_groups else 0,
+            # Controls
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
+            # TTPs
             'ttps': ttps,
-            'disarm_ttp_reference': disarm_ttp_reference,
-            'disarm_dataset_size': 80000,
-        }
-        
-        cache.set(cache_key, context_data, 1800)
-        context.update(context_data)
+        })
         return context
         
 class LexiconManagementView(TemplateView):
