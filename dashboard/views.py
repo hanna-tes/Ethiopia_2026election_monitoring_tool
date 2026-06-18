@@ -82,8 +82,9 @@ def load_gemma_model():
         logger.info("Gemma TTP model loaded successfully via MLX")
         return _GEMMA_MODEL, _GEMMA_TOKENIZER
     except Exception as e:
-        logger.error(f"Failed to load Gemma model: {e}")
-        raise
+        logger.error(f"Gemma detection failed: {e}", exc_info=True)
+        # Return empty list to prevent infinite recursion loop
+        return [] 
 def export_merged_gephi_csv(request):
     """Export a single, merged Gephi-ready CSV containing edges, tweets, and roles."""
     min_connections = int(request.GET.get('min_connections', 2))
