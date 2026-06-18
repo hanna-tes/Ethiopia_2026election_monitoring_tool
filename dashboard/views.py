@@ -662,28 +662,41 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
     
     return input_data
 
-#  HELPER FUNCTIONS
-
 def clean_username(raw_name):
-    """Clean username while preserving full account names"""
     if not raw_name or pd.isna(raw_name):
         return "Unknown"
-    
-    # Convert to string and strip whitespace
+    # Convert to string and preserve the full name
     name = str(raw_name).strip()
-    
     # Remove common artifacts from the END only
     name = re.sub(r'\s+(?i)(name|source|nan|none)$', '', name).strip()
-    
     # Remove leading/trailing special characters
     name = re.sub(r'^[@\s]+|[\s@]+$', '', name)
-    
     # If name is empty after cleaning, return Unknown
     if not name or name.lower() in ['nan', 'none', '-', '', 'unknown']:
         return "Unknown"
-    
     return name
-    
+   
+def normalize_platform(platform_name):
+    """Normalize platform names to consistent format"""
+    if not platform_name:
+        return "Unknown"
+    p = str(platform_name).lower().strip()
+    if p in ['x', 'twitter', 't.co', 'x.com', 'twitter source', 'twitter.com']:
+        return 'X'
+    elif p in ['facebook', 'fb.watch', 'facebook.com', 'fb']:
+        return 'Facebook'
+    elif p in ['telegram', 't.me', 'tg']:
+        return 'Telegram'
+    elif p in ['tiktok', 'tik tok', 'tik-tok']:
+        return 'TikTok'
+    elif p in ['media', 'news', 'news/media', 'civicsignal']:
+        return 'Media'
+    elif p in ['youtube', 'youtu.be', 'yt']:
+        return 'YouTube'
+    elif p in ['instagram', 'insta', 'ig']:
+        return 'Instagram'
+    return platform_name.title()  
+   
 def get_queryset(self):
     qs = ProcessedPost.objects.all()
     start = self.request.GET.get('start_date')
@@ -1908,9 +1921,10 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         all_hashtags = []
         
         for post in group_posts[:15]:
-            if post.get('platform'):
-                all_platforms.add(post['platform'])
-            
+             if post.get('platform'):
+                 normalized = normalize_platform(post['platform'])
+                 all_platforms.add(normalized)
+                     
             text = str(post.get('original_text', ''))
             found = re.findall(r'#(\w+)', text, re.IGNORECASE)
             all_hashtags.extend([h.lower() for h in found])
@@ -1940,7 +1954,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'text_sample': text_sample,
             'sample_posts_with_urls': sample_posts_with_urls,
             'unique_urls': unique_urls,
-            'platforms': list(all_platforms),
+            'platforms': sorted(list(all_platforms)),
             'coordination_type': coordination_type,
             'similarity_score': f'≥{int(similarity_threshold*100)}%',
             'sub_narrative': extract_sub_narrative(text_sample),
