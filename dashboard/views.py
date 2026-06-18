@@ -1915,16 +1915,15 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         # Coordination type
         coordination_type = determine_coordination_type(group_posts, bot_count)
         
-        # Build sample posts (in-memory)
+    
+                # Build sample posts (in-memory)
         sample_posts_with_urls = []
         all_platforms = set()
         all_hashtags = []
-        
         for post in group_posts[:15]:
-             if post.get('platform'):
-                 normalized = normalize_platform(post['platform'])
-                 all_platforms.add(normalized)
-                     
+            if post.get('platform'):
+                all_platforms.add(post['platform'])
+            
             text = str(post.get('original_text', ''))
             found = re.findall(r'#(\w+)', text, re.IGNORECASE)
             all_hashtags.extend([h.lower() for h in found])
