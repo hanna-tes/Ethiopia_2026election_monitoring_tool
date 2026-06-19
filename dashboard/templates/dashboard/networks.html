@@ -153,7 +153,7 @@
                         </h4>
                         <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-400 mt-1">
                             <span>👥 {{ group.account_count|default:"0" }} accounts</span>
-                            <span> {{ group.post_count|default:"0" }} posts</span>
+                            <span>📝 {{ group.post_count|default:"0" }} posts</span>
                             <span>📱 {{ group.platforms|join:", "|default:"Unknown" }}</span>
                             <!-- Bot Count Badge -->
                             {% if group.bot_count > 0 %}
@@ -186,10 +186,18 @@
                             <div class="flex justify-between items-center mb-1">
                                 <span class="font-semibold text-slate-200">
                                     {{ post.username|default:"Unknown" }}
-                                    {% if post.is_bot %}<span class="ml-2 text-red-400 font-bold"> BOT</span>{% endif %}
+                                    {% if post.is_bot %}<span class="ml-2 text-red-400 font-bold">🤖 BOT</span>{% endif %}
                                 </span>
                                 <span class="text-slate-400">{{ post.platform|default:"" }} • {{ post.timestamp|default:"" }}</span>
                             </div>
+                            
+                            {# 🔥 BOT EVIDENCE DISPLAY #}
+                            {% if post.is_bot and post.bot_reasons %}
+                            <div class="mt-1 px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-300 text-[10px] italic">
+                                ⚠️ Bot Evidence: {{ post.bot_reasons }}
+                            </div>
+                            {% endif %}
+
                             {% if post.url %}
                             <a href="{{ post.url }}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline break-all">{{ post.url|truncatechars:60 }}</a>
                             {% endif %}
