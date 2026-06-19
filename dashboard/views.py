@@ -5110,38 +5110,27 @@ class LexiconManagementView(TemplateView):
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
             if text:
-                # Run all 3 detections in parallel for speed
-                from concurrent.futures import ThreadPoolExecutor
-                
-                def run_lexicon():
-                    matches = scan_text_for_lexicon_terms(text)
-                    return matches, calculate_risk_score(matches)
-                
-                def run_llm():
-                    return detect_hate_speech_llm(text)
-                
-                def run_gemma():
-                    try:
-                        return get_hate_speech_detector().detect(text)
-                    except Exception as e:
-                        logger.warning(f"Gemma failed: {e}")
-                        return {'category': 'error', 'confidence': 0.0, 'severity': 'low'}
-                
-                # Run all 3 in parallel (3x faster!)
-                with ThreadPoolExecutor(max_workers=3) as executor:
-                    future_lexicon = executor.submit(run_lexicon)
-                    future_llm = executor.submit(run_llm)
-                    future_gemma = executor.submit(run_gemma)
-                    
-                    lexicon_matches, lexicon_risk = future_lexicon.result(timeout=30)
-                    llm_result = future_llm.result(timeout=30)
-                    gemma_result = future_gemma.result(timeout=30)
-                
-                # SAFETY NET: Check LLM explanation for hate speech indicators
+                # 1. Lexicon-based detection (Instant)
+                lexicon_matches = scan_text_for_lexicon_terms(text)
+                lexicon_risk = calculate_risk_score(lexicon_matches)
+
+                # 2. LLM-based detection (Fast, ~1-2 seconds)
+                llm_result = detect_hate_speech_llm(text)
+
+                # 3. DISABLED: Local Gemma Model detection (Causes 500 errors/timeouts)
+                # The LLM + Lexicon is sufficient and much faster for interactive scanning.
+                gemma_result = {'category': 'neutral', 'confidence': 0.0, 'severity': 'low'}
+
+                # 4. Determine final verdict - LLM HAS PRIORITY
+                is_hate_speech = False
+                overall_severity_num = 1
+                explanation = ""
+
                 llm_is_hate = llm_result.get('is_hate_speech', False)
+                llm_confidence = llm_result.get('confidence', 0)
                 llm_explanation = llm_result.get('explanation', '').lower()
                 
-                # If LLM explanation contains hate speech indicators, force is_hate_speech = True
+                # SAFETY NET: If LLM explanation indicates hate speech, force flag
                 hate_indicators = [
                     'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
                     'derogatory', 'discrimination', 'dangerous', 'threat',
@@ -5150,39 +5139,21 @@ class LexiconManagementView(TemplateView):
                 
                 if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
                     llm_is_hate = True
-                    llm_result['is_hate_speech'] = True
-                    llm_result['confidence'] = max(llm_result.get('confidence', 0), 0.75)
-                    logger.info(f" Safety net triggered: LLM explanation indicates hate speech")
+                    llm_confidence = max(llm_confidence, 0.75)
                 
-                # ENHANCED DECISION LOGIC
-                is_hate_speech = False
-                overall_severity_num = 1
-                explanation = ""
-                
-                llm_confidence = llm_result.get('confidence', 0)
-                gemma_category = str(gemma_result.get('category', 'neutral')).lower()
-                gemma_confidence = gemma_result.get('confidence', 0)
-                lexicon_score = lexicon_risk.get('score', 0)
-                
-                # PRIORITY 1: LLM says hate speech with decent confidence
+                # PRIORITY 1: LLM says hate speech
                 if llm_is_hate and llm_confidence >= 0.6:
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
                     explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
                 
-                # PRIORITY 2: Gemma says hate speech with high confidence
-                elif gemma_category != 'neutral' and gemma_confidence >= 0.7:
-                    is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'medium'), 2)
-                    explanation = f"Gemma classified as {gemma_category} ({gemma_confidence*100:.0f}% confidence)"
-                
-                # PRIORITY 3: Lexicon finds high-risk terms
-                elif lexicon_score > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
+                # PRIORITY 2: Lexicon finds high-risk terms
+                elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
-                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_score})"
+                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
                 
-                # PRIORITY 4: Default to not hate speech
+                # PRIORITY 3: Default to not hate speech
                 else:
                     is_hate_speech = False
                     overall_severity_num = 1
@@ -5200,8 +5171,6 @@ class LexiconManagementView(TemplateView):
                 if lexicon_matches:
                     terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
                     analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
-                if gemma_result.get('category') and gemma_result.get('category') != 'error':
-                    analysis_parts.append(f"Gemma model classified as: {gemma_result['category']} ({gemma_result.get('confidence', 0)*100:.0f}% confidence)")
                 combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
                 
                 # Save to session
@@ -5213,8 +5182,8 @@ class LexiconManagementView(TemplateView):
                     'gemma_result': gemma_result,
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity_num],
-                    'overall_confidence': round((llm_result.get('confidence', 0) + gemma_result.get('confidence', 0)) / 2, 2),
-                    'overall_confidence_pct': f"{round((llm_result.get('confidence', 0) + gemma_result.get('confidence', 0)) / 2 * 100)}%",
+                    'overall_confidence': round(llm_confidence, 2),
+                    'overall_confidence_pct': f"{round(llm_confidence * 100)}%",
                     'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
                     'targeted_groups': llm_result.get('targeted_groups', []),
                     'explanation': llm_result.get('explanation', ''),
@@ -5223,12 +5192,12 @@ class LexiconManagementView(TemplateView):
                 }
                 
                 if is_hate_speech:
-                    messages.warning(request, f"⚠️ Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {request.session['scan_results']['overall_confidence']*100:.0f}%)")
+                    messages.warning(request, f"Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {llm_confidence*100:.0f}%)")
                 else:
                     if lexicon_matches:
-                        messages.info(request, f"ℹ️ No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
+                        messages.info(request, f"No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
                     else:
-                        messages.success(request, "✅ No hate speech detected.")
+                        messages.success(request, "No hate speech detected.")
             else:
                 messages.warning(request, "Please enter text to scan")
 
