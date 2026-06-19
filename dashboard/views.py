@@ -85,22 +85,22 @@ def load_gemma_model():
         logger.error(f"Gemma detection failed: {e}", exc_info=True)
         # Return empty list to prevent infinite recursion loop
         return [] 
+       
 def export_merged_gephi_csv(request):
     """Export a single, merged Gephi-ready CSV containing edges, tweets, and roles."""
     min_connections = int(request.GET.get('min_connections', 2))
     posts = ProcessedPost.objects.filter(is_election_related=True)
     
-    # Get coordination groups
-    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
+    # Get coordination groups (increase max_groups to export more data)
+    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
     
-    # Debug logging
     logger.info(f"Exporting {len(coordination_groups)} coordination groups to CSV")
     
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="ethiopia_election_network_merged.csv"'
     writer = csv.writer(response)
     
-    # Headers formatted for Gephi's Edge Table importer
+    # Headers formatted for Gephi
     writer.writerow([
         'Source', 'Target', 'Weight', 'Type',
         'Tweet', 'Timestamp', 'Platform', 'Sub_Narrative',
@@ -110,73 +110,58 @@ def export_merged_gephi_csv(request):
     rows_written = 0
     
     for group in coordination_groups:
-        text = group.get('text_sample', '')
-        if not text:
-            logger.warning(f"Group {group.get('id')} has no text_sample")
+        text_sample = group.get('text_sample', '')
+        if not text_sample:
             continue
-        
-        # Extract sub-narrative directly from the text
-        sub_narrative = extract_sub_narrative(text)
+            
+        sub_narrative = group.get('sub_narrative', 'General Coordination')
         platforms = ', '.join(group.get('platforms', [])) if group.get('platforms') else 'Unknown'
         
-        # Get posts ordered by timestamp to identify source vs amplifier
-        account_posts = list(posts.filter(original_text=text).order_by('timestamp_share'))
+        # 🔥 FIX: Use the sample posts ALREADY fetched by get_coordination_groups
+        # instead of doing a broken database query with truncated text.
+        sample_posts = group.get('sample_posts_with_urls', [])
         
-        if len(account_posts) < 2:
-            logger.warning(f"Text has only {len(account_posts)} post(s), need at least 2 for edge")
+        if len(sample_posts) < 2:
             continue
+            
+        # Sort sample posts by timestamp to identify source vs amplifier
+        def parse_ts(p):
+            try:
+                return datetime.strptime(p.get('timestamp', ''), '%Y-%m-%d %H:%M')
+            except:
+                return datetime.max
+                
+        sorted_posts = sorted(sample_posts, key=parse_ts)
         
-        source_account = None
-        first_time = None
+        # The first post chronologically is the Source
+        source_post = sorted_posts[0]
+        source_account = source_post.get('username', 'Unknown')
+        first_time = source_post.get('timestamp', 'N/A')
         
-        for idx, post in enumerate(account_posts):
-            username = clean_username(post.account_id)
-            if not username or len(username) < 2:
+        # Clean tweet text for CSV (escape quotes and newlines)
+        tweet_clean = text_sample[:500].replace('\n', ' ').replace('\r', '').replace('"', '""')
+        
+        # Create edges from the Source to all Amplifiers
+        for amp_post in sorted_posts[1:]:
+            target_account = amp_post.get('username', 'Unknown')
+            if target_account == source_account or target_account == 'Unknown':
                 continue
                 
-            post_time = post.timestamp_share.strftime('%Y-%m-%d %H:%M') if post.timestamp_share else ''
+            writer.writerow([
+                source_account,
+                target_account,
+                1,  # Weight
+                'Directed',
+                f'"{tweet_clean}"',
+                first_time,
+                platforms,
+                sub_narrative,
+                'Source',
+                'Amplifier'
+            ])
+            rows_written += 1
             
-            if idx == 0:
-                # First poster is the Source
-                source_account = username
-                first_time = post_time
-            else:
-                # Subsequent posters are Targets/Amplifiers
-                # Clean tweet text for CSV (escape quotes and newlines)
-                tweet_clean = text[:200].replace('\n', ' ').replace('\r', '').replace('"', '""')
-                
-                writer.writerow([
-                    source_account,
-                    username,
-                    1,  # Weight
-                    'Directed',
-                    f'"{tweet_clean}"',
-                    first_time,
-                    platforms,
-                    sub_narrative,
-                    'Source',
-                    'Amplifier'
-                ])
-                rows_written += 1
-    
-    logger.info(f"Exported {rows_written} rows to CSV")
-    
-    if rows_written == 0:
-        # Add a sample row for testing if no data found
-        logger.warning("No coordination edges found. Adding sample row for testing.")
-        writer.writerow([
-            'sample_source',
-            'sample_target',
-            1,
-            'Directed',
-            '"Sample coordination detected"',
-            timezone.now().strftime('%Y-%m-%d %H:%M'),
-            'Test',
-            'General Coordination',
-            'Source',
-            'Amplifier'
-        ])
-    
+    logger.info(f"Successfully exported {rows_written} real coordination edges to CSV.")
     return response
 
 def export_network_csv(request):
@@ -5021,7 +5006,7 @@ class LexiconManagementView(TemplateView):
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
 
-        # Only scan the most recent 3000 posts instead of all
+        # Only scan the most recent 3000 posts instead of all (Performance fix)
         posts_to_scan = filtered_posts[:3000]
         
         all_matches = []
@@ -5125,75 +5110,90 @@ class LexiconManagementView(TemplateView):
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
             if text:
-                # 1. Lexicon-based detection
-                lexicon_matches = scan_text_for_lexicon_terms(text)
-                lexicon_risk = calculate_risk_score(lexicon_matches)
-
-                # 2. LLM-based detection
-                llm_result = detect_hate_speech_llm(text)
-
-                # 3. Fine-tuned Gemma Model detection
-                try:
-                    gemma_result = get_hate_speech_detector().detect(text)
-                except Exception as e:
-                    logger.warning(f"Gemma LoRA detection failed: {e}")
-                    gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low'}
-
-                # 4. Determine final verdict - AI MODELS HAVE PRIORITY
+                # Run all 3 detections in parallel for speed
+                from concurrent.futures import ThreadPoolExecutor
+                
+                def run_lexicon():
+                    matches = scan_text_for_lexicon_terms(text)
+                    return matches, calculate_risk_score(matches)
+                
+                def run_llm():
+                    return detect_hate_speech_llm(text)
+                
+                def run_gemma():
+                    try:
+                        return get_hate_speech_detector().detect(text)
+                    except Exception as e:
+                        logger.warning(f"Gemma failed: {e}")
+                        return {'category': 'error', 'confidence': 0.0, 'severity': 'low'}
+                
+                # Run all 3 in parallel (3x faster!)
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    future_lexicon = executor.submit(run_lexicon)
+                    future_llm = executor.submit(run_llm)
+                    future_gemma = executor.submit(run_gemma)
+                    
+                    lexicon_matches, lexicon_risk = future_lexicon.result(timeout=30)
+                    llm_result = future_llm.result(timeout=30)
+                    gemma_result = future_gemma.result(timeout=30)
+                
+                # SAFETY NET: Check LLM explanation for hate speech indicators
+                llm_is_hate = llm_result.get('is_hate_speech', False)
+                llm_explanation = llm_result.get('explanation', '').lower()
+                
+                # If LLM explanation contains hate speech indicators, force is_hate_speech = True
+                hate_indicators = [
+                    'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
+                    'derogatory', 'discrimination', 'dangerous', 'threat',
+                    'ethnic cleansing', 'genocide', 'kill', 'attack', 'slaughter'
+                ]
+                
+                if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
+                    llm_is_hate = True
+                    llm_result['is_hate_speech'] = True
+                    llm_result['confidence'] = max(llm_result.get('confidence', 0), 0.75)
+                    logger.info(f" Safety net triggered: LLM explanation indicates hate speech")
+                
+                # ENHANCED DECISION LOGIC
                 is_hate_speech = False
                 overall_severity_num = 1
                 explanation = ""
-
-                llm_is_hate = llm_result.get('is_hate_speech', False)
+                
                 llm_confidence = llm_result.get('confidence', 0)
-                gemma_category = gemma_result.get('category', 'neutral')
+                gemma_category = str(gemma_result.get('category', 'neutral')).lower()
                 gemma_confidence = gemma_result.get('confidence', 0)
                 lexicon_score = lexicon_risk.get('score', 0)
-
-                # PRIORITY 1: Both AI models agree it's neutral/objective
-                if (not llm_is_hate and llm_confidence > 0.6 and
-                    gemma_category == 'neutral' and gemma_confidence > 0.7):
-                    is_hate_speech = False
-                    overall_severity_num = 1
-                    explanation = f"Both AI models agree: LLM says objective news, Gemma says neutral ({gemma_confidence*100:.0f}% confidence). Lexicon found {len(lexicon_matches)} terms but they appear in news context."
-
-                # PRIORITY 2: Both AI models agree it's hate speech
-                elif llm_is_hate and llm_confidence > 0.7 and gemma_category != 'neutral' and gemma_confidence > 0.7:
+                
+                # PRIORITY 1: LLM says hate speech with decent confidence
+                if llm_is_hate and llm_confidence >= 0.6:
                     is_hate_speech = True
-                    overall_severity_num = max(
-                        {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'low'), 1),
-                        {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
-                    )
-                    explanation = f"Both AI models agree: LLM detected hate speech ({llm_confidence*100:.0f}% confidence), Gemma classified as {gemma_category} ({gemma_confidence*100:.0f}% confidence)."
-
-                # PRIORITY 3: One AI model with high confidence
-                elif (llm_is_hate and llm_confidence > 0.8) or (gemma_category != 'neutral' and gemma_confidence > 0.8):
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
+                    explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
+                
+                # PRIORITY 2: Gemma says hate speech with high confidence
+                elif gemma_category != 'neutral' and gemma_confidence >= 0.7:
                     is_hate_speech = True
-                    if llm_is_hate and llm_confidence > 0.8:
-                        overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'low'), 1)
-                        explanation = f"LLM detected hate speech with high confidence ({llm_confidence*100:.0f}%). Gemma classified as {gemma_category}."
-                    else:
-                        overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'low'), 1)
-                        explanation = f"Gemma classified as {gemma_category} with high confidence ({gemma_confidence*100:.0f}%). LLM: {'hate speech' if llm_is_hate else 'not hate speech'}."
-
-                # PRIORITY 4: Lexicon fallback only when AI uncertain
-                elif lexicon_score > 5 and llm_confidence < 0.6 and gemma_confidence < 0.6:
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(gemma_result.get('severity', 'medium'), 2)
+                    explanation = f"Gemma classified as {gemma_category} ({gemma_confidence*100:.0f}% confidence)"
+                
+                # PRIORITY 3: Lexicon finds high-risk terms
+                elif lexicon_score > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
                     is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'low'), 1)
-                    explanation = f"AI models uncertain (LLM: {llm_confidence*100:.0f}%, Gemma: {gemma_confidence*100:.0f}%). Lexicon detected {len(lexicon_matches)} high-risk terms."
-
-                # PRIORITY 5: Default to not hate speech
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
+                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_score})"
+                
+                # PRIORITY 4: Default to not hate speech
                 else:
                     is_hate_speech = False
                     overall_severity_num = 1
                     if lexicon_matches:
-                        explanation = f"AI models classify as neutral/objective. Lexicon found {len(lexicon_matches)} terms but they appear in legitimate context."
+                        explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
                     else:
                         explanation = "No hate speech detected by any method."
-
+                
                 severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
-
-                # 5. Create combined analysis
+                
+                # Create combined analysis
                 analysis_parts = []
                 if llm_result.get('explanation'):
                     analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
@@ -5203,8 +5203,8 @@ class LexiconManagementView(TemplateView):
                 if gemma_result.get('category') and gemma_result.get('category') != 'error':
                     analysis_parts.append(f"Gemma model classified as: {gemma_result['category']} ({gemma_result.get('confidence', 0)*100:.0f}% confidence)")
                 combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
-
-                # 6. Save to session
+                
+                # Save to session
                 request.session['scan_results'] = {
                     'text': text[:200] + '...' if len(text) > 200 else text,
                     'lexicon_matches': lexicon_matches,
@@ -5221,14 +5221,14 @@ class LexiconManagementView(TemplateView):
                     'analysis': combined_analysis,
                     'has_lexicon_matches': len(lexicon_matches) > 0
                 }
-
+                
                 if is_hate_speech:
-                    messages.warning(request, f"Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {request.session['scan_results']['overall_confidence']*100:.0f}%)")
+                    messages.warning(request, f"⚠️ Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {request.session['scan_results']['overall_confidence']*100:.0f}%)")
                 else:
                     if lexicon_matches:
-                        messages.info(request, f"No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
+                        messages.info(request, f"ℹ️ No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
                     else:
-                        messages.success(request, "No hate speech detected.")
+                        messages.success(request, "✅ No hate speech detected.")
             else:
                 messages.warning(request, "Please enter text to scan")
 
