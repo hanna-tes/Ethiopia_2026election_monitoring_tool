@@ -26,6 +26,15 @@
     
     /* Bot highlight for sample posts */
     .bot-post { border-left: 3px solid #ef4444 !important; background-color: rgba(239, 68, 68, 0.1) !important; }
+    
+    /* Graph explanation box */
+    .graph-explanation { 
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        border: 1px solid #475569;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
 </style>
 {% endblock %}
 
@@ -98,6 +107,35 @@
         </div>
     </div>
 
+    <!-- Graph Explanation -->
+    <div class="graph-explanation">
+        <h4 class="text-sm font-semibold text-slate-200 mb-2">📊 How to Read This Network Graph</h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+                <p class="text-slate-300 mb-2"><strong>Node Colors:</strong></p>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-4 h-4 rounded-full" style="background:#3b82f6;"></div>
+                    <span class="text-slate-300"><strong>Source Accounts</strong> - Original posters who first shared the content</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 rounded-full" style="background:#f59e0b;"></div>
+                    <span class="text-slate-300"><strong>Amplifier Accounts</strong> - Accounts that reposted/shared the content</span>
+                </div>
+            </div>
+            <div>
+                <p class="text-slate-300 mb-2"><strong>Visual Elements:</strong></p>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-6 h-6 rounded-full bg-slate-600"></div>
+                    <span class="text-slate-300">Larger nodes = more connections (higher coordination activity)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-16 h-1 bg-slate-400"></div>
+                    <span class="text-slate-300">Thicker edges = stronger coordination (more shared posts)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Network Graph -->
     <div class="network-container mb-6">
         <div id="network-graph" class="w-full h-[600px]"></div>
@@ -106,7 +144,15 @@
     <!-- Network Legend -->
     <div class="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
         <h4 class="text-sm font-semibold text-slate-200 mb-3">Network Legend</h4>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded-full" style="background:#3b82f6;"></div>
+                <span class="text-slate-300">Source (Original)</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-4 h-4 rounded-full" style="background:#f59e0b;"></div>
+                <span class="text-slate-300">Amplifier (Repost)</span>
+            </div>
             <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded-full" style="background:#1DA1F2;"></div>
                 <span class="text-slate-300">X / Twitter</span>
@@ -118,9 +164,6 @@
             <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded-full" style="background:#000000; border: 1px solid #475569;"></div>
                 <span class="text-slate-300">TikTok</span>
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-slate-400 text-xs">Node size indicates total connections</span>
             </div>
         </div>
     </div>
@@ -191,7 +234,7 @@
                                 <span class="text-slate-400">{{ post.platform|default:"" }} • {{ post.timestamp|default:"" }}</span>
                             </div>
                             
-                            {# 🔥 BOT EVIDENCE DISPLAY #}
+                            <!-- Bot Evidence Display -->
                             {% if post.is_bot and post.bot_reasons %}
                             <div class="mt-1 px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-300 text-[10px] italic">
                                 ⚠️ Bot Evidence: {{ post.bot_reasons }}
@@ -300,7 +343,7 @@
             type: 'scatter'
         }));
         
-        // Nodes (using platform colors from backend)
+        // Nodes with enhanced tooltips
         const nodeTrace = {
             x: graphData.nodes.map(n => n.x),
             y: graphData.nodes.map(n => n.y),
@@ -314,9 +357,24 @@
             textposition: 'middle center',
             textfont: { family: 'monospace', size: 10, color: '#ffffff' },
             name: 'Accounts',
-            customdata: graphData.nodes.map(n => n.post_count),
-            hovertemplate: '<b>%{text}</b><br>Posts: %{customdata}<extra></extra>',
-            hoverlabel: { bgcolor: 'rgba(0,0,0,0.8)', font: {color: 'white'} }
+            customdata: graphData.nodes.map(n => [
+                n.post_count || 0,
+                n.type || 'source',
+                n.platform || 'Unknown',
+                n.is_bot ? '🤖 BOT' : '✓ Human'
+            ]),
+            hovertemplate: 
+                '<b>%{text}</b><br>' +
+                'Role: <b>%{customdata[1]}</b><br>' +
+                'Posts: %{customdata[0]}<br>' +
+                'Platform: %{customdata[2]}<br>' +
+                'Status: %{customdata[3]}' +
+                '<extra></extra>',
+            hoverlabel: { 
+                bgcolor: 'rgba(0,0,0,0.9)', 
+                font: {color: 'white', size: 12},
+                bordercolor: 'rgba(255,255,255,0.2)'
+            }
         };
         
         const layout = {
@@ -336,7 +394,8 @@
         
         Plotly.newPlot('network-graph', [...edgeTraces, nodeTrace], layout, { 
             responsive: true,
-            displayModeBar: true
+            displayModeBar: true,
+            modeBarButtonsToRemove: ['lasso2d', 'select2d']
         });
     } else {
         document.getElementById('network-graph').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #94a3b8;"><p class="text-xl">📊 No coordination detected. Try lowering "Min connections".</p></div>';
