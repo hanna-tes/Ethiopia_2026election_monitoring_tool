@@ -2277,12 +2277,12 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
     else:
         pos = nx.spring_layout(G_top, k=0.6, iterations=50, seed=42)
     
-    # 🔥 FIX 6: Build nodes using PRE-COMPUTED in-memory stats (NO DB queries!)
+    #  Build nodes using PRE-COMPUTED in-memory stats (NO DB queries!)
     nodes = []
     for node in G_top.nodes():
         degree = G_top.degree(node)
         
-        # 🔥 Look up stats from memory instead of database
+        # Look up stats from memory instead of database
         stats = account_stats.get(node, {'post_count': 0, 'platforms': set(), 'sample_url': None})
         post_count = stats['post_count']
         platforms = list(stats['platforms'])
@@ -2320,7 +2320,108 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
             'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
         }
     }
+def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='spring'):
+    """
+    Build network graph from coordination groups (TF-IDF similarity)
+    instead of exact text matches.
+    """
+    import networkx as nx
     
+    G = nx.Graph()
+    account_roles = {}
+    
+    # Build graph from coordination groups
+    for group in coordination_groups:
+        accounts = group.get('accounts', [])
+        if len(accounts) < 2:
+            continue
+        
+        # Get sample posts to determine source vs amplifier
+        sample_posts = group.get('sample_posts_with_urls', [])
+        
+        # Track which accounts posted what and when
+        account_timestamps = {}
+        for post in sample_posts:
+            username = post.get('username', '')
+            timestamp = post.get('timestamp', '')
+            if username and timestamp and timestamp != 'N/A':
+                account_timestamps[username] = timestamp
+        
+        # Determine source (earliest poster) and amplifiers
+        if account_timestamps:
+            sorted_accounts = sorted(account_timestamps.items(), key=lambda x: x[1])
+            if sorted_accounts:
+                source_account = sorted_accounts[0][0]
+                account_roles[source_account] = 'source'
+                for acc, _ in sorted_accounts[1:]:
+                    if acc not in account_roles:
+                        account_roles[acc] = 'amplifier'
+        
+        # Connect all accounts in this group (clique)
+        for i in range(len(accounts)):
+            for j in range(i+1, len(accounts)):
+                u, v = accounts[i], accounts[j]
+                if G.has_edge(u, v):
+                    G[u][v]['weight'] += 1
+                else:
+                    G.add_edge(u, v, weight=1)
+    
+    if G.number_of_edges() == 0:
+        return {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
+    
+    # Filter top nodes by degree (connections)
+    top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
+    top_node_names = [n for n, _ in top_nodes]
+    G_top = G.subgraph(top_node_names).copy()
+    
+    # Layout computation
+    if layout == 'circular':
+        pos = nx.circular_layout(G_top)
+    elif layout == 'kamada_kawai':
+        pos = nx.kamada_kawai_layout(G_top)
+    else:
+        pos = nx.spring_layout(G_top, k=0.6, iterations=50, seed=42)
+    
+    # Build JSON for frontend
+    nodes = []
+    for node in G_top.nodes():
+        degree = G_top.degree(node)
+        node_type = account_roles.get(node, 'source')
+        node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'
+        
+        nodes.append({
+            'id': node, 
+            'label': node, 
+            'degree': degree,
+            'x': float(pos[node][0]), 
+            'y': float(pos[node][1]),
+            'size': max(15, degree * 3),
+            'color': node_color, 
+            'type': node_type
+        })
+    
+    edges = []
+    for u, v, data in G_top.edges(data=True):
+        if u in pos and v in pos:
+            edges.append({
+                'source': u, 
+                'target': v,
+                'weight': data.get('weight', 1),
+                'source_x': float(pos[u][0]), 
+                'source_y': float(pos[u][1]),
+                'target_x': float(pos[v][0]), 
+                'target_y': float(pos[v][1]),
+            })
+    
+    return {
+        'nodes': nodes, 
+        'edges': edges,
+        'stats': {
+            'nodes': len(nodes), 
+            'edges': len(edges),
+            'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
+        }
+    }   
 def calculate_ethiopia_relevance(text):
     if not text:
         return 0
@@ -4788,43 +4889,24 @@ class NetworksView(TemplateView):
             posts = ProcessedPost.objects.none()
             start_date = end_date = timezone.now()
         
-        # Generate cache key (include view_all to prevent serving wrong data)
-        posts_count = posts.count()
-        cache_key = f"networks_{min_connections}_{top_n}_{layout_style}_{posts_count}_{'all' if view_all else 'filtered'}"
+        # Get coordination groups FIRST (using TF-IDF similarity)
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
         
-        # Check cache first
-        cached = cache.get(cache_key)
-        if cached:
-            logger.info("Loading networks from cache (instant)")
-            context.update(cached)
-            context['active_tab'] = 'networks'
-            context['view_all'] = view_all
-            return context
-            
-        logger.info("Computing networks from scratch...")
+        # Build graph FROM the coordination groups (not exact text matches)
+        graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
         
-        # Wrap heavy computation in try-except
-        try:
-            graph_data = generate_network_graph_data(posts, min_connections=min_connections, top_n=top_n, layout=layout_style)
-            coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
-            ttps = analyze_ttps(coordination_groups, posts)
-        except Exception as e:
-            logger.error(f"Error computing networks: {e}", exc_info=True)
-            # Fallback to empty data instead of 500 error
-            graph_data = {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
-            coordination_groups = []
-            ttps = []
-            context['error_message'] = f"Network computation failed: {str(e)}. Showing empty results."
-            
+        # Analyze TTPs
+        ttps = analyze_ttps(coordination_groups, posts)
+        
         try:
             disarm_ttp_reference = get_disarm_ttp_reference()
         except Exception:
             disarm_ttp_reference = []
-            
+        
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups,
+            'coordination_groups': coordination_groups[:15],  # Show top 15 in the list
             'total_coordinated_groups': len(coordination_groups),
             'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
             'total_posts': posts.count(),
@@ -4840,8 +4922,6 @@ class NetworksView(TemplateView):
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         }
         
-        # Cache for 30 minutes
-        cache.set(cache_key, context_data, 1800)
         context.update(context_data)
         return context
         
