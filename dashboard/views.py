@@ -1398,9 +1398,8 @@ def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Di
         
     except Exception as e:
         logger.error(f"Gemma detection failed: {e}", exc_info=True)
-    
-    logger.info("Using fallback TTP analysis")
-    return analyze_ttps(coordination_groups, [])
+        # Return empty list to break the infinite recursion loop
+        return []
     
 def _convert_techniques_to_ttp_format(techniques: List[Dict]) -> List[Dict]:
     """Convert Gemma-format techniques to view-compatible format"""
