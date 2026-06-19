@@ -2002,10 +2002,11 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             continue
         
         # Bot detection (in-memory, no DB)
-        bot_accounts = identify_bot_accounts(group_posts)
+        bot_data = identify_bot_accounts(group_posts)
+        bot_accounts = list(bot_data.keys())  # Extract just the IDs for counting
         bot_count = len(bot_accounts)
         bot_percentage = (bot_count / len(accounts) * 100) if accounts else 0
-        
+              
         # Coordination type
         coordination_type = determine_coordination_type(group_posts, bot_count)
         
@@ -2024,13 +2025,18 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             
             if len(sample_posts_with_urls) < 10:
                 ts = post.get('timestamp_share')
+                # 🔥 Get bot reasons for this specific account
+                account_id = post.get('account_id')
+                bot_reasons = bot_data.get(account_id, [])
+                
                 sample_posts_with_urls.append({
-                    'username': clean_username(post.get('account_id', '')),
+                    'username': clean_username(account_id),
                     'platform': post.get('platform', ''),
                     'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
                     'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
                     'text_preview': text[:150] + '...' if text else '',
-                    'is_bot': post.get('account_id') in bot_accounts,
+                    'is_bot': account_id in bot_accounts,
+                    'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",  # 🔥 NEW: Pass reasons to UI
                     'risk_level': post.get('risk_level', 'unknown')
                 })
         
@@ -2064,68 +2070,120 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
 
 def identify_bot_accounts(posts):
     """
-    Identify bot accounts based on multiple signals:
-    1. Account name patterns
-    2. Posting frequency (high volume in group)
-    3. Content similarity
-    4. Risk level
-    5. Unusual posting hours
+    Enhanced bot detection with timestamp analysis and behavioral patterns.
+    Returns a dict: {account_id: [list of reasons]}
     """
-    bot_accounts = set()
+    bot_data = {}  # Changed from set() to dict
     account_posts = defaultdict(list)
-
+    
     # Group posts by account
     for post in posts:
         if post.get('account_id'):
             account_posts[post['account_id']].append(post)
-
+    
     for account_id, account_post_list in account_posts.items():
         bot_signals = 0
-
-        # Signal 1: Generic account name patterns
+        signal_reasons = []
+        
+        # === STRONG SIGNALS ===
+        
+        # 1. Check posting frequency patterns (bots post at regular intervals)
+        if len(account_post_list) >= 5:
+            timestamps = [p.get('timestamp_share') for p in account_post_list if p.get('timestamp_share')]
+            if len(timestamps) >= 5:
+                timestamps.sort()
+                # Calculate time differences between posts
+                time_diffs = []
+                for i in range(1, len(timestamps)):
+                    diff = (timestamps[i] - timestamps[i-1]).total_seconds() / 60  # minutes
+                    time_diffs.append(diff)
+                
+                # Check for suspicious regularity (bots post at exact intervals)
+                if time_diffs:
+                    avg_interval = sum(time_diffs) / len(time_diffs)
+                    # If variance is very low, likely automated
+                    variance = sum((x - avg_interval) ** 2 for x in time_diffs) / len(time_diffs)
+                    std_dev = variance ** 0.5
+                    coefficient_of_variation = std_dev / avg_interval if avg_interval > 0 else 1
+                    
+                    if coefficient_of_variation < 0.3 and len(account_post_list) >= 10:
+                        bot_signals += 3
+                        signal_reasons.append(f"Regular posting interval (CV: {coefficient_of_variation:.2f})")
+                    
+                    # Very high frequency (multiple posts per minute)
+                    if avg_interval < 5:  # Less than 5 minutes between posts
+                        bot_signals += 2
+                        signal_reasons.append(f"Very high frequency ({avg_interval:.1f} min avg)")
+        
+        # 2. Check for 24/7 activity (bots don't sleep)
+        if len(account_post_list) >= 10:
+            hours_active = set()
+            for post in account_post_list:
+                if post.get('timestamp_share'):
+                    hours_active.add(post['timestamp_share'].hour)
+            
+            if len(hours_active) >= 20:  # Active in 20+ hours of the day
+                bot_signals += 2
+                signal_reasons.append("24/7 activity pattern")
+        
+        # 3. Check for burst posting (many posts in short time)
+        if len(account_post_list) >= 10:
+            posts_per_hour = defaultdict(int)
+            for post in account_post_list:
+                if post.get('timestamp_share'):
+                    hour_key = post['timestamp_share'].strftime('%Y-%m-%d %H')
+                    posts_per_hour[hour_key] += 1
+            
+            max_posts_in_hour = max(posts_per_hour.values()) if posts_per_hour else 0
+            if max_posts_in_hour >= 20:  # 20+ posts in one hour
+                bot_signals += 2
+                signal_reasons.append(f"Burst posting ({max_posts_in_hour} posts/hour)")
+            elif max_posts_in_hour >= 10:
+                bot_signals += 1
+                signal_reasons.append(f"High volume burst ({max_posts_in_hour} posts/hour)")
+        
+        # === MEDIUM SIGNALS ===
+        
+        # 4. Generic account name patterns (only strong patterns)
         clean_name = clean_username(account_id).lower()
-        if any(pattern in clean_name for pattern in [
-            'bot', 'auto', 'news', 'update', 'daily',
-            'official', 'real', '2024', '2023', 'ethiopia'
-        ]):
+        strong_bot_patterns = ['bot', 'auto', 'auto_', 'auto.', 'daily_', 'daily.', 'news_bot', 'update_bot']
+        if any(pattern in clean_name for pattern in strong_bot_patterns):
             bot_signals += 2
-
-        # Signal 2: High volume posting (same account posting multiple similar posts)
-        if len(account_post_list) >= 3:
-            bot_signals += 2
-
-        # Signal 3: High/critical risk level
-        high_risk_posts = sum(1 for p in account_post_list
-                              if p.get('risk_level') in ['high', 'critical'])
+            signal_reasons.append("Bot-like name pattern")
+        
+        # 5. Very short/templated content
+        short_posts = sum(1 for p in account_post_list 
+                         if p.get('original_text') and len(str(p['original_text']).strip()) < 30)
+        if short_posts > len(account_post_list) * 0.7:  # 70%+ very short posts
+            bot_signals += 1
+            signal_reasons.append(f"Mostly short content ({short_posts}/{len(account_post_list)})")
+        
+        # 6. Identical content repetition
+        if len(account_post_list) >= 5:
+            content_hashes = [hash(str(p.get('original_text', ''))[:50]) for p in account_post_list if p.get('original_text')]
+            unique_content = len(set(content_hashes))
+            if unique_content < len(content_hashes) * 0.3:  # 70%+ duplicate content
+                bot_signals += 2
+                signal_reasons.append(f"High content repetition ({unique_content}/{len(content_hashes)} unique)")
+        
+        # === WEAK SIGNALS ===
+        
+        # 7. Account name with years (only if combined with other signals)
+        if re.search(r'(2023|2024|2025)', clean_name):
+            bot_signals += 0.5  # Weak signal alone
+        
+        # 8. High/critical risk level
+        high_risk_posts = sum(1 for p in account_post_list 
+                             if p.get('risk_level') in ['high', 'critical'])
         if high_risk_posts > 0:
-            bot_signals += 1
-
-        # Signal 4: Very short or templated content
-        short_posts = sum(1 for p in account_post_list
-                          if p.get('original_text') and len(str(p['original_text'])) < 50)
-        if short_posts > 0:
-            bot_signals += 1
-
-        # Signal 5: Posting at unusual hours (check timestamps)
-        unusual_hours = 0
-        for post in account_post_list:
-            if post.get('timestamp_share'):
-                try:
-                    hour = post['timestamp_share'].hour
-                    if hour in [0, 1, 2, 3, 4, 5]:  # Late night/early morning
-                        unusual_hours += 1
-                except:
-                    pass
-
-        if unusual_hours >= 2:
-            bot_signals += 1
-
-        # If 3+ bot signals, mark as bot
+            bot_signals += 0.5
+        
+        # RETURN DICT WITH REASONS if bot_signals >= 3
         if bot_signals >= 3:
-            bot_accounts.add(account_id)
-
-    return bot_accounts
-
+            logger.info(f"BOT DETECTED: {account_id} (score: {bot_signals}) - Reasons: {', '.join(signal_reasons)}")
+            bot_data[account_id] = signal_reasons  # Store reasons in dict
+    
+    return bot_data  
 
 def determine_coordination_type(posts, bot_count):
     """
