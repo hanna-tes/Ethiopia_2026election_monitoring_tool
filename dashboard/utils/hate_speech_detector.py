@@ -2,6 +2,7 @@ import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,18 @@ CATEGORY_SEVERITY = {
     'ancestry': 'low', 'class': 'low', 'structural': 'low', 'neutral': 'low'
 }
 
+class FallbackDetector:
+    """Fallback when Gemma model fails to load"""
+    def detect(self, text: str) -> dict:
+        return {
+            'category': 'error',
+            'severity': 'low',
+            'confidence': 0.0,
+            'raw_prediction': 'Model not available',
+            'is_hate_speech': False,
+            'model_type': 'fallback'
+        }
+
 class GemmaHateSpeechDetector:
     def __init__(self, model_path: str, base_model: str = "unsloth/gemma-4-e4b-it-unsloth-bnb-4bit"):
         self.model_path = model_path
@@ -42,11 +55,11 @@ class GemmaHateSpeechDetector:
             
             logger.info(f"Loading base model: {self.base_model_name}...")
             
-            # The Unsloth model is ALREADY 4-bit quantized.
+            # The Unsloth model is ALREADY 4-bit quantized
             base_model = AutoModelForCausalLM.from_pretrained(
                 self.base_model_name,
                 torch_dtype=torch.float16,
-                device_map=None,  # Changed from "auto"
+                device_map=None,
                 trust_remote_code=True
             )
             
@@ -57,7 +70,6 @@ class GemmaHateSpeechDetector:
             self.model = PeftModel.from_pretrained(
                 base_model,
                 self.model_path
-                
             )
             
             # Ensure the adapter is also on the correct device
@@ -159,12 +171,30 @@ Category:"""
 
 _detector_instance = None
 
-def get_hate_speech_detector(model_path: str = None) -> GemmaHateSpeechDetector:
+def get_hate_speech_detector():
+    """Get or create the hate speech detector using Gemma LoRA"""
     global _detector_instance
+    
     if _detector_instance is None:
-        if model_path is None:
-            from django.conf import settings
-            model_path = getattr(settings, 'GEMMA_LOKA_MODEL_PATH', './dashboard/model_cache/gemma_hate_lexicon_lora')
-        _detector_instance = GemmaHateSpeechDetector(model_path)
-        _detector_instance.load_model()
+        try:
+            lora_adapter_path = getattr(settings, 'GEMMA_LORA_ADAPTER_PATH', './model_cache/gemma-lora-hate-speech')
+            base_model_name = getattr(settings, 'GEMMA_BASE_MODEL_NAME', 'unsloth/gemma-4-e4b-it-unsloth-bnb-4bit')
+            
+            logger.info(f"Initializing hate speech detector with adapter: {lora_adapter_path}")
+            
+            # Create the detector instance with the path
+            _detector_instance = GemmaHateSpeechDetector(
+                model_path=lora_adapter_path,
+                base_model=base_model_name
+            )
+            
+            # Load the model
+            _detector_instance.load_model()
+            logger.info("✅ Hate speech detector initialized successfully!")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize hate speech detector: {e}")
+            logger.info("Using FallbackDetector instead")
+            _detector_instance = FallbackDetector()
+    
     return _detector_instance
