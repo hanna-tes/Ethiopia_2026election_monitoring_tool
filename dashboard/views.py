@@ -807,38 +807,60 @@ def dashboard_view(request):
     
     return render(request, 'dashboard.html', context)
     
+import re
+
+# Compile patterns once, reuse them forever
+_COMPILED_PATTERNS = {}
+
+def _get_cached_pattern(term, language):
+    """Get or compile a regex pattern, caching it to prevent memory spikes."""
+    cache_key = f"{term}_{language}"
+    
+    if cache_key not in _COMPILED_PATTERNS:
+        try:
+            if language == "amharic" or re.match(r'^[\u1200-\u137F]+$', term):
+                pattern = r'(?<![\u1200-\u137F])' + re.escape(term) + r'(?![\u1200-\u137F])'
+            else:
+                pattern = r'\b' + re.escape(term) + r'\b'
+            
+            _COMPILED_PATTERNS[cache_key] = re.compile(pattern, re.IGNORECASE)
+        except re.error:
+            # If a pattern is invalid, cache None so we don't try to compile it again
+            _COMPILED_PATTERNS[cache_key] = None
+            
+    return _COMPILED_PATTERNS[cache_key]
+
 def scan_text_for_lexicon_terms(text, category_filter=None):
-    """Scan text for lexicon matches using CONFIG mapping"""
+    """Scan text for lexicon matches using cached regex patterns (EC2 Optimized)"""
     if not isinstance(text, str) or not text.strip():
         return []
-    
+        
     text_lower = text.lower()
     matches = []
     lexicon = CONFIG.get("lexicon", {})
     categories_to_check = category_filter if category_filter else lexicon.keys()
     
     for category in categories_to_check:
-        if category not in lexicon: 
+        if category not in lexicon:
             continue
+            
         for term, metadata in lexicon[category].items():
-            # FIX: Skip single-character terms (except for Amharic which can be meaningful)
+            # Skip single-character terms (except Amharic)
             if len(term.strip()) < 2 and not re.match(r'^[\u1200-\u137F]+$', term):
                 continue
                 
-            if metadata.get("language") == "amharic" or re.match(r'^[\u1200-\u137F]+$', term):
-                # Prevent matching inside larger Amharic words using lookarounds
-                pattern = r'(?<![\u1200-\u137F])' + re.escape(term) + r'(?![\u1200-\u137F])'
-            else:
-                pattern = r'\b' + re.escape(term) + r'\b'
+            # 🔥 FIX: Use cached pattern instead of re.search() every time
+            pattern = _get_cached_pattern(term, metadata.get("language", "english"))
             
-            if re.search(pattern, text_lower, re.IGNORECASE):
+            if pattern and pattern.search(text_lower):
                 matches.append({
-                    'term': term, 
+                    'term': term,
                     'category': category,
                     'severity': metadata.get('severity', 'medium'),
                     'target_entity': metadata.get('target_entity', ''),
                     'language': metadata.get('language', 'english')
                 })
+                
     return matches
 
 
