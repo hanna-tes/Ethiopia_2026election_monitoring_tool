@@ -150,8 +150,8 @@
             </div>
             {% endif %}
             
-            <!-- 🔥 FIXED: Gemma Model Results -->
-            {% if scan_results.gemma_result and scan_results.gemma_result.category != 'error' %}
+            <!--  Gemma Model Results -->
+            {% if scan_results.gemma_result and scan_results.gemma_result.model_status == 'active' %}
             <div class="mb-4 p-4 bg-gradient-to-br from-purple-950/40 to-indigo-950/40 rounded-lg border border-purple-800/60">
                 <div class="flex items-start justify-between mb-3">
                     <div>
