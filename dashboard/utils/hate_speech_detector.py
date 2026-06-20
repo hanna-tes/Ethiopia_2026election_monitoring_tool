@@ -25,15 +25,18 @@ CATEGORY_SEVERITY = {
 }
 
 class FallbackDetector:
-    """Fallback when Gemma model fails to load"""
+    """
+    Fallback when Gemma model fails to load or is intentionally disabled.
+    Returns a clear 'unavailable' status so the UI knows NOT to display it as a real detection.
+    """
     def detect(self, text: str) -> dict:
         return {
-            'category': 'error',
+            'category': 'neutral',
             'severity': 'low',
             'confidence': 0.0,
-            'raw_prediction': 'Model not available',
+            'raw_prediction': 'Local Gemma model is not loaded or disabled.',
             'is_hate_speech': False,
-            'model_type': 'fallback'
+            'model_status': 'unavailable'  # 🔥 Crucial flag for the UI
         }
 
 class GemmaHateSpeechDetector:
@@ -101,10 +104,20 @@ Category:"""
                     max_new_tokens=30,
                     temperature=0.1,
                     do_sample=False,
-                    pad_token_id=self.tokenizer.eos_token_id
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    output_scores=True,
+                    return_dict_in_generate=True
                 )
             
-            prediction = self.tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip().lower()
+            # Calculate confidence from logits
+            if hasattr(outputs, 'scores') and outputs.scores:
+                logits = outputs.scores[0][0]
+                probs = torch.softmax(logits, dim=-1)
+                confidence = probs.max().item()
+            else:
+                confidence = 0.5
+            
+            prediction = self.tokenizer.decode(outputs.sequences[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True).strip().lower()
             
             # Detect if the model is stuck in a repetition loop
             if prediction.count('category') > 2 or (len(prediction) > 10 and len(set(prediction.split())) < 3):
@@ -114,12 +127,12 @@ Category:"""
                     'severity': 'low', 
                     'confidence': 0.0,
                     'raw_prediction': prediction[:100], 
-                    'is_hate_speech': False
+                    'is_hate_speech': False,
+                    'model_status': 'error'
                 }
             
             detected_category = self._parse_category(prediction)
             severity = CATEGORY_SEVERITY.get(detected_category, 'medium')
-            confidence = self._estimate_confidence(prediction, detected_category)
             
             return {
                 'category': detected_category,
@@ -127,14 +140,16 @@ Category:"""
                 'confidence': confidence,
                 'raw_prediction': prediction,
                 'is_hate_speech': detected_category != 'neutral',
-                'model_type': 'gemma_4_lora_multiclass_19categories'
+                'model_type': 'gemma_4_lora_multiclass_19categories',
+                'model_status': 'active'  # 🔥 Crucial flag for the UI
             }
                 
         except Exception as e:
             logger.error(f"Gemma LoRA detection failed: {e}")
             return {
                 'category': 'error', 'severity': 'low', 'confidence': 0.0,
-                'raw_prediction': str(e), 'is_hate_speech': False
+                'raw_prediction': str(e), 'is_hate_speech': False,
+                'model_status': 'error'
             }
     
     def _parse_category(self, prediction: str) -> str:
@@ -162,12 +177,6 @@ Category:"""
         elif any(w in prediction_lower for w in ['class']): return 'class'
         elif any(w in prediction_lower for w in ['structural']): return 'structural'
         else: return 'neutral'
-    
-    def _estimate_confidence(self, prediction: str, detected_category: str) -> float:
-        if detected_category == 'neutral': return 0.90
-        if detected_category in prediction.lower(): return 0.85
-        elif any(word in prediction.lower() for word in detected_category.split()): return 0.75
-        else: return 0.65
 
 _detector_instance = None
 
@@ -194,7 +203,7 @@ def get_hate_speech_detector():
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize hate speech detector: {e}")
-            logger.info("Using FallbackDetector instead")
+            logger.info("Using FallbackDetector instead (Model Unavailable)")
             _detector_instance = FallbackDetector()
     
     return _detector_instance
