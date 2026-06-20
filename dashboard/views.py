@@ -65,26 +65,54 @@ logger = logging.getLogger(__name__)
 _GEMMA_MODEL = None
 _GEMMA_TOKENIZER = None
 
-def load_gemma_model():
-    """Load the fine-tuned Gemma model from cache using MLX"""
+def load_gemma_lora_model():
+    """Load the Gemma LoRA model using transformers + peft (works on EC2/Linux)"""
     global _GEMMA_MODEL, _GEMMA_TOKENIZER
     if _GEMMA_MODEL is not None and _GEMMA_TOKENIZER is not None:
         return _GEMMA_MODEL, _GEMMA_TOKENIZER
     try:
-        # Point fused MLX model
-        model_path = getattr(settings, 'GEMMA_TTP_MODEL_PATH', './model_cache/gemma-merged')
-        logger.info(f"Loading Gemma TTP model from {model_path} using MLX...")
+        from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+        from peft import PeftModel
+        import torch
         
-        # Load model and tokenizer using MLX
-        from mlx_lm import load
-        _GEMMA_MODEL, _GEMMA_TOKENIZER = load(model_path)
+        # Base model and LoRA adapter paths
+        base_model_path = getattr(settings, 'GEMMA_BASE_MODEL_PATH', 'google/gemma-2b')
+        lora_adapter_path = getattr(settings, 'GEMMA_LORA_ADAPTER_PATH', './model_cache/gemma-lora-hate-speech')
         
-        logger.info("Gemma TTP model loaded successfully via MLX")
+        logger.info(f"Loading Gemma base model: {base_model_path}")
+        logger.info(f"Loading LoRA adapter: {lora_adapter_path}")
+        
+        # Quantization config for memory efficiency
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16
+        )
+        
+        # Load base model
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_model_path,
+            quantization_config=quantization_config,
+            device_map="auto",
+            torch_dtype=torch.float16
+        )
+        
+        # Load tokenizer
+        _GEMMA_TOKENIZER = AutoTokenizer.from_pretrained(base_model_path)
+        _GEMMA_TOKENIZER.pad_token = _GEMMA_TOKENIZER.eos_token
+        
+        # Load LoRA adapter
+        _GEMMA_MODEL = PeftModel.from_pretrained(base_model, lora_adapter_path)
+        _GEMMA_MODEL.eval()
+        
+        logger.info("Gemma LoRA model loaded successfully!")
         return _GEMMA_MODEL, _GEMMA_TOKENIZER
+        
     except Exception as e:
-        logger.error(f"Gemma detection failed: {e}", exc_info=True)
-        # Return empty list to prevent infinite recursion loop
-        return [] 
+        logger.error(f"Failed to load Gemma LoRA model: {e}")
+        _GEMMA_MODEL = None
+        _GEMMA_TOKENIZER = None
+        return None, None
        
 def export_merged_gephi_csv(request):
     """Export a single, merged Gephi-ready CSV containing edges, tweets, and roles."""
@@ -1328,85 +1356,11 @@ def extract_narrative_description(summary_text, sample_posts):
     
 
 def detect_ttps_with_gemma(coordination_groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    try:
-        model, tokenizer = load_gemma_model()
-        input_data = format_ttp_input(coordination_groups)
-        
-        system_prompt = (
-            "You are a DISARM TTP adjudicator. Consider T0049, T0049.002, T0049.003, T0049.005, "
-            "T0016, T0060, T0119, T0119.001, T0119.002, T0097.102, T0097.202, T0143.002, "
-            "T0143.003, T0149.003, and T0084.002. Use only raw observable cues encoded in the dossier. "
-            "Output strict JSON only. Prefer false negatives over false positives."
-        )
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(input_data)}
-        ]
-        
-        prompt = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-        
-        from mlx_lm import generate
-        
-        # Increase max_tokens to give model room to think AND output JSON
-        response_text = generate(
-            model,
-            tokenizer,
-            prompt=prompt,
-            max_tokens=2048  # Increased from 1024
-        )
-        
-        logger.info(f"Raw response length: {len(response_text)}")
-        
-        # === CRITICAL: Extract JSON from thinking output ===
-        # Find the first { and last } to extract JSON
-        json_start = response_text.find('{')
-        json_end = response_text.rfind('}')
-        
-        if json_start != -1 and json_end != -1 and json_end > json_start:
-            response_text = response_text[json_start:json_end + 1]
-            logger.info("✅ Extracted JSON from response")
-        else:
-            logger.error("❌ No JSON found in response")
-            return analyze_ttps(coordination_groups, [])
-        
-        # Parse JSON
-        try:
-            result = json.loads(response_text)
-            
-            ttps = []
-            if result.get('qualifies', False):
-                techniques = result.get('techniques', [])
-                reason = result.get('reason', '')
-                for technique in techniques:
-                    ttp_data = {
-                        'name': technique.get('technique_id', ''),
-                        'description': technique.get('description', reason),
-                        'severity': _get_ttp_severity(technique.get('technique_id', '')),
-                        'evidence': f"Detected via Gemma model. {technique.get('evidence', '')}",
-                        'confidence': technique.get('confidence', 0.8),
-                        'model_source': 'gemma_finetuned'
-                    }
-                    ttps.append(ttp_data)
-                
-                if ttps:
-                    logger.info(f"🎯 Gemma detected {len(ttps)} TTPs")
-                    return ttps
-            
-            logger.info("Gemma found no TTPs")
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse error: {e}")
-            logger.debug(f"Response: {response_text[:300]}")
-        
-    except Exception as e:
-        logger.error(f"Gemma detection failed: {e}", exc_info=True)
-        # Return empty list to break the infinite recursion loop
-        return []
+    """
+    DISABLED: Gemma TTP model removed. Using rule-based + LLM only.
+    """
+    logger.info("Gemma TTP detection skipped (model removed). Using rule-based + LLM only.")
+    return []
     
 def _convert_techniques_to_ttp_format(techniques: List[Dict]) -> List[Dict]:
     """Convert Gemma-format techniques to view-compatible format"""
