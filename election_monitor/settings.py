@@ -147,7 +147,9 @@ PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
 FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
 
-# Default primary key
+# Gama model
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+GEMMA_BASE_MODEL_PATH = 'unsloth/gemma-4-e4b-it-unsloth-bnb-4bit'
+GEMMA_LORA_ADAPTER_PATH = './model_cache/gemma-lora-hate-speech'
 GEMMA_TTP_MODEL_PATH = './model_cache/gemma-merged-4bit'
 GEMMA_LOKA_MODEL_PATH = os.path.join(BASE_DIR, 'dashboard', 'model_cache', 'gemma_4_multiclass_hate_lexicon_lora')
