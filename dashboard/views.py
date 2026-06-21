@@ -5216,9 +5216,13 @@ class LexiconManagementView(TemplateView):
                 # 3. Extract NEW trigger terms not in lexicon
                 new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
 
-                # 4. Fine-tuned Gemma Model detection (Disabled for interactive scan to prevent 500 errors)
-                gemma_result = {'category': 'neutral', 'confidence': 0.0, 'severity': 'low'}
-
+                # 4. Fine-tuned Gemma Model detection
+                try:
+                   detector = get_hate_speech_detector()
+                   gemma_result = detector.detect(text)
+                except Exception as e:
+                   logger.error(f"Gemma detection failed: {e}")
+                   gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'error': 'Model not loaded - using LLM + Lexicon only'}
                 # 5. Determine final verdict - LLM HAS PRIORITY
                 is_hate_speech = False
                 overall_severity_num = 1
