@@ -75,24 +75,17 @@ def load_gemma_lora_model():
         from peft import PeftModel
         import torch
         
-        # Base model and LoRA adapter paths
-        base_model_path = getattr(settings, 'GEMMA_BASE_MODEL_PATH', 'google/gemma-2b')
+        #  Use the correct base model that matches your LoRA adapter
+        base_model_path = getattr(settings, 'GEMMA_BASE_MODEL_PATH', 'unsloth/gemma-4-e4b-it-unsloth-bnb-4bit')
         lora_adapter_path = getattr(settings, 'GEMMA_LORA_ADAPTER_PATH', './model_cache/gemma-lora-hate-speech')
         
         logger.info(f"Loading Gemma base model: {base_model_path}")
         logger.info(f"Loading LoRA adapter: {lora_adapter_path}")
         
-        # Quantization config for memory efficiency
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16
-        )
-        
-        # Load base model
+        # Since the base model is already 4-bit quantized (bnb-4bit in the name),
+        # we don't need additional quantization config
         base_model = AutoModelForCausalLM.from_pretrained(
             base_model_path,
-            quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.float16
         )
