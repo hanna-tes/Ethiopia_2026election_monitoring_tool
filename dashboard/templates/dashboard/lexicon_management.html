@@ -24,7 +24,7 @@
 <div class="bg-slate-900/40 rounded-xl p-6 border border-slate-800/80 backdrop-blur-md shadow-xl text-slate-100">
     <h2 class="text-2xl font-bold text-white mb-6">⚙️ Lexicon Management</h2>
     
-    <!-- 🔥 NEW: How We Identify Weaponized Language Section -->
+    <!-- How We Identify Weaponized Language Section -->
     <div class="mb-8 p-6 bg-gradient-to-br from-blue-950/40 to-purple-950/40 rounded-xl border border-blue-800/50">
         <h3 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
             <i class="fas fa-shield-alt text-blue-400"></i>
@@ -124,7 +124,7 @@
         <div class="mt-4 p-4 bg-slate-900/60 rounded-lg border border-slate-800/60">
             <h4 class="font-semibold text-white mb-3">Scan Results for: "{{ scan_results.text|default:'' }}"</h4>
             
-            <!-- 🔥 FIXED: Main Verdict Box (Now driven by Gemma model context) -->
+            <!-- Main Verdict Box -->
             <div class="mb-4 p-3 rounded-lg {% if scan_results.is_hate_speech %}bg-red-950/40 border border-red-900/60{% else %}bg-green-950/40 border border-green-900/60{% endif %}">
                 <div class="flex items-center justify-between">
                     <div>
@@ -139,10 +139,10 @@
                 </div>
             </div>
             
-            <!-- 🔥 FIXED: Analysis/Explanation Section (Shows what the text actually says) -->
+            <!--  Analysis/Explanation Section -->
             {% if scan_results.analysis %}
             <div class="mb-4 p-3 bg-blue-950/40 rounded border border-blue-900/60">
-                <p class="text-sm text-blue-300"><strong>🤖 AI Analysis:</strong> {{ scan_results.analysis }}</p>
+                <p class="text-sm text-blue-300"><strong>🤖 Analysis:</strong> {{ scan_results.analysis }}</p>
             </div>
             {% elif scan_results.explanation %}
             <div class="mb-4 p-3 bg-blue-950/40 rounded border border-blue-900/60">
@@ -150,7 +150,7 @@
             </div>
             {% endif %}
             
-            <!--  Gemma Model Results -->
+            <!-- 🎯 Gemma Model Results (ONLY SHOW IF ACTIVE) -->
             {% if scan_results.gemma_result and scan_results.gemma_result.model_status == 'active' %}
             <div class="mb-4 p-4 bg-gradient-to-br from-purple-950/40 to-indigo-950/40 rounded-lg border border-purple-800/60">
                 <div class="flex items-start justify-between mb-3">
@@ -178,9 +178,17 @@
                 </div>
                 {% endif %}
             </div>
+            
+            <!-- ℹ️ FALLBACK: Show this if model is unavailable -->
+            {% elif scan_results.gemma_result and scan_results.gemma_result.model_status == 'unavailable' %}
+            <div class="mb-4 p-4 bg-slate-900/40 rounded-lg border border-slate-800/60">
+                <p class="text-sm text-slate-400">
+                    <strong>ℹ️ Gemma Model:</strong> <span class="italic">Not loaded on this server. Relying on LLM + Lexicon Engine only.</span>
+                </p>
+            </div>
             {% endif %}
             
-            <!-- 🔥 FIXED: Combined Confidence Score -->
+            <!-- Combined Confidence Score -->
             {% if scan_results.overall_confidence %}
             <div class="mb-4 p-4 bg-blue-950/40 rounded-lg border border-blue-800/60">
                 <p class="text-sm text-blue-300 mb-2">
@@ -189,12 +197,15 @@
                     ({{ scan_results.overall_confidence_pct|default:'0%' }})
                 </p>
                 <p class="text-xs text-blue-400/80">
-                    Aggregated from: <strong>Lexicon Engine</strong> ({{ total_terms|default:0 }} terms) + <strong>LLM Semantic Analysis</strong> + <strong>Fine-tuned Gemma Model</strong> (19 multiclass categories)
+                    Aggregated from: <strong>Lexicon Engine</strong> ({{ total_terms|default:0 }} terms) + <strong>LLM Semantic Analysis</strong>
+                    {% if scan_results.gemma_result.model_status == 'active' %}
+                        + <strong>Fine-tuned Gemma Model</strong> (19 multiclass categories)
+                    {% endif %}
                 </p>
             </div>
             {% endif %}
             
-            <!-- 🔥 NEW: Specific Harmful Terms Extracted -->
+            <!--  Specific Harmful Terms Extracted -->
             {% if scan_results.lexicon_matches %}
             <div class="mb-4 p-4 bg-orange-950/20 rounded-lg border border-orange-800/40">
                 <p class="text-sm font-semibold text-orange-300 mb-3">
@@ -211,7 +222,7 @@
             </div>
             {% endif %}
             
-            <!-- LLM-Extracted Trigger Terms (Not in Lexicon Yet) -->
+            <!--  LLM-Extracted Trigger Terms (Not in Lexicon Yet) -->
             {% if scan_results.new_trigger_terms and scan_results.has_new_terms %}
             <div class="mb-4 p-4 bg-purple-950/20 rounded-lg border border-purple-800/40">
                 <p class="text-sm font-semibold text-purple-300 mb-3 flex items-center gap-2">
@@ -219,7 +230,7 @@
                     New Trigger Terms Detected ({{ scan_results.new_trigger_terms|length }})
                 </p>
                 <p class="text-xs text-purple-400/80 mb-4">
-                    These terms were identified by the LLM as harmful but are not yet in the lexicon. Click "Add to Database" to include them in the existing lexicons list .
+                    These terms were identified by the LLM as harmful but are not yet in the lexicon. Click "Add to Database" to include them in the existing lexicons list.
                 </p>
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -280,14 +291,21 @@
             </div>
             {% endif %}
             
+            <!--  View Detection Details (Hides fake Gemma stats if model isn't loaded) -->
             <details class="mt-4">
                 <summary class="cursor-pointer text-blue-400 hover:underline text-sm font-medium">🔍 View Detection Details</summary>
                 <div class="mt-2 p-3 bg-slate-950/40 rounded text-sm text-slate-300 space-y-1 border border-slate-800">
                     <p><strong>Is Hate Speech:</strong> {{ scan_results.is_hate_speech|yesno:"Yes,No" }}</p>
                     <p><strong>Overall Severity:</strong> {{ scan_results.overall_severity|default:'low'|title }}</p>
                     <p><strong>LLM Confidence:</strong> {{ scan_results.llm_result.confidence|default:0|floatformat:2 }}</p>
-                    <p><strong>Gemma Category:</strong> {{ scan_results.gemma_result.category|default:'neutral'|title }}</p>
-                    <p><strong>Gemma Confidence:</strong> {{ scan_results.gemma_result.confidence|default:0|floatformat:2 }}</p>
+                    
+                    {% if scan_results.gemma_result.model_status == 'active' %}
+                        <p><strong>Gemma Category:</strong> {{ scan_results.gemma_result.category|default:'neutral'|title }}</p>
+                        <p><strong>Gemma Confidence:</strong> {{ scan_results.gemma_result.confidence|default:0|floatformat:2 }}</p>
+                    {% else %}
+                        <p><strong>Gemma Model:</strong> <span class="text-slate-500 italic">Not loaded (Using LLM + Lexicon only)</span></p>
+                    {% endif %}
+                    
                     <p><strong>Categories Detected:</strong> {{ scan_results.all_categories|join:", "|default:"None" }}</p>
                     {% if scan_results.explanation %}<p class="mt-2 pt-2 border-t border-slate-800"><strong>LLM Explanation:</strong> {{ scan_results.explanation }}</p>{% endif %}
                     {% if scan_results.analysis %}<p class="mt-2 pt-2 border-t border-slate-800"><strong>AI Analysis:</strong> {{ scan_results.analysis }}</p>{% endif %}
