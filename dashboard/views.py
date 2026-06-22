@@ -3856,47 +3856,66 @@ def report_detail(request, report_id):
 def detect_significant_spikes(daily_data, dates, categories, threshold_std=2.0):
     """
     Detect significant spikes across the ENTIRE analysis period.
-    Returns list of spikes with details.
+    FIXED: Handles std=0 (when previous days had 0 mentions) and adds global fallback.
     """
     spikes_detected = []
-    
     for category in categories:
-        # Get daily counts for this category
         values = [daily_data[day].get(category, 0) for day in dates]
-        
-        if len(values) < 7:  # Need minimum data
+        if len(values) < 7:
             continue
         
-        # Calculate rolling statistics
-        rolling_window = min(7, len(values) // 3)  # Adaptive window
+        # Calculate overall mean and std for the entire period (fallback)
+        overall_mean = sum(values) / len(values)
+        overall_std = (sum((x - overall_mean) ** 2 for x in values) / len(values)) ** 0.5
+        
+        rolling_window = min(7, len(values) // 3)
         if rolling_window < 3:
             rolling_window = 3
-        
-        # Find spikes using z-score method
+            
         for i, value in enumerate(values):
             if i < rolling_window:
                 continue
             
-            # Calculate mean and std of previous period
             prev_values = values[i-rolling_window:i]
             mean = sum(prev_values) / len(prev_values)
             std = (sum((x - mean) ** 2 for x in prev_values) / len(prev_values)) ** 0.5
             
-            # Detect spike (value > mean + threshold*std)
+            is_spike = False
+            z_score = 0
+            magnitude = 0
+            
+            # 1. Check local spike (rolling window)
             if std > 0:
                 z_score = (value - mean) / std
-                if z_score >= threshold_std and value >= 5:  # Minimum threshold
-                    spikes_detected.append({
-                        'category': category,
-                        'date': dates[i],
-                        'value': value,
-                        'mean': round(mean, 2),
-                        'std': round(std, 2),
-                        'z_score': round(z_score, 2),
-                        'spike_magnitude': round(value / mean if mean > 0 else 0, 2)
-                    })
-    
-    # Sort by z_score (most significant first)
+                if z_score >= threshold_std and value >= 5:
+                    is_spike = True
+                    magnitude = value / mean if mean > 0 else value
+            elif value >= 5 and mean < 2:
+                # If previous period was near 0 and now it's >= 5, it's a massive spike
+                is_spike = True
+                z_score = 10.0
+                magnitude = value
+                
+            # 2. Fallback: Check global spike (overall period)
+            # If local didn't catch it, but it's a massive spike compared to the whole period
+            if not is_spike and overall_std > 0:
+                global_z = (value - overall_mean) / overall_std
+                if global_z >= 3.0 and value >= 10: # Stricter threshold for global
+                    is_spike = True
+                    z_score = global_z
+                    magnitude = value / overall_mean if overall_mean > 0 else value
+                    
+            if is_spike:
+                spikes_detected.append({
+                    'category': category,
+                    'date': dates[i],
+                    'value': value,
+                    'mean': round(mean, 2),
+                    'std': round(std, 2),
+                    'z_score': round(z_score, 2),
+                    'spike_magnitude': round(magnitude, 2)
+                })
+                
     spikes_detected.sort(key=lambda x: x['z_score'], reverse=True)
     return spikes_detected
 
@@ -3917,10 +3936,9 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
         max_date=Max('timestamp_share')
     )
     
-    # Apply days_back filter
-    cutoff = timezone.now() - timedelta(days=days_back)
+    #  Respect the UI's date filter (posts_queryset is already filtered by the view)
+    # remove the 'cutoff' filter so it doesn't override custom date ranges older than 90 days
     recent_posts = posts_queryset.filter(
-        timestamp_share__gte=cutoff,
         original_text__isnull=False
     ).exclude(original_text='')
     
