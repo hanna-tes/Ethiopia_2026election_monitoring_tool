@@ -36,9 +36,11 @@ class FallbackDetector:
             'confidence': 0.0,
             'raw_prediction': 'Local Gemma model is not loaded or disabled.',
             'is_hate_speech': False,
-            'model_status': 'unavailable'  # 🔥 Crucial flag for the UI
+            'model_status': 'unavailable'  
         }
 
+# 🔥 DISABLED: GemmaHateSpeechDetector class commented out to prevent RAM crashes
+'''
 class GemmaHateSpeechDetector:
     def __init__(self, model_path: str, base_model: str = "unsloth/gemma-4-e4b-it-unsloth-bnb-4bit"):
         self.model_path = model_path
@@ -177,9 +179,26 @@ Category:"""
         elif any(w in prediction_lower for w in ['class']): return 'class'
         elif any(w in prediction_lower for w in ['structural']): return 'structural'
         else: return 'neutral'
+'''
 
 _detector_instance = None
 
+def get_hate_speech_detector():
+    """Get or create the hate speech detector - DISABLED due to RAM limitations"""
+    global _detector_instance
+    
+    # Always use FallbackDetector to prevent RAM crashes
+    # TODO: Re-enable GemmaHateSpeechDetector after upgrading EC2 to 16GB RAM
+    logger.warning("Gemma LoRA model is DISABLED - using FallbackDetector (insufficient RAM)")
+    
+    if _detector_instance is None:
+        _detector_instance = FallbackDetector()
+        logger.info("✅ FallbackDetector initialized (Gemma model disabled)")
+    
+    return _detector_instance
+
+# gamma model  (commented out):
+'''
 def get_hate_speech_detector():
     """Get or create the hate speech detector using Gemma LoRA"""
     global _detector_instance
@@ -207,3 +226,4 @@ def get_hate_speech_detector():
             _detector_instance = FallbackDetector()
     
     return _detector_instance
+'''
