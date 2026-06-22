@@ -3855,20 +3855,74 @@ def report_detail(request, report_id):
     }
     return render(request, 'dashboard/report_detail.html', context)
 
+def detect_significant_spikes(daily_data, dates, categories, threshold_std=2.0):
+    """
+    Detect significant spikes across the ENTIRE analysis period.
+    Returns list of spikes with details.
+    """
+    spikes_detected = []
+    
+    for category in categories:
+        # Get daily counts for this category
+        values = [daily_data[day].get(category, 0) for day in dates]
+        
+        if len(values) < 7:  # Need minimum data
+            continue
+        
+        # Calculate rolling statistics
+        rolling_window = min(7, len(values) // 3)  # Adaptive window
+        if rolling_window < 3:
+            rolling_window = 3
+        
+        # Find spikes using z-score method
+        for i, value in enumerate(values):
+            if i < rolling_window:
+                continue
+            
+            # Calculate mean and std of previous period
+            prev_values = values[i-rolling_window:i]
+            mean = sum(prev_values) / len(prev_values)
+            std = (sum((x - mean) ** 2 for x in prev_values) / len(prev_values)) ** 0.5
+            
+            # Detect spike (value > mean + threshold*std)
+            if std > 0:
+                z_score = (value - mean) / std
+                if z_score >= threshold_std and value >= 5:  # Minimum threshold
+                    spikes_detected.append({
+                        'category': category,
+                        'date': dates[i],
+                        'value': value,
+                        'mean': round(mean, 2),
+                        'std': round(std, 2),
+                        'z_score': round(z_score, 2),
+                        'spike_magnitude': round(value / mean if mean > 0 else 0, 2)
+                    })
+    
+    # Sort by z_score (most significant first)
+    spikes_detected.sort(key=lambda x: x['z_score'], reverse=True)
+    return spikes_detected
+
 def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"):
     """
     OPTIMIZED: Uses random sampling and caching to prevent crashes on large datasets.
+    NOW: Detects spikes across entire timeline, not just last 7 days.
     """
-    # 1. CHECK CACHE FIRST (Fixed cache key generation)
+    # 1. CHECK CACHE FIRST
     cache_key = f"trend_analysis_{days_back}_{cache_suffix}"
     cached_result = cache.get(cache_key)
     if cached_result:
         return cached_result
-
+    
     from django.db.models.functions import TruncDay
     from datetime import timedelta
     
-    # Limit to recent posts
+    # 2. GET DATE RANGE FROM QUERYSET (Respect user's filter)
+    date_range = posts_queryset.aggregate(
+        min_date=TruncDay('timestamp_share'),
+        max_date=TruncDay('timestamp_share')
+    )
+    
+    # Apply days_back filter
     cutoff = timezone.now() - timedelta(days=days_back)
     recent_posts = posts_queryset.filter(
         timestamp_share__gte=cutoff,
@@ -3876,17 +3930,18 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
     ).exclude(original_text='')
     
     total_available = recent_posts.count()
-    
     if total_available < 10:
         return {
             'chart_json': None,
             'trending_categories': [],
             'total_categories_tracked': 0,
             'total_posts_scanned': total_available,
+            'spikes_detected': [],
+            'spike_alerts': [],
             'message': 'Not enough data'
         }
     
-    # 2. RANDOM SAMPLING (The Performance Fix)
+    # 3. RANDOM SAMPLING (Performance Fix)
     sample_size = min(1500, total_available)
     post_ids = list(recent_posts.values_list('id', flat=True))
     sampled_ids = random.sample(post_ids, sample_size)
@@ -3894,7 +3949,7 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
     # Fetch only the sampled posts
     posts_to_scan = ProcessedPost.objects.filter(id__in=sampled_ids).iterator()
     
-    # 3. SCAN ONLY THE SAMPLE
+    # 4. SCAN ONLY THE SAMPLE
     daily_data = defaultdict(lambda: defaultdict(int))
     total_scanned = 0
     
@@ -3912,10 +3967,12 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
             'trending_categories': [],
             'total_categories_tracked': 0,
             'total_posts_scanned': total_scanned,
+            'spikes_detected': [],
+            'spike_alerts': [],
             'message': 'No lexicon matches found'
         }
     
-    # 4. BUILD CHART
+    # 5. BUILD CHART DATA
     dates = sorted(daily_data.keys())
     categories = set()
     for day_data in daily_data.values():
@@ -3953,7 +4010,34 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
         }
     })
     
-    # 5. CALCULATE TRENDS
+    # 6. DETECT SPIKES ACROSS ENTIRE TIMELINE
+    spikes_detected = detect_significant_spikes(daily_data, dates, categories, threshold_std=2.0)
+    
+    # Generate spike alerts for UI
+    spike_alerts = []
+    if spikes_detected:
+        for spike in spikes_detected[:10]:  # Top 10 spikes
+            category_display = spike['category'].replace('_', ' ').title()
+            date_str = spike['date'].strftime('%b %d')
+            magnitude = spike['spike_magnitude']
+            
+            if magnitude >= 3.0:
+                alert_level = "🚨 Critical"
+            elif magnitude >= 2.0:
+                alert_level = "⚠️ High"
+            else:
+                alert_level = "⚡ Moderate"
+            
+            spike_alerts.append({
+                'message': f"{alert_level} {category_display}: {spike['value']} mentions on {date_str} ({magnitude}x above average)",
+                'category': category_display,
+                'date': date_str,
+                'value': spike['value'],
+                'magnitude': magnitude,
+                'alert_level': alert_level
+            })
+    
+    # 7. CALCULATE TRENDS (Last 7 days vs previous period)
     trending = []
     if len(dates) >= 7:
         recent_7 = dates[-7:]
@@ -3985,16 +4069,21 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
         
         trending.sort(key=lambda x: x['pct_change'], reverse=True)
     
+    # 8. BUILD FINAL RESULT
     final_result = {
         'chart_json': chart_json,
         'trending_categories': trending[:5],
         'total_categories_tracked': len(categories),
         'total_posts_scanned': total_scanned,
-        'date_range': f"{dates[0].strftime('%b %d')} - {dates[-1].strftime('%b %d, %Y')}" if dates else ""
+        'date_range': f"{dates[0].strftime('%b %d')} - {dates[-1].strftime('%b %d, %Y')}" if dates else "",
+        'spikes_detected': spikes_detected,  # Return all spikes
+        'spike_alerts': spike_alerts,  # Formatted alerts for UI
+        'total_spikes': len(spikes_detected),  # Total count
+        'has_significant_spikes': len(spikes_detected) > 0  # Boolean flag
     }
     
-    # 6. SAVE TO CACHE FOR 60 MINUTES
-    cache.set(cache_key, final_result, 3600) 
+    # 9. SAVE TO CACHE FOR 60 MINUTES
+    cache.set(cache_key, final_result, 3600)
     
     return final_result
    
