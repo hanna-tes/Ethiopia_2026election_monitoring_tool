@@ -72,12 +72,14 @@
                         <span class="flex items-center gap-1">💬 {{ pep.mention_count }} mentions</span>
                         <span class="text-slate-700">|</span>
                         <span>
-                            {% if pep.risk_score <= 3 %}
-                                <span class="text-emerald-400 font-semibold">🟢 Mostly Neutral</span>
-                            {% elif pep.risk_score <= 6 %}
-                                <span class="text-amber-400 font-semibold">🟡 Some Criticism</span>
-                            {% else %}
+                            {% if pep.sentiment == 'Positive' %}
+                                <span class="text-emerald-400 font-semibold"> Mostly Positive</span>
+                            {% elif pep.sentiment == 'Negative' %}
                                 <span class="text-rose-400 font-semibold">🔴 High Criticism</span>
+                            {% elif pep.sentiment == 'Mixed' %}
+                                <span class="text-amber-400 font-semibold">🟡 Mixed Sentiment</span>
+                            {% else %}
+                                <span class="text-slate-400 font-semibold"> Neutral / Informational</span>
                             {% endif %}
                         </span>
                     </div>
