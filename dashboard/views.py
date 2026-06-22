@@ -66,49 +66,10 @@ _GEMMA_MODEL = None
 _GEMMA_TOKENIZER = None
 
 def load_gemma_lora_model():
-    """Load the Gemma LoRA model using transformers + peft (Memory Optimized)"""
-    global _GEMMA_MODEL, _GEMMA_TOKENIZER
-    if _GEMMA_MODEL is not None and _GEMMA_TOKENIZER is not None:
-        return _GEMMA_MODEL, _GEMMA_TOKENIZER
-    try:
-        from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-        from peft import PeftModel
-        import torch
-        
-        base_model_path = getattr(settings, 'GEMMA_BASE_MODEL_PATH', './model_cache/gemma-4-base')
-        lora_adapter_path = getattr(settings, 'GEMMA_LORA_ADAPTER_PATH', './model_cache/gemma-lora-hate-speech')
-        
-        logger.info(f"Loading Gemma base model from: {base_model_path}")
-        logger.info(f"Loading LoRA adapter from: {lora_adapter_path}")
-        
-        # Force 4-bit quantization to prevent Out-Of-Memory (OOM) crashes!
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16
-        )
-        
-        base_model = AutoModelForCausalLM.from_pretrained(
-            base_model_path,
-            quantization_config=quantization_config,
-            device_map="auto",
-            low_cpu_mem_usage=True  # Prevents RAM spikes during loading
-        )
-        
-        _GEMMA_TOKENIZER = AutoTokenizer.from_pretrained(base_model_path)
-        _GEMMA_TOKENIZER.pad_token = _GEMMA_TOKENIZER.eos_token
-        
-        _GEMMA_MODEL = PeftModel.from_pretrained(base_model, lora_adapter_path)
-        _GEMMA_MODEL.eval()
-        
-        logger.info("✅ Gemma LoRA model loaded successfully in 4-bit mode!")
-        return _GEMMA_MODEL, _GEMMA_TOKENIZER
-        
-    except Exception as e:
-        logger.error(f"Failed to load Gemma LoRA model: {e}")
-        _GEMMA_MODEL = None
-        _GEMMA_TOKENIZER = None
-        return None, None
+    """Gemma LoRA model - DISABLED due to RAM limitations """
+    # TODO: Re-enable after upgrading EC2 instance to t3.xlarge (16GB RAM)
+    logger.warning("Gemma LoRA model is DISABLED - insufficient RAM (current: 8GB, required: 16GB+)")
+    return None, None
        
 def export_merged_gephi_csv(request):
     """Export a single, merged Gephi-ready CSV containing edges, tweets, and roles."""
