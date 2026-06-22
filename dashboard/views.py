@@ -66,7 +66,7 @@ _GEMMA_MODEL = None
 _GEMMA_TOKENIZER = None
 
 def load_gemma_lora_model():
-    """Load the Gemma LoRA model using transformers + peft (works on EC2/Linux)"""
+    """Load the Gemma LoRA model using transformers + peft (Memory Optimized)"""
     global _GEMMA_MODEL, _GEMMA_TOKENIZER
     if _GEMMA_MODEL is not None and _GEMMA_TOKENIZER is not None:
         return _GEMMA_MODEL, _GEMMA_TOKENIZER
@@ -75,30 +75,33 @@ def load_gemma_lora_model():
         from peft import PeftModel
         import torch
         
-        #  Use the correct base model that matches your LoRA adapter
-        base_model_path = getattr(settings, 'GEMMA_BASE_MODEL_PATH', 'unsloth/gemma-4-e4b-it-unsloth-bnb-4bit')
+        base_model_path = getattr(settings, 'GEMMA_BASE_MODEL_PATH', './model_cache/gemma-4-base')
         lora_adapter_path = getattr(settings, 'GEMMA_LORA_ADAPTER_PATH', './model_cache/gemma-lora-hate-speech')
         
-        logger.info(f"Loading Gemma base model: {base_model_path}")
-        logger.info(f"Loading LoRA adapter: {lora_adapter_path}")
+        logger.info(f"Loading Gemma base model from: {base_model_path}")
+        logger.info(f"Loading LoRA adapter from: {lora_adapter_path}")
         
-        # Since the base model is already 4-bit quantized (bnb-4bit in the name),
-        # we don't need additional quantization config
-        base_model = AutoModelForCausalLM.from_pretrained(
-            base_model_path,
-            device_map="auto",
-            torch_dtype=torch.float16
+        # Force 4-bit quantization to prevent Out-Of-Memory (OOM) crashes!
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16
         )
         
-        # Load tokenizer
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_model_path,
+            quantization_config=quantization_config,
+            device_map="auto",
+            low_cpu_mem_usage=True  # Prevents RAM spikes during loading
+        )
+        
         _GEMMA_TOKENIZER = AutoTokenizer.from_pretrained(base_model_path)
         _GEMMA_TOKENIZER.pad_token = _GEMMA_TOKENIZER.eos_token
         
-        # Load LoRA adapter
         _GEMMA_MODEL = PeftModel.from_pretrained(base_model, lora_adapter_path)
         _GEMMA_MODEL.eval()
         
-        logger.info("Gemma LoRA model loaded successfully!")
+        logger.info("✅ Gemma LoRA model loaded successfully in 4-bit mode!")
         return _GEMMA_MODEL, _GEMMA_TOKENIZER
         
     except Exception as e:
