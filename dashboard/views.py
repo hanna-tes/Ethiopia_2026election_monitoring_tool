@@ -102,7 +102,7 @@ def export_merged_gephi_csv(request):
         sub_narrative = group.get('sub_narrative', 'General Coordination')
         platforms = ', '.join(group.get('platforms', [])) if group.get('platforms') else 'Unknown'
         
-        # 🔥 FIX: Use the sample posts ALREADY fetched by get_coordination_groups
+        # Use the sample posts ALREADY fetched by get_coordination_groups
         # instead of doing a broken database query with truncated text.
         sample_posts = group.get('sample_posts_with_urls', [])
         
@@ -640,7 +640,7 @@ def clean_username(raw_name):
     # Convert to string and preserve the full name
     name = str(raw_name).strip()
     
-    # 🔥 FIX: Use flags=re.IGNORECASE instead of inline (?i)
+    # Use flags=re.IGNORECASE instead of inline (?i)
     # This prevents the Python 3.11+ "global flags not at start" crash
     name = re.sub(r'\s+(name|source|nan|none)$', '', name, flags=re.IGNORECASE).strip()
     
@@ -834,7 +834,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
             if len(term.strip()) < 2 and not re.match(r'^[\u1200-\u137F]+$', term):
                 continue
                 
-            # 🔥 FIX: Use cached pattern instead of re.search() every time
+            #  Use cached pattern instead of re.search() every time
             pattern = _get_cached_pattern(term, metadata.get("language", "english"))
             
             if pattern and pattern.search(text_lower):
@@ -1945,7 +1945,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             
             if len(sample_posts_with_urls) < 10:
                 ts = post.get('timestamp_share')
-                # 🔥 Get bot reasons for this specific account
+                # Get bot reasons for this specific account
                 account_id = post.get('account_id')
                 bot_reasons = bot_data.get(account_id, [])
                 
@@ -3446,7 +3446,7 @@ def final_preprocess_and_map_columns(df, coordination_mode="Text Content"):
     
     # Filter to original posts only - ONLY if object_id exists
     if 'object_id' in dfp.columns:
-        # ✅ Convert to string first to safely handle NaN/float values
+        # Convert to string first to safely handle NaN/float values
         obj_str = dfp['object_id'].astype(str)
         mask = dfp['object_id'].apply(is_original_post) & (~obj_str.str.contains('🔁', na=False)) & (~obj_str.str.startswith('RT @', na=False))
         dfp = dfp[mask].copy()
@@ -4217,6 +4217,42 @@ def _get_category_severity_display(category):
         'religious_cultural': 'low'
     }
     return severity_map.get(category, 'medium')
+   
+def analyze_pep_sentiment_groq(sample_texts, pep_name):
+    """Use Groq to analyze the actual sentiment of posts about a PEP"""
+    if not sample_texts:
+        return "Neutral"
+    
+    try:
+        from groq import Groq
+        client = Groq(api_key=settings.GROQ_API_KEY) 
+        
+        # Combine first 3 sample posts for context
+        combined_text = " | ".join([t[:150] for t in sample_texts[:3]])
+        
+        # SAFE PROMPT: Uses standard string concatenation to avoid triple-quote syntax errors
+        prompt = (
+            f"Analyze the sentiment of these social media posts about {pep_name}.\n"
+            f'Text: "{combined_text}"\n\n'
+            "Is the overall sentiment Positive (supportive/praise), Negative (criticism/attack), Mixed, or Neutral (just factual news)?\n"
+            "Reply with ONLY one word: Positive, Negative, Mixed, or Neutral."
+        )
+
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=10
+        )
+        
+        sentiment = response.choices[0].message.content.strip().capitalize()
+        if sentiment in ['Positive', 'Negative', 'Mixed', 'Neutral']:
+            return sentiment
+        return "Neutral"
+        
+    except Exception as e:
+        logger.error(f"Groq sentiment analysis failed for {pep_name}: {e}")
+        return "Neutral"
     
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
@@ -4438,6 +4474,10 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                         'pattern': pattern
                     })
         
+        # Calculate real sentiment using Groq on the sample posts
+        sample_texts_for_groq = [p['text'] for p in data['sample_posts'] if p.get('text')]
+        real_sentiment = analyze_pep_sentiment_groq(sample_texts_for_groq, pep_name)
+
         results.append({
             'pep_name': pep_name,
             'mention_count': data['count'],
@@ -4451,7 +4491,8 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'narrative_clusters': clusters,
             'sample_posts': data['sample_posts'],
             'risk_score': min(10, data['count'] // 5 + len(clusters)),
-            'top_amplifiers_frequency': top_amplifiers_analysis,  # NEW: Frequency analysis
+            'top_amplifiers_frequency': top_amplifiers_analysis,
+            'sentiment': real_sentiment, 
         })
     
     return results
