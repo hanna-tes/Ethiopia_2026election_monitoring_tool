@@ -57,8 +57,6 @@ from scipy.sparse import csr_matrix
    
 
 
-
-
 logger = logging.getLogger(__name__)
 
 # Global model cache
@@ -3913,13 +3911,10 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
     if cached_result:
         return cached_result
     
-    from django.db.models.functions import TruncDay
-    from datetime import timedelta
-    
     # 2. GET DATE RANGE FROM QUERYSET (Respect user's filter)
     date_range = posts_queryset.aggregate(
-        min_date=TruncDay('timestamp_share'),
-        max_date=TruncDay('timestamp_share')
+        min_date=Min('timestamp_share'),
+        max_date=Max('timestamp_share')
     )
     
     # Apply days_back filter
