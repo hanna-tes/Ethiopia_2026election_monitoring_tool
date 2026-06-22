@@ -4225,12 +4225,11 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
     
     try:
         from groq import Groq
+        # Ensure GROQ_API_KEY is in your settings.py
         client = Groq(api_key=settings.GROQ_API_KEY) 
         
-        # Combine first 3 sample posts for context
         combined_text = " | ".join([t[:150] for t in sample_texts[:3]])
         
-        # SAFE PROMPT: Uses standard string concatenation to avoid triple-quote syntax errors
         prompt = (
             f"Analyze the sentiment of these social media posts about {pep_name}.\n"
             f'Text: "{combined_text}"\n\n'
@@ -4239,7 +4238,7 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
         )
 
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=10
@@ -4253,33 +4252,43 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
     except Exception as e:
         logger.error(f"Groq sentiment analysis failed for {pep_name}: {e}")
         return "Neutral"
-    
+
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
-    Enhanced PEP analysis with improved bot detection based on posting frequency.
+    Enhanced PEP analysis with Groq sentiment analysis and optimized DB queries.
     """
     from collections import defaultdict, Counter
-    from datetime import datetime, timedelta
     import re
     
-    pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset}
+    # Safely build PEP names dictionary (filter out None names to prevent crashes)
+    pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset if pep.name}
+    
     pep_mentions = defaultdict(lambda: {
         'count': 0,
         'platforms': Counter(),
         'hourly_distribution': Counter(),
         'hashtags': Counter(),
-        'risk_score': 0,
         'bot_probability': 0,
         'is_gendered_target': False,
         'narrative_clusters': defaultdict(list),
-        'cross_platform_signals': [],
-        'deepfake_alerts': [],
         'sample_posts': [],
-        'top_amplifiers': Counter(),
-        'geographic_origin': Counter(),
-        'sentiment_trend': [],
-        'posting_frequency': {},  # NEW: Track posting patterns
+        'posting_frequency': defaultdict(list),
     })
+    
+    # Pre-fetch timestamps for all accounts in the queryset
+    # This prevents the N+1 query problem that causes 500 timeouts
+    account_ids_in_sample = set(post.account_id for post in posts_queryset[:5000] if post.account_id)
+    
+    account_timestamps_map = defaultdict(list)
+    if account_ids_in_sample:
+        # Fetch timestamps for these accounts in ONE query
+        ts_data = ProcessedPost.objects.filter(
+            account_id__in=account_ids_in_sample,
+            timestamp_share__isnull=False
+        ).values('account_id', 'timestamp_share').order_by('account_id', '-timestamp_share')[:10000]
+        
+        for row in ts_data:
+            account_timestamps_map[row['account_id']].append(row['timestamp_share'])
     
     # Analyze posts
     for post in posts_queryset[:5000]:
@@ -4287,212 +4296,102 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             continue
         text_lower = post.original_text.lower()
         
-        # Match PEPs
         for pep_name, pep_obj in pep_names.items():
             if pep_name in text_lower or pep_obj.name.lower() in text_lower:
                 data = pep_mentions[pep_obj.name]
                 data['count'] += 1
                 
-                # Platform breakdown
                 platform = post.platform or 'Unknown'
                 data['platforms'][platform] += 1
                 
-                # Hourly distribution (for velocity)
                 if post.timestamp_share:
-                    hour = post.timestamp_share.hour
-                    data['hourly_distribution'][hour] += 1
-                    
-                    # NEW: Track posting frequency patterns
+                    data['hourly_distribution'][post.timestamp_share.hour] += 1
                     if post.account_id:
-                        if post.account_id not in data['posting_frequency']:
-                            data['posting_frequency'][post.account_id] = {
-                                'timestamps': [],
-                                'total_posts': 0
-                            }
-                        data['posting_frequency'][post.account_id]['timestamps'].append(post.timestamp_share)
-                        data['posting_frequency'][post.account_id]['total_posts'] += 1
+                        data['posting_frequency'][post.account_id].append(post.timestamp_share)
                 
-                # Extract hashtags
                 hashtags = re.findall(r'#(\w+)', post.original_text)
                 data['hashtags'].update(hashtags)
                 
-                # Detect gendered attacks (for women)
                 if any(word in text_lower for word in ['she', 'her', 'woman', 'female', 'wife', 'daughter']):
                     if any(term in text_lower for term in ['unqualified', 'emotional', 'weak', 'beautiful', 'sexy', 'mother']):
                         data['is_gendered_target'] = True
                 
-                # NEW: Enhanced Bot Detection based on posting frequency
+                # Bot Detection using pre-fetched timestamps (NO DB QUERY HERE!)
                 if post.account_id and post.timestamp_share:
                     bot_signals = 0
+                    timestamps = account_timestamps_map.get(post.account_id, [])
                     
-                    # Get all posts for this account to calculate frequency
-                    account_posts = list(posts_queryset.filter(account_id=post.account_id)[:100])
-                    
-                    if len(account_posts) >= 5:  # Need minimum posts to detect patterns
-                        timestamps = [p.timestamp_share for p in account_posts if p.timestamp_share]
+                    if len(timestamps) >= 5:
                         timestamps.sort()
+                        time_diffs = [(timestamps[i] - timestamps[i-1]).total_seconds() for i in range(1, len(timestamps))]
                         
-                        # Calculate average time between posts
-                        if len(timestamps) >= 2:
-                            time_diffs = []
-                            for i in range(1, len(timestamps)):
-                                diff = (timestamps[i] - timestamps[i-1]).total_seconds()
-                                time_diffs.append(diff)
+                        if time_diffs:
+                            avg_interval = sum(time_diffs) / len(time_diffs)
+                            if avg_interval < 300: bot_signals += 3
+                            elif avg_interval < 1800: bot_signals += 2
+                            elif avg_interval < 3600: bot_signals += 1
                             
-                            if time_diffs:
-                                avg_interval = sum(time_diffs) / len(time_diffs)
-                                
-                                # Bot signal 1: Very high frequency (posting every few seconds/minutes)
-                                if avg_interval < 300:  # Less than 5 minutes average
-                                    bot_signals += 3
-                                elif avg_interval < 1800:  # Less than 30 minutes
-                                    bot_signals += 2
-                                elif avg_interval < 3600:  # Less than 1 hour
-                                    bot_signals += 1
-                                
-                                # Bot signal 2: Very regular intervals (suspicious consistency)
-                                if len(time_diffs) >= 3:
-                                    variance = sum((x - avg_interval) ** 2 for x in time_diffs) / len(time_diffs)
-                                    std_dev = variance ** 0.5
-                                    coefficient_of_variation = std_dev / avg_interval if avg_interval > 0 else 1
-                                    
-                                    # If posting at very regular intervals (CV < 0.3), likely automated
-                                    if coefficient_of_variation < 0.3 and len(account_posts) >= 10:
-                                        bot_signals += 2
-                                
-                                # Bot signal 3: 24/7 activity (posts at all hours)
-                                hours_active = set(ts.hour for ts in timestamps)
-                                if len(hours_active) >= 20:  # Active in 20+ hours of the day
-                                    bot_signals += 2
-                                
-                                # Bot signal 4: Burst posting (many posts in short time)
-                                posts_per_hour = Counter(ts.strftime('%Y-%m-%d %H') for ts in timestamps)
-                                max_posts_in_hour = max(posts_per_hour.values()) if posts_per_hour else 0
-                                if max_posts_in_hour >= 20:  # 20+ posts in one hour
-                                    bot_signals += 2
-                                elif max_posts_in_hour >= 10:
-                                    bot_signals += 1
-                    
-                    # Existing bot signals
-                    account_age_days = 365  # Default assumption
-                    if hasattr(post, 'account_created_at') and post.account_created_at:
-                        account_age_days = (post.timestamp_share - post.account_created_at).days if post.timestamp_share else 365
-                    
-                    if account_age_days < 30:
-                        bot_signals += 2
-                    if len(post.original_text) < 50:
-                        bot_signals += 1
-                    if post.original_text.count('http') > 2:
-                        bot_signals += 1
+                            if len(time_diffs) >= 3:
+                                variance = sum((x - avg_interval) ** 2 for x in time_diffs) / len(time_diffs)
+                                cv = (variance ** 0.5) / avg_interval if avg_interval > 0 else 1
+                                if cv < 0.3 and len(timestamps) >= 10: bot_signals += 2
+                            
+                            if len(set(ts.hour for ts in timestamps)) >= 20: bot_signals += 2
+                            
+                            max_posts_in_hour = max(Counter(ts.strftime('%Y-%m-%d %H') for ts in timestamps).values())
+                            if max_posts_in_hour >= 20: bot_signals += 2
+                            elif max_posts_in_hour >= 10: bot_signals += 1
                     
                     data['bot_probability'] = min(100, data['bot_probability'] + bot_signals)
                 
-                # Narrative clustering (simple keyword-based)
                 if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe']):
                     data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
                 if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray']):
                     data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
-                if any(kw in text_lower for kw in ['corrupt', 'theft', 'bribe']):
-                    data['narrative_clusters']['Corruption Allegations'].append(post.original_text[:100])
                 
-                # Sample posts
                 if len(data['sample_posts']) < 3:
                     data['sample_posts'].append({
                         'text': post.original_text[:150],
                         'platform': platform,
                         'timestamp': post.timestamp_share,
-                        'risk_level': post.risk_level if hasattr(post, 'risk_level') else 'medium'
+                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium'
                     })
     
-    # Build final results
     results = []
     for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
-        if data['count'] < 2:
-            continue
+        if data['count'] < 2: continue
         
-        # Calculate platform percentages
         total_posts = sum(data['platforms'].values())
         platform_breakdown = [
-            {'name': plat, 'count': cnt, 'percent': round(cnt/total_posts*100)}
+            {'name': plat, 'count': cnt, 'percent': round(cnt/total_posts*100) if total_posts > 0 else 0}
             for plat, cnt in data['platforms'].most_common(3)
         ]
         
-        # Detect velocity spikes
         peak_hour = data['hourly_distribution'].most_common(1)
         peak_hour = peak_hour[0][0] if peak_hour else 0
-        velocity_alert = peak_hour in [0, 1, 2, 3, 4, 5]  # Unusual late night activity
         
-        # Top hashtags
-        top_hashtags = [{'tag': tag, 'count': cnt} for tag, cnt in data['hashtags'].most_common(5) if cnt > 1]
-        
-        # Narrative clusters summary
         clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
-        
-        # Bot score interpretation with frequency-based detection
         bot_score = min(100, data['bot_probability'])
-        if bot_score >= 60:
-            bot_level = '🔴 High (Likely Bot)'
-        elif bot_score >= 30:
-            bot_level = '🟡 Medium (Suspicious)'
-        else:
-            bot_level = '🟢 Low (Likely Human)'
+        bot_level = '🔴 High (Likely Bot)' if bot_score >= 60 else '🟡 Medium (Suspicious)' if bot_score >= 30 else '🟢 Low (Likely Human)'
         
-        # Analyze posting frequency patterns for top amplifiers
-        top_amplifiers_analysis = []
-        if data['posting_frequency']:
-            sorted_accounts = sorted(
-                data['posting_frequency'].items(),
-                key=lambda x: x[1]['total_posts'],
-                reverse=True
-            )[:5]
-            
-            for account_id, freq_data in sorted_accounts:
-                timestamps = freq_data['timestamps']
-                if len(timestamps) >= 5:
-                    timestamps.sort()
-                    time_diffs = []
-                    for i in range(1, len(timestamps)):
-                        diff = (timestamps[i] - timestamps[i-1]).total_seconds() / 60  # in minutes
-                        time_diffs.append(diff)
-                    
-                    avg_interval = sum(time_diffs) / len(time_diffs) if time_diffs else 0
-                    
-                    # Determine posting pattern
-                    if avg_interval < 5:
-                        pattern = "🤖 Very High Frequency (Bot-like)"
-                    elif avg_interval < 30:
-                        pattern = "⚠️ High Frequency (Suspicious)"
-                    elif avg_interval < 120:
-                        pattern = "⚡ Moderate Frequency"
-                    else:
-                        pattern = "👤 Normal Frequency"
-                    
-                    top_amplifiers_analysis.append({
-                        'account': account_id[:40],
-                        'posts': freq_data['total_posts'],
-                        'avg_interval_min': round(avg_interval, 1),
-                        'pattern': pattern
-                    })
-        
-        # Calculate real sentiment using Groq on the sample posts
+        # Calculate real sentiment using Groq
         sample_texts_for_groq = [p['text'] for p in data['sample_posts'] if p.get('text')]
         real_sentiment = analyze_pep_sentiment_groq(sample_texts_for_groq, pep_name)
-
+        
         results.append({
             'pep_name': pep_name,
             'mention_count': data['count'],
             'platform_breakdown': platform_breakdown,
-            'velocity_alert': velocity_alert,
+            'velocity_alert': peak_hour in [0, 1, 2, 3, 4, 5],
             'peak_hour': peak_hour,
-            'top_hashtags': top_hashtags,
+            'top_hashtags': [{'tag': tag, 'count': cnt} for tag, cnt in data['hashtags'].most_common(5) if cnt > 1],
             'bot_score': bot_score,
             'bot_level': bot_level,
             'is_gendered_target': data['is_gendered_target'],
             'narrative_clusters': clusters,
             'sample_posts': data['sample_posts'],
             'risk_score': min(10, data['count'] // 5 + len(clusters)),
-            'top_amplifiers_frequency': top_amplifiers_analysis,
-            'sentiment': real_sentiment, 
+            'sentiment': real_sentiment,  
         })
     
     return results
