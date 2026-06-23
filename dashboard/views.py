@@ -4286,21 +4286,25 @@ def _get_category_severity_display(category):
     return severity_map.get(category, 'medium')
    
 def analyze_pep_sentiment_groq(sample_texts, pep_name):
-    """Use Groq to analyze the actual sentiment of posts about a PEP"""
+    """Use Groq to analyze the actual sentiment/criticality of posts mentioning a PEP"""
     if not sample_texts:
         return "Neutral"
     
     try:
         from groq import Groq
-        # Ensure GROQ_API_KEY is in your settings.py
-        client = Groq(api_key=settings.GROQ_API_KEY) 
+        client = Groq(api_key=settings.GROQ_API_KEY)
         
-        combined_text = " | ".join([t[:150] for t in sample_texts[:3]])
+        combined_text = " | ".join([t[:200] for t in sample_texts[:3]])
         
+        # Focus on whether the posts are critical/negative in tone
         prompt = (
-            f"Analyze the sentiment of these social media posts about {pep_name}.\n"
-            f'Text: "{combined_text}"\n\n'
-            "Is the overall sentiment Positive (supportive/praise), Negative (criticism/attack), Mixed, or Neutral (just factual news)?\n"
+            f"Analyze these social media posts that mention {pep_name}.\n\n"
+            f'Posts: "{combined_text}"\n\n'
+            "Determine the overall tone:\n"
+            "- 'Negative' if the posts contain criticism, accusations, attacks, or negative claims (even if directed at someone else)\n"
+            "- 'Positive' if the posts are supportive, praising, or positive about the person mentioned\n"
+            "- 'Mixed' if there's both positive and negative content\n"
+            "- 'Neutral' if it's just factual reporting with no emotional tone\n\n"
             "Reply with ONLY one word: Positive, Negative, Mixed, or Neutral."
         )
 
