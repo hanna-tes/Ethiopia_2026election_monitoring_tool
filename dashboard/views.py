@@ -5645,11 +5645,13 @@ class ProcessUploadView(View):
                     if cid_col:
                         combined_df['content_id'] = df[cid_col].astype(str).str.strip()
                     else:
-                        # Generate hash-based ID from text + URL
-                        combined_df['content_id'] = combined_df.apply(
-                            lambda r: hashlib.md5(f"{r['original_text'][:50]}_{r['URL']}".encode()).hexdigest()[:16],
-                            axis=1
-                        )
+                        # Use list comprehension instead of .apply() to prevent DataFrame assignment errors
+                        # .apply(axis=1) sometimes returns a DataFrame instead of a Series, causing the crash
+                        content_ids = [
+                            hashlib.md5(f"{str(text)[:50]}_{str(url)}".encode()).hexdigest()[:16]
+                            for text, url in zip(combined_df['original_text'], combined_df['URL'])
+                        ]
+                        combined_df['content_id'] = content_ids
                     
                     combined_df['source_dataset'] = 'Brandwatch'
                     # Filter: keep only rows with substantial text
