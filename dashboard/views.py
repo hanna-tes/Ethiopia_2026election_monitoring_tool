@@ -4971,12 +4971,11 @@ class PEPsView(TemplateView):
         # 4. Get election-related posts for analysis
         election_posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
         
-        # 5. Generate PEP analysis insights - Pass RC members as extra officials
-        pep_analysis_data = get_pep_analysis_insights(
-            election_posts, 
-            active_peps, 
-            extra_officials_list=rc_member_names, 
-            limit=8  # Show top 8 mentioned officials
+        # 5. Generate ENHANCED PEP analysis with Groq sentiment analysis
+        pep_analysis_data = get_enhanced_pep_analysis(
+          election_posts, 
+          active_peps, 
+          limit=8  # Show top 8 mentioned officials
         )
         
         # 6. Build context for the template
