@@ -4320,14 +4320,91 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
         logger.error(f"Groq sentiment analysis failed for {pep_name}: {e}")
         return "Neutral"
 
+def get_tfgbv_lexicon_terms():
+    """
+    Load all TFGBV-related terms from the lexicon database.
+    Returns a list of (term, severity, target_entity) tuples.
+    """
+    tfgbv_categories = [
+        'gender_misogynistic',
+        'discriminatory_homophobic',
+    ]
+    
+    terms = []
+    
+    # Try loading from Django model first
+    try:
+        from dashboard.models import LexiconTerm
+        tfgbv_terms = LexiconTerm.objects.filter(
+            category__in=tfgbv_categories,
+            is_active=True
+        ).values_list('term', 'severity', 'category')
+        
+        for term, severity, category in tfgbv_terms:
+            terms.append({
+                'term': term.lower().strip(),
+                'severity': severity,
+                'category': category,
+            })
+    except Exception:
+        pass
+    
+    # Fallback: Load from settings if model is empty
+    if not terms:
+        lexicon = getattr(settings, 'HATE_SPEECH_LEXICON', {})
+        for category in tfgbv_categories:
+            category_terms = lexicon.get(category, {})
+            for term, meta in category_terms.items():
+                terms.append({
+                    'term': term.lower().strip(),
+                    'severity': meta.get('severity', 'medium'),
+                    'category': category,
+                })
+    
+    return terms
+
+
+def detect_tfgbv_in_text(text, tfgbv_terms):
+    """
+    Scan text against verified TFGBV lexicon terms.
+    Returns list of matched terms with details.
+    Only flags ACTUAL hate speech terms, not innocent mentions.
+    """
+    if not text or not tfgbv_terms:
+        return []
+    
+    text_lower = text.lower()
+    matches = []
+    
+    for entry in tfgbv_terms:
+        term = entry['term']
+        if not term:
+            continue
+        
+        # Exact match check (term appears in text)
+        if term in text_lower:
+            matches.append({
+                'term': term,
+                'severity': entry['severity'],
+                'category': entry['category'],
+            })
+    
+    return matches
+
+
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
-    Enhanced PEP analysis with Groq sentiment analysis.
+    Enhanced PEP analysis with Groq sentiment analysis 
+    and lexicon-based TFGBV detection (no false positives).
     """
     from collections import defaultdict, Counter
     import re
     
     pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset if pep.name}
+    
+    # Load TFGBV terms ONCE before the loop (performance optimization)
+    tfgbv_terms = get_tfgbv_lexicon_terms()
+    logger.info(f"Loaded {len(tfgbv_terms)} TFGBV lexicon terms for PEP analysis")
     
     pep_mentions = defaultdict(lambda: {
         'count': 0,
@@ -4336,9 +4413,11 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'hashtags': Counter(),
         'bot_probability': 0,
         'is_gendered_target': False,
+        'tfgbv_matches': [],        # All TFGBV terms found across posts
+        'tfgbv_post_count': 0,      # Number of posts with TFGBV content
         'narrative_clusters': defaultdict(list),
         'sample_posts': [],
-        'all_post_texts': [],  # Collect all texts for sentiment analysis
+        'all_post_texts': [],
     })
     
     # Analyze posts
@@ -4351,7 +4430,7 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             if pep_name in text_lower or pep_obj.name.lower() in text_lower:
                 data = pep_mentions[pep_obj.name]
                 data['count'] += 1
-                data['all_post_texts'].append(post.original_text[:300])  # Collect for analysis
+                data['all_post_texts'].append(post.original_text[:300])
                 
                 platform = post.platform or 'Unknown'
                 data['platforms'][platform] += 1
@@ -4362,21 +4441,32 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                 hashtags = re.findall(r'#(\w+)', post.original_text)
                 data['hashtags'].update(hashtags)
                 
-                if any(word in text_lower for word in ['she', 'her', 'woman', 'female', 'wife', 'daughter']):
-                    if any(term in text_lower for term in ['unqualified', 'emotional', 'weak', 'beautiful', 'sexy', 'mother']):
-                        data['is_gendered_target'] = True
+                # 🔥 TFGBV DETECTION: Scan against verified lexicon terms ONLY
+                tfgbv_hits = detect_tfgbv_in_text(post.original_text, tfgbv_terms)
                 
+                if tfgbv_hits:
+                    data['is_gendered_target'] = True
+                    data['tfgbv_post_count'] += 1
+                    
+                    # Store the matched terms (avoid duplicates)
+                    for hit in tfgbv_hits:
+                        if not any(m['term'] == hit['term'] for m in data['tfgbv_matches']):
+                            data['tfgbv_matches'].append(hit)
+                
+                # Narrative clustering
                 if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe']):
                     data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
                 if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray']):
                     data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
                 
+                # Store sample post with URL
                 if len(data['sample_posts']) < 3:
                     data['sample_posts'].append({
                         'text': post.original_text[:150],
                         'platform': platform,
                         'timestamp': post.timestamp_share,
-                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium'
+                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
+                        'url': post.url if post.url and str(post.url).startswith('http') else None,
                     })
     
     # Build final results with sentiment analysis
@@ -4399,7 +4489,7 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         # ANALYZE SENTIMENT USING GROQ
         sentiment = analyze_pep_sentiment_groq(data['all_post_texts'], pep_name)
         
-        # Calculate risk score based on sentiment, NOT mention count
+        # Calculate risk score based on sentiment
         if sentiment == 'Negative':
             risk_score = 8
         elif sentiment == 'Mixed':
@@ -4408,6 +4498,10 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             risk_score = 2
         else:
             risk_score = 3
+        
+        # Increase risk if TFGBV terms were found
+        if data['tfgbv_post_count'] > 0:
+            risk_score = min(10, risk_score + 2)
         
         results.append({
             'pep_name': pep_name,
@@ -4419,6 +4513,8 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'bot_score': 0,
             'bot_level': '🟢 Low (Likely Human)',
             'is_gendered_target': data['is_gendered_target'],
+            'tfgbv_matches': data['tfgbv_matches'],          # Matched TFGBV terms
+            'tfgbv_post_count': data['tfgbv_post_count'],    # Posts containing TFGBV
             'narrative_clusters': clusters,
             'sample_posts': data['sample_posts'],
             'risk_score': risk_score,
