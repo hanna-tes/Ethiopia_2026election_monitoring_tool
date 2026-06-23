@@ -3345,8 +3345,8 @@ def combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df
             if norm in df_cols:
                 return df[df.columns[df_cols.index(norm)]]
         return pd.Series([np.nan]*len(df), index=df.index)
-    
-    # === BRANDWATCH HANDLER  ===
+
+    # === BRANDWATCH HANDLER (FIXED) ===
     if brandwatch_df is not None and not brandwatch_df.empty:
         bw = pd.DataFrame()
         
@@ -3372,63 +3372,78 @@ def combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df
         }
         bw['Platform'] = page_type.map(platform_map).fillna('Unknown')
         
-        # Content ID fallback (use URL hash if missing)
-        bw['content_id'] = brandwatch_df.get('Resource Id', brandwatch_df.get('Mention Id', bw['URL']))
+        # Safely generate content_id to prevent DataFrame assignment errors
+        # Instead of nested .get() which can return a DataFrame, use combine_first on Series
+        resource_ids = brandwatch_df.get('Resource Id', pd.Series(dtype='object'))
+        mention_ids = brandwatch_df.get('Mention Id', pd.Series(dtype='object'))
+        
+        bw['content_id'] = resource_ids.combine_first(mention_ids).combine_first(bw['URL']).astype(str).str.strip()
         
         bw['source_dataset'] = 'Brandwatch'
         combined.append(bw)
-    
+
+    # === MELTWATER HANDLER ===
     if meltwater_df is not None and not meltwater_df.empty:
         mw = pd.DataFrame()
         mw['account_id'] = get_col(meltwater_df, ['influencer'])
-        mw['content_id'] = get_col(meltwater_df, ['tweet id', 'post id', 'id'])
+        mw['content_id'] = get_col(meltwater_df, ['tweet id', 'post id', 'id']).astype(str).str.strip()
         mw['object_id'] = get_col(meltwater_df, ['hit sentence', 'opening text', 'headline', 'text', 'content'])
         mw['URL'] = get_col(meltwater_df, ['url'])
         mw['timestamp_share'] = get_col(meltwater_df, ['date', 'timestamp', 'alternate date format'])
         mw['source_dataset'] = 'Meltwater'
         combined.append(mw)
-    
+
+    # === CIVICSIGNALS HANDLER ===
     if civicsignals_df is not None and not civicsignals_df.empty:
         cs = pd.DataFrame()
         cs['account_id'] = get_col(civicsignals_df, ['media_name', 'author', 'username'])
-        cs['content_id'] = get_col(civicsignals_df, ['stories_id', 'post_id', 'id'])
+        cs['content_id'] = get_col(civicsignals_df, ['stories_id', 'post_id', 'id']).astype(str).str.strip()
         cs['object_id'] = get_col(civicsignals_df, ['title', 'text', 'content', 'body'])
         cs['URL'] = get_col(civicsignals_df, ['url', 'link'])
         cs['timestamp_share'] = get_col(civicsignals_df, ['publish_date', 'timestamp', 'date'])
         cs['source_dataset'] = 'Civicsignal'
         combined.append(cs)
-    
+
+    # === TIKTOK HANDLER ===
     if tiktok_df is not None and not tiktok_df.empty:
         tt = pd.DataFrame()
         tt['object_id'] = get_col(tiktok_df, ['text', 'Transcript', 'caption', 'content'])
         tt['account_id'] = get_col(tiktok_df, ['authorMeta/name', 'username', 'creator'])
-        tt['content_id'] = get_col(tiktok_df, ['id', 'video_id', 'itemId'])
+        tt['content_id'] = get_col(tiktok_df, ['id', 'video_id', 'itemId']).astype(str).str.strip()
         tt['URL'] = get_col(tiktok_df, ['webVideoUrl', 'TikTok Link', 'url'])
         tt['timestamp_share'] = get_col(tiktok_df, ['createTimeISO', 'timestamp', 'date', 'createTime'])
         tt['source_dataset'] = 'TikTok'
+        
         # Preserve engagement metrics
         for col in ['playCount', 'diggCount', 'commentCount', 'shareCount', 'repostCount', 'textLanguage']:
             if col in tiktok_df.columns:
                 tt[col] = tiktok_df[col]
+                
         # Preserve hashtags
         for i in range(5):
             hashtag_col = f'hashtags/{i}/name'
             if hashtag_col in tiktok_df.columns:
                 tt[f'hashtag_{i}'] = tiktok_df[hashtag_col]
+                
         combined.append(tt)
-    
+
+    # === OPENMEASURE HANDLER ===
     if openmeasures_df is not None and not openmeasures_df.empty:
         om = pd.DataFrame()
         om['account_id'] = get_col(openmeasures_df, ['context_name', 'channelusername', 'channeltitle'])
-        om['content_id'] = get_col(openmeasures_df, ['id', 'url'])
+        om['content_id'] = get_col(openmeasures_df, ['id', 'url']).astype(str).str.strip()
         om['object_id'] = get_col(openmeasures_df, ['text', 'message', 'body'])
         om['URL'] = get_col(openmeasures_df, ['url'])
         raw_dates = get_col(openmeasures_df, ['created_at', 'date'])
         om['timestamp_share'] = raw_dates.astype(str).str.replace(' @ ', ' ', regex=False)
         om['source_dataset'] = 'OpenMeasure_Telegram'
         combined.append(om)
-    
-    return pd.concat(combined, ignore_index=True) if combined else pd.DataFrame()
+
+    # Return combined DataFrame or empty DataFrame if nothing was provided
+    if combined:
+        return pd.concat(combined, ignore_index=True)
+    else:
+        return pd.DataFrame()
 
 
 def final_preprocess_and_map_columns(df, coordination_mode="Text Content"):
@@ -5538,7 +5553,6 @@ class ProcessUploadView(View):
                 # Save file
                 file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
                 full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-                
                 logger.info(f"🔄 Processing: {original_name} -> {unique_filename}")
                 
                 # Create upload record
@@ -5555,21 +5569,15 @@ class ProcessUploadView(View):
                 
                 # === LOAD CSV WITH APPROPRIATE HANDLING ===
                 if data_type == 'brandwatch':
-                    df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore')
+                    df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore', skiprows=6)
                 else:
                     df = load_data_robustly(full_path)
                 
-                # 🗑️ DROP 'Sentiment' COLUMN IF PRESENT (aligns with original mapping/schema)
-                if 'Sentiment' in df.columns:
-                    df = df.drop(columns=['Sentiment'])
-                    logger.info(f"🗑️ Dropped 'Sentiment' column to match original processing schema.")
-                
-                # === DEBUG: Check original CSV columns ===
-                logger.info(f"📋 ORIGINAL CSV COLUMNS: {list(df.columns)[:15]}{'...' if len(df.columns) > 15 else ''}")
                 logger.info(f"📊 CSV Shape: {df.shape}")
+                logger.info(f"📋 CSV Columns: {list(df.columns)}")
                 
                 if df.empty:
-                    raise ValueError(f"Failed to load data from {original_name}")
+                    raise ValueError(f"Failed to load data from {original_name} - DataFrame is empty")
                 
                 # === COMBINE/MAP DATA BASED ON SOURCE TYPE ===
                 if data_type == 'meltwater':
@@ -5581,149 +5589,89 @@ class ProcessUploadView(View):
                 elif data_type == 'openmeasure':
                     combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
                 elif data_type == 'brandwatch':
-                    # === BRANDWATCH-SPECIFIC MAPPING ===
-                    logger.info(f"🔄 Mapping Brandwatch columns for {original_name}")
-                    # Case-insensitive column lookup
-                    df_cols_lower = {c.lower().strip(): c for c in df.columns}
-                    combined_df = pd.DataFrame()
-                    
-                    # 1. Account ID
-                    acc_col = None
-                    for col in ['source', 'author', 'full name', 'weblog title', 'account', 'username']:
-                        if col in df_cols_lower:
-                            acc_col = df_cols_lower[col]
-                            break
-                    combined_df['account_id'] = df[acc_col].astype(str).str.strip().replace('nan', '') if acc_col else 'Unknown'
-                    
-                    # 2. Original Text (CRITICAL)
-                    text_col = None
-                    for col in ['text', 'full text', 'content', 'title', 'hit sentence', 'opening text']:
-                        if col in df_cols_lower:
-                            text_col = df_cols_lower[col]
-                            break
-                    combined_df['original_text'] = df[text_col].astype(str).str.strip() if text_col else ''
-                    
-                    # 3. URL (ensure column exists)
-                    url_col = None
-                    for col in ['url', 'link', 'post url', 'permalink']:
-                        if col in df_cols_lower:
-                            url_col = df_cols_lower[col]
-                            break
-                    combined_df['URL'] = df[url_col] if url_col else ''
-                    
-                    # 4. Timestamp
-                    ts_col = None
-                    for col in ['timestamp', 'date', 'created at', 'publish date']:
-                        if col in df_cols_lower:
-                            ts_col = df_cols_lower[col]
-                            break
-                    combined_df['timestamp_share'] = df[ts_col] if ts_col else pd.NaT
-                    
-                    # 5. Platform inference
-                    pt_col = None
-                    for col in ['platform', 'page type', 'source']:
-                        if col in df_cols_lower:
-                            pt_col = df_cols_lower[col]
-                            break
-                    pt_map = {
-                        'twitter': 'X', 'x': 'X', 'x.com': 'X', 't.co': 'X',
-                        'facebook': 'Facebook', 'fb': 'Facebook', 'fb.watch': 'Facebook',
-                        'instagram': 'Instagram', 'tiktok': 'TikTok',
-                        'youtube': 'YouTube', 'telegram': 'Telegram', 't.me': 'Telegram'
-                    }
-                    if pt_col:
-                        combined_df['Platform'] = df[pt_col].astype(str).str.lower().map(pt_map).fillna('Brandwatch')
-                    else:
-                        combined_df['Platform'] = 'Brandwatch'
-                    
-                    # 6. Content ID (generate if missing)
-                    cid_col = None
-                    for col in ['url', 'resource id', 'mention id', 'post id', 'id']:
-                        if col in df_cols_lower:
-                            cid_col = df_cols_lower[col]
-                            break
-                    if cid_col:
-                        combined_df['content_id'] = df[cid_col].astype(str).str.strip()
-                    else:
-                        # Use list comprehension instead of .apply() to prevent DataFrame assignment errors
-                        # .apply(axis=1) sometimes returns a DataFrame instead of a Series, causing the crash
-                        content_ids = [
-                            hashlib.md5(f"{str(text)[:50]}_{str(url)}".encode()).hexdigest()[:16]
-                            for text, url in zip(combined_df['original_text'], combined_df['URL'])
-                        ]
-                        combined_df['content_id'] = content_ids
-                    
-                    combined_df['source_dataset'] = 'Brandwatch'
-                    # Filter: keep only rows with substantial text
-                    initial_count = len(combined_df)
-                    combined_df = combined_df[combined_df['original_text'].str.len() > 20]
-                    logger.info(f"✅ Brandwatch: filtered {initial_count} → {len(combined_df)} valid rows")
+                    combined_df = combine_social_media_data(brandwatch_df=df)
                 else:
                     # Custom/unknown format
                     combined_df = preprocess_dataframe(df)
                 
-                # === DEBUG: Check combined data ===
                 logger.info(f"📊 COMBINED DATA COLUMNS: {list(combined_df.columns)}")
-                if 'URL' not in combined_df.columns:
-                    logger.error("❌ URL COLUMN NOT FOUND after combining!")
-                    combined_df['URL'] = ''  # Safety fallback
+                logger.info(f"📊 COMBINED DATA SHAPE: {combined_df.shape}")
+                
+                # Ensure required columns exist
+                required_cols = ['account_id', 'original_text', 'URL', 'timestamp_share', 'Platform']
+                for col in required_cols:
+                    if col not in combined_df.columns:
+                        combined_df[col] = ''
+                        logger.warning(f"⚠️ Added missing column: {col}")
                 
                 # === FINAL PREPROCESSING ===
                 processed_df = final_preprocess_and_map_columns(combined_df)
                 
-                # === DEBUG: Check processed data ===
                 logger.info(f"📊 PROCESSED DATA COLUMNS: {list(processed_df.columns)}")
-                if 'URL' not in processed_df.columns:
-                    logger.error("❌ URL COLUMN MISSING after final processing!")
-                    processed_df['URL'] = ''
+                logger.info(f"📊 PROCESSED DATA SHAPE: {processed_df.shape}")
                 
-                # Parse timestamps
+                # Parse timestamps with error handling
                 if 'timestamp_share' in processed_df.columns:
-                    processed_df['timestamp_share'] = processed_df['timestamp_share'].apply(parse_timestamp_robust)
+                    processed_df['timestamp_share'] = processed_df['timestamp_share'].apply(
+                        lambda x: parse_timestamp_robust(x) if pd.notna(x) else pd.NaT
+                    )
                 
                 # === SAVE TO DATABASE ===
                 count = 0
                 urls_saved = 0
-                for _, row in processed_df.iterrows():
-                    # Skip if no content
-                    if not row.get('original_text') or pd.isna(row.get('original_text')) or str(row.get('original_text', '')).strip() == '':
+                errors = []
+                
+                for idx, row in processed_df.iterrows():
+                    try:
+                        # Skip if no content
+                        if not row.get('original_text') or pd.isna(row.get('original_text')) or str(row.get('original_text', '')).strip() == '':
+                            continue
+                        
+                        # Check for duplicates
+                        cid = row.get('content_id')
+                        url_val = row.get('url') or row.get('URL')
+                        
+                        if cid and ProcessedPost.objects.filter(content_id=cid).exists():
+                            continue
+                        if url_val and str(url_val).startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
+                            continue
+                        
+                        # Get or create DataSource
+                        source_name = str(row.get('source_dataset', data_type))
+                        source_obj, _ = DataSource.objects.get_or_create(name=source_name)
+                        
+                        # Prepare URL value
+                        url_value = str(url_val).strip()[:500] if url_val and str(url_val).startswith('http') else None
+                        if url_value:
+                            urls_saved += 1
+                        
+                        # Create post
+                        ProcessedPost.objects.create(
+                            account_id=str(row.get('account_id', ''))[:100],
+                            content_id=str(cid).strip()[:100] if cid else None,
+                            original_text=str(row.get('original_text', '')).strip(),
+                            url=url_value,
+                            platform=str(row.get('Platform', 'Unknown')),
+                            timestamp_share=row.get('timestamp_share'),
+                            source_dataset=source_obj,
+                            is_election_related=is_election_related(str(row.get('original_text', '')))
+                        )
+                        count += 1
+                        
+                    except Exception as row_error:
+                        errors.append(f"Row {idx}: {str(row_error)}")
+                        logger.error(f"❌ Error processing row {idx}: {row_error}")
                         continue
-                    
-                    # Check for duplicates
-                    cid = row.get('content_id')
-                    url_val = row.get('url') or row.get('URL')
-                    if cid and ProcessedPost.objects.filter(content_id=cid).exists():
-                        continue
-                    if url_val and str(url_val).startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
-                        continue
-                    
-                    # Get or create DataSource
-                    source_name = str(row.get('source_dataset', data_type))
-                    source_obj, _ = DataSource.objects.get_or_create(name=source_name)
-                    
-                    # Prepare URL value
-                    url_value = str(url_val).strip()[:500] if url_val and str(url_val).startswith('http') else None
-                    if url_value:
-                        urls_saved += 1
-                    
-                    # Create post
-                    ProcessedPost.objects.create(
-                        account_id=str(row.get('account_id', ''))[:100],
-                        content_id=str(cid).strip()[:100] if cid else None,
-                        original_text=str(row.get('original_text', '')).strip(),
-                        url=url_value,
-                        platform=str(row.get('Platform', 'Unknown')),
-                        timestamp_share=row.get('timestamp_share'),
-                        source_dataset=source_obj,
-                        is_election_related=is_election_related(str(row.get('original_text', '')))
-                    )
-                    count += 1
                 
                 logger.info(f"✅ Saved {count} posts, {urls_saved} with URLs from {original_name}")
+                if errors:
+                    logger.warning(f"⚠️ {len(errors)} rows failed to process")
                 
                 # Update record
                 upload.status = 'completed'
                 upload.processing_log = f"Successfully processed {count} posts ({urls_saved} with URLs)"
+                if errors:
+                    upload.processing_log += f". {len(errors)} rows skipped."
                 upload.records_processed = count
                 upload.save()
                 
@@ -5738,7 +5686,7 @@ class ProcessUploadView(View):
                     upload.save()
                 results.append((uploaded_file.name, False, str(e), 0))
         
-        # === SHOW SUMMARY (ONLY IF RECORDS WERE SAVED) ===
+        # === SHOW SUMMARY ===
         success_count = sum(1 for _, s, _, c in results if s and c > 0)
         total_saved = sum(c for _, s, _, c in results if s)
         
@@ -5751,7 +5699,7 @@ class ProcessUploadView(View):
             messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
         else:
             messages.info(request, "ℹ️ Upload completed. No new posts matched criteria (check logs for details).")
-            
+        
         return redirect('upload_data')
         
 class ClearDataView(View):
