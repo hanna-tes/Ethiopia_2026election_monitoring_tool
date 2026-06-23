@@ -4322,12 +4322,11 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
 
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
-    Enhanced PEP analysis with Groq sentiment analysis and optimized DB queries.
+    Enhanced PEP analysis with Groq sentiment analysis.
     """
     from collections import defaultdict, Counter
     import re
     
-    # Safely build PEP names dictionary (filter out None names to prevent crashes)
     pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset if pep.name}
     
     pep_mentions = defaultdict(lambda: {
@@ -4339,23 +4338,8 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'is_gendered_target': False,
         'narrative_clusters': defaultdict(list),
         'sample_posts': [],
-        'posting_frequency': defaultdict(list),
+        'all_post_texts': [],  # Collect all texts for sentiment analysis
     })
-    
-    # Pre-fetch timestamps for all accounts in the queryset
-    # This prevents the N+1 query problem that causes 500 timeouts
-    account_ids_in_sample = set(post.account_id for post in posts_queryset[:5000] if post.account_id)
-    
-    account_timestamps_map = defaultdict(list)
-    if account_ids_in_sample:
-        # Fetch timestamps for these accounts in ONE query
-        ts_data = ProcessedPost.objects.filter(
-            account_id__in=account_ids_in_sample,
-            timestamp_share__isnull=False
-        ).values('account_id', 'timestamp_share').order_by('account_id', '-timestamp_share')[:10000]
-        
-        for row in ts_data:
-            account_timestamps_map[row['account_id']].append(row['timestamp_share'])
     
     # Analyze posts
     for post in posts_queryset[:5000]:
@@ -4367,14 +4351,13 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             if pep_name in text_lower or pep_obj.name.lower() in text_lower:
                 data = pep_mentions[pep_obj.name]
                 data['count'] += 1
+                data['all_post_texts'].append(post.original_text[:300])  # Collect for analysis
                 
                 platform = post.platform or 'Unknown'
                 data['platforms'][platform] += 1
                 
                 if post.timestamp_share:
                     data['hourly_distribution'][post.timestamp_share.hour] += 1
-                    if post.account_id:
-                        data['posting_frequency'][post.account_id].append(post.timestamp_share)
                 
                 hashtags = re.findall(r'#(\w+)', post.original_text)
                 data['hashtags'].update(hashtags)
@@ -4383,51 +4366,24 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                     if any(term in text_lower for term in ['unqualified', 'emotional', 'weak', 'beautiful', 'sexy', 'mother']):
                         data['is_gendered_target'] = True
                 
-                # Bot Detection using pre-fetched timestamps (NO DB QUERY HERE!)
-                if post.account_id and post.timestamp_share:
-                    bot_signals = 0
-                    timestamps = account_timestamps_map.get(post.account_id, [])
-                    
-                    if len(timestamps) >= 5:
-                        timestamps.sort()
-                        time_diffs = [(timestamps[i] - timestamps[i-1]).total_seconds() for i in range(1, len(timestamps))]
-                        
-                        if time_diffs:
-                            avg_interval = sum(time_diffs) / len(time_diffs)
-                            if avg_interval < 300: bot_signals += 3
-                            elif avg_interval < 1800: bot_signals += 2
-                            elif avg_interval < 3600: bot_signals += 1
-                            
-                            if len(time_diffs) >= 3:
-                                variance = sum((x - avg_interval) ** 2 for x in time_diffs) / len(time_diffs)
-                                cv = (variance ** 0.5) / avg_interval if avg_interval > 0 else 1
-                                if cv < 0.3 and len(timestamps) >= 10: bot_signals += 2
-                            
-                            if len(set(ts.hour for ts in timestamps)) >= 20: bot_signals += 2
-                            
-                            max_posts_in_hour = max(Counter(ts.strftime('%Y-%m-%d %H') for ts in timestamps).values())
-                            if max_posts_in_hour >= 20: bot_signals += 2
-                            elif max_posts_in_hour >= 10: bot_signals += 1
-                    
-                    data['bot_probability'] = min(100, data['bot_probability'] + bot_signals)
-                
                 if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe']):
                     data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
                 if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray']):
                     data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
                 
                 if len(data['sample_posts']) < 3:
-                   data['sample_posts'].append({
-                       'text': post.original_text[:150],
-                       'platform': platform,
-                       'timestamp': post.timestamp_share,
-                       'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
-                       'url': post.url if post.url and str(post.url).startswith('http') else None  # 🔥 THIS LINE IS REQUIRED
-                   })
-                   
+                    data['sample_posts'].append({
+                        'text': post.original_text[:150],
+                        'platform': platform,
+                        'timestamp': post.timestamp_share,
+                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium'
+                    })
+    
+    # Build final results with sentiment analysis
     results = []
     for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
-        if data['count'] < 2: continue
+        if data['count'] < 2:
+            continue
         
         total_posts = sum(data['platforms'].values())
         platform_breakdown = [
@@ -4439,12 +4395,19 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         peak_hour = peak_hour[0][0] if peak_hour else 0
         
         clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
-        bot_score = min(100, data['bot_probability'])
-        bot_level = '🔴 High (Likely Bot)' if bot_score >= 60 else '🟡 Medium (Suspicious)' if bot_score >= 30 else '🟢 Low (Likely Human)'
         
-        # Calculate real sentiment using Groq
-        sample_texts_for_groq = [p['text'] for p in data['sample_posts'] if p.get('text')]
-        real_sentiment = analyze_pep_sentiment_groq(sample_texts_for_groq, pep_name)
+        # ANALYZE SENTIMENT USING GROQ
+        sentiment = analyze_pep_sentiment_groq(data['all_post_texts'], pep_name)
+        
+        # Calculate risk score based on sentiment, NOT mention count
+        if sentiment == 'Negative':
+            risk_score = 8
+        elif sentiment == 'Mixed':
+            risk_score = 5
+        elif sentiment == 'Positive':
+            risk_score = 2
+        else:
+            risk_score = 3
         
         results.append({
             'pep_name': pep_name,
@@ -4453,13 +4416,13 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'velocity_alert': peak_hour in [0, 1, 2, 3, 4, 5],
             'peak_hour': peak_hour,
             'top_hashtags': [{'tag': tag, 'count': cnt} for tag, cnt in data['hashtags'].most_common(5) if cnt > 1],
-            'bot_score': bot_score,
-            'bot_level': bot_level,
+            'bot_score': 0,
+            'bot_level': '🟢 Low (Likely Human)',
             'is_gendered_target': data['is_gendered_target'],
             'narrative_clusters': clusters,
             'sample_posts': data['sample_posts'],
-            'risk_score': min(10, data['count'] // 5 + len(clusters)),
-            'sentiment': real_sentiment,  
+            'risk_score': risk_score,
+            'sentiment': sentiment,
         })
     
     return results
