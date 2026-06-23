@@ -3724,46 +3724,41 @@ def get_top_hashtags(posts_queryset, limit=10):
 
 def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_list=None, limit=6):
     """
-    Enhanced PEP analysis that now includes RC Members and other extra officials.
+    Enhanced PEP analysis with Groq sentiment analysis and URL links.
     """
     from collections import defaultdict, Counter
     import re
-
+    
     if not extra_officials_list:
         extra_officials_list = []
-
-    # 1. Build a unified dictionary of names to scan: { 'lowercase_name': 'Display Name' }
-    officials_to_scan = {}
     
-    # Add standard PEPs
+    # Build unified dictionary of names
+    officials_to_scan = {}
     for pep in peps_queryset:
         name_lower = pep.name.lower().strip()
         if name_lower:
             officials_to_scan[name_lower] = pep.name
-
-    # Add RC Members / Extra Officials
+    
     for name in extra_officials_list:
         name_lower = name.lower().strip()
         if name_lower and name_lower not in officials_to_scan:
             officials_to_scan[name_lower] = name
-
+    
     pep_mentions = defaultdict(lambda: {
         'count': 0,
         'platforms': Counter(),
         'hourly_distribution': Counter(),
         'hashtags': Counter(),
-        'risk_score': 0,
-        'bot_probability': 0,
-        'is_rc_member': False,
         'sample_posts': [],
+        'critical_posts': [],  # NEW: Track critical posts separately
         'narrative_clusters': defaultdict(list),
+        'sentiment_scores': [],  # NEW: Track sentiment scores
     })
     
-    # 2. Scan posts for mentions
+    # Scan posts
     for post in posts_queryset[:5000]:
         if not post.original_text:
             continue
-            
         text_lower = post.original_text.lower()
         
         for scan_name, display_name in officials_to_scan.items():
@@ -3771,17 +3766,12 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
                 data = pep_mentions[display_name]
                 data['count'] += 1
                 
-                # Mark if it's an RC member (if it wasn't in the original PEP queryset)
-                is_pep = any(p.name == display_name for p in peps_queryset)
-                if not is_pep:
-                    data['is_rc_member'] = True
-                
                 platform = post.platform or 'Unknown'
                 data['platforms'][platform] += 1
                 
                 if post.timestamp_share:
                     data['hourly_distribution'][post.timestamp_share.hour] += 1
-                    
+                
                 hashtags = re.findall(r'#(\w+)', post.original_text)
                 data['hashtags'].update(hashtags)
                 
@@ -3791,20 +3781,81 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
                 if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray']):
                     data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
                 
-                if len(data['sample_posts']) < 3:
+                # Store sample post with URL
+                if len(data['sample_posts']) < 5:
                     data['sample_posts'].append({
                         'text': post.original_text[:150],
                         'platform': platform,
                         'timestamp': post.timestamp_share,
+                        'url': post.url if post.url else None,  # Include URL
                         'risk_level': post.risk_level if hasattr(post, 'risk_level') else 'medium'
                     })
-
-    # 3. Build final results
+                
+                # Use Groq to analyze sentiment of this post
+                try:
+                    from groq import Groq
+                    client = Groq(api_key=settings.GROQ_API_KEY)
+                    
+                    prompt = (
+                        f"Analyze the sentiment of this post about {display_name}.\n"
+                        f'Text: "{post.original_text[:200]}"\n\n'
+                        "Is the sentiment Positive (supportive/praise), Negative (criticism/attack), or Neutral (factual/news)?\n"
+                        "Reply with ONLY one word: Positive, Negative, or Neutral."
+                    )
+                    
+                    response = client.chat.completions.create(
+                        model="meta-llama/llama-4-scout-17b-16e-instruct",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.1,
+                        max_tokens=10
+                    )
+                    
+                    sentiment = response.choices[0].message.content.strip().capitalize()
+                    data['sentiment_scores'].append(sentiment)
+                    
+                    # Track critical posts separately
+                    if sentiment == 'Negative' and len(data['critical_posts']) < 3:
+                        data['critical_posts'].append({
+                            'text': post.original_text[:200],
+                            'platform': platform,
+                            'timestamp': post.timestamp_share,
+                            'url': post.url if post.url else None,
+                        })
+                    
+                except Exception as e:
+                    logger.error(f"Groq sentiment analysis failed: {e}")
+                    data['sentiment_scores'].append('Neutral')
+    
+    # Build final results
     results = []
     for display_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
         if data['count'] < 2:
             continue
+        
+        # Calculate overall sentiment
+        sentiment_counts = Counter(data['sentiment_scores'])
+        total_analyzed = len(data['sentiment_scores'])
+        
+        if total_analyzed > 0:
+            negative_pct = (sentiment_counts.get('Negative', 0) / total_analyzed) * 100
+            positive_pct = (sentiment_counts.get('Positive', 0) / total_analyzed) * 100
             
+            if negative_pct > 50:
+                overall_sentiment = 'Negative'
+                sentiment_label = '🔴 High Criticism'
+            elif positive_pct > 50:
+                overall_sentiment = 'Positive'
+                sentiment_label = '🟢 Mostly Positive'
+            else:
+                overall_sentiment = 'Mixed'
+                sentiment_label = '🟡 Mixed Sentiment'
+        else:
+            overall_sentiment = 'Neutral'
+            sentiment_label = '⚪ Neutral'
+        
+        # Calculate risk score based on negative sentiment percentage
+        risk_score = min(10, int(negative_pct / 10))
+        
         total_posts = sum(data['platforms'].values())
         platform_breakdown = [
             {'name': plat, 'count': cnt, 'percent': round(cnt/total_posts*100)}
@@ -3819,8 +3870,11 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
             'platform_breakdown': platform_breakdown,
             'narrative_clusters': clusters,
             'sample_posts': data['sample_posts'],
-            'is_rc_member': data['is_rc_member'],
-            'risk_score': min(10, data['count'] // 3 + len(clusters)),
+            'critical_posts': data['critical_posts'],  
+            'sentiment': overall_sentiment,
+            'sentiment_label': sentiment_label,
+            'risk_score': risk_score,
+            'negative_percentage': round(negative_pct, 1),
         })
     
     return results
