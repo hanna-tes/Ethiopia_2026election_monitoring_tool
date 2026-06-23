@@ -4417,13 +4417,14 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                     data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
                 
                 if len(data['sample_posts']) < 3:
-                    data['sample_posts'].append({
-                        'text': post.original_text[:150],
-                        'platform': platform,
-                        'timestamp': post.timestamp_share,
-                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium'
-                    })
-    
+                   data['sample_posts'].append({
+                       'text': post.original_text[:150],
+                       'platform': platform,
+                       'timestamp': post.timestamp_share,
+                       'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
+                       'url': post.url if post.url and str(post.url).startswith('http') else None  # 🔥 THIS LINE IS REQUIRED
+                   })
+                   
     results = []
     for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
         if data['count'] < 2: continue
