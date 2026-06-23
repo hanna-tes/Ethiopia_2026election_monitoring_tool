@@ -138,8 +138,21 @@
                     <div class="flex items-start gap-2.5">
                         <span class="text-base">⚠️</span>
                         <div>
-                            <h4 class="font-bold text-rose-300 text-xs">Gendered Disinformation Detected</h4>
-                            <p class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">AI-generated content, sexualized narratives, or qualification attacks identified</p>
+                            <h4 class="font-bold text-rose-300 text-xs">
+                                TFGBV Detected in {{ pep.tfgbv_post_count }} post{{ pep.tfgbv_post_count|pluralize }}
+                            </h4>
+                            {% if pep.tfgbv_matches %}
+                            <div class="flex flex-wrap gap-1.5 mt-2">
+                                {% for match in pep.tfgbv_matches %}
+                                <span class="text-[10px] px-2 py-0.5 rounded-full font-medium border
+                                    {% if match.severity == 'critical' %}bg-red-950 text-red-300 border-red-800
+                                    {% elif match.severity == 'high' %}bg-orange-950 text-orange-300 border-orange-800
+                                    {% else %}bg-amber-950 text-amber-300 border-amber-800{% endif %}">
+                                    {{ match.term }} ({{ match.severity }})
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
