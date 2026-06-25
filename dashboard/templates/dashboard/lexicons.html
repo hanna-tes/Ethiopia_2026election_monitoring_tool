@@ -180,7 +180,94 @@
         </div>
     </div>
 
-    <!-- SAMPLE POSTS FOR SELECTED CATEGORY -->
+    <!-- SELECTED CATEGORY DETAILS -->
+    {% if selected_category %}
+    <div class="mb-8 border-t border-blue-500/50 pt-6">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="text-3xl">🎯</span>
+            <div>
+                <h3 class="text-xl font-bold text-blue-300">Category: "{{ selected_category|title }}"</h3>
+                <p class="text-sm text-blue-400">Terms and posts in this category</p>
+            </div>
+        </div>
+
+        <!-- Category Terms from Lexicon -->
+        {% if category_terms %}
+        <div class="mb-6">
+            <h4 class="text-lg font-semibold text-gray-200 mb-3">📚 Terms in this Category ({{ category_terms|length }})</h4>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {% for term_data in category_terms %}
+                <div class="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-blue-500 transition-colors">
+                    <div class="font-semibold text-blue-300 text-sm mb-1">{{ term_data.term }}</div>
+                    <div class="flex gap-2 text-xs">
+                        {% if term_data.metadata.severity %}
+                        <span class="px-2 py-0.5 rounded 
+                            {% if term_data.metadata.severity == 'critical' %}bg-red-900/50 text-red-300
+                            {% elif term_data.metadata.severity == 'high' %}bg-orange-900/50 text-orange-300
+                            {% elif term_data.metadata.severity == 'medium' %}bg-yellow-900/50 text-yellow-300
+                            {% else %}bg-green-900/50 text-green-300{% endif %}">
+                            {{ term_data.metadata.severity }}
+                        </span>
+                        {% endif %}
+                        {% if term_data.metadata.language %}
+                        <span class="px-2 py-0.5 rounded bg-gray-700 text-gray-300">
+                            {{ term_data.metadata.language }}
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% if term_data.metadata.target_entity %}
+                    <div class="text-xs text-gray-400 mt-1">Target: {{ term_data.metadata.target_entity }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Posts containing these terms -->
+        {% if posts_with_terms %}
+        <div class="mb-6">
+            <h4 class="text-lg font-semibold text-gray-200 mb-3">📄 Posts with these Terms ({{ posts_with_terms|length }})</h4>
+            <div class="space-y-3">
+                {% for post in posts_with_terms %}
+                <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex gap-2 text-xs text-gray-400">
+                            <span>{{ post.platform }}</span>
+                            <span>•</span>
+                            <span>{{ post.timestamp|date:"M d, Y H:i" }}</span>
+                            {% if post.account %}
+                            <span>•</span>
+                            <span class="truncate max-w-[200px]">{{ post.account }}</span>
+                            {% endif %}
+                        </div>
+                        {% if post.url %}
+                        <a href="{{ post.url }}" target="_blank" class="text-blue-400 hover:text-blue-300 text-xs">
+                            🔗 View Post
+                        </a>
+                        {% endif %}
+                    </div>
+                    <p class="text-gray-300 text-sm mb-2">{{ post.text }}</p>
+                    <div class="flex flex-wrap gap-2">
+                        {% for term in post.matched_terms %}
+                        <span class="px-2 py-1 bg-blue-900/50 text-blue-300 rounded text-xs border border-blue-700">
+                            {{ term }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-gray-800/50 rounded-lg p-6 text-center border border-gray-700">
+            <p class="text-gray-400">No posts found containing terms from this category.</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- SAMPLE POSTS FOR SELECTED CATEGORY (from regex scan) -->
     {% if selected_category and sample_posts_for_category %}
     <div class="mb-8 border-t border-blue-500/50 pt-6">
         <h3 class="text-lg font-semibold text-blue-300 mb-4">📄 Sample Posts for "{{ selected_category|title }}"</h3>
