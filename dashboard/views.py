@@ -815,8 +815,8 @@ def _get_cached_pattern(term, language):
 
 def scan_text_for_lexicon_terms(text, category_filter=None):
     """
-    Scan text for lexicon matches with enhanced context awareness.
-    Now includes LLM-based detection for terms not in lexicon.
+    FAST PATH: Only regex matching - NO LLM calls during page load.
+    LLM extraction happens asynchronously via background tasks.
     """
     if not isinstance(text, str) or not text.strip():
         return []
@@ -828,33 +828,23 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
     
     # Neutral context indicators
     neutral_indicators = [
-        'research', 'fieldwork', 'doctoral thesis', 'university', 'study',
         'regional state', 'development', 'news', 'media', 'platform',
         'solar', 'water access', 'farmers', 'installed', 'modernization',
+        'studied', 'experience', 'applied', 'wrote', 'seen',
         'diaspora', 'followers', 'condemns', 'urges', 'respect',
-        'sovereignty', 'ministry', 'foreign affairs', 'philosophy',
-        'Namummaa', 'humanness', 'indigenous', 'peace building'
+        'sovereignty', 'ministry', 'foreign affairs'
     ]
+    is_neutral_context = any(indicator in text_lower for indicator in neutral_indicators)
     
-    is_neutral_context = any(indicator.lower() in text_lower for indicator in neutral_indicators)
-    
-    # 1. Traditional lexicon-based scanning
     for category in categories_to_check:
         if category not in lexicon:
             continue
-        
         for term, metadata in lexicon[category].items():
-            # Skip single-character terms (except Amharic)
             if len(term.strip()) < 2 and not re.match(r'^[\u1200-\u137F]+$', term):
                 continue
-            
-            # Skip low-severity terms in neutral contexts
             if is_neutral_context and metadata.get('severity') == 'low':
                 continue
-            
-            # Skip neutral ethnic group names unless in clearly hateful context
             if term.lower() in ['amhara', 'oromo', 'tigray', 'somali', 'afar'] and metadata.get('severity') == 'low':
-                # Check if there are any hateful terms in the same text
                 has_hate_terms = any(
                     other_term in text_lower
                     for other_cat, other_terms in lexicon.items()
@@ -862,8 +852,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     if other_meta.get('severity') in ['high', 'critical']
                 )
                 if not has_hate_terms:
-                    continue  # Skip this neutral mention
-            
+                    continue
             pattern = _get_cached_pattern(term, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
@@ -875,11 +864,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     'source': 'Lexicon'
                 })
     
-    # 2. LLM-based detection for NEW terms not in lexicon
-    llm_matches = extract_new_trigger_terms_llm(text, matches)
-    matches.extend(llm_matches)
-    
-    return matches
+    return matches  
 
 def auto_save_important_llm_terms(llm_terms):
     """
