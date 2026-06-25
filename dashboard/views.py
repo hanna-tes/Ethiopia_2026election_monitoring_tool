@@ -4857,11 +4857,13 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
 
     def _get_lexicon_term_count(self):
-        """Count total terms in CONFIG lexicon"""
+        """Count total terms in CONFIG lexicon + Database"""
         try:
             total = 0
             for category, terms in CONFIG.get('lexicon', {}).items():
                 total += len(terms)
+            # Add terms from database
+            total += LexiconTerm.objects.count()
             return total
         except Exception:
             return "1000+"
@@ -4921,10 +4923,10 @@ class LexiconsView(TemplateView):
         
         if selected_category:
             # MODE: Show all terms in selected category + matching posts
-            logger.info(f"📂 Viewing category: {selected_category}")
+            logger.info(f"Viewing category: {selected_category}")
             
             # Fetch terms from DB for this category
-            # low-severity terms (like "amhara", "oromo" which are neutral mentions)
+            # EXCLUDE low-severity terms (like "amhara", "oromo" which are neutral mentions)
             db_terms = LexiconTerm.objects.filter(
                 category=selected_category
             ).exclude(
@@ -4934,17 +4936,17 @@ class LexiconsView(TemplateView):
             # If DB is empty, fallback to CONFIG (also excluding low severity)
             if not db_terms.exists() and selected_category in CONFIG['lexicon']:
                 category_terms = [
-                    {'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', '')}
+                    {'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')}
                     for t, m in CONFIG['lexicon'][selected_category].items()
                     if m.get('severity', 'medium') != 'low'  # Exclude low severity
                 ]
             else:
                 category_terms = [
-                    {'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity}
+                    {'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language}
                     for t in db_terms
                 ]
             
-            logger.info(f"✅ Found {len(category_terms)} terms in {selected_category} (excluding low severity)")
+            logger.info(f"Found {len(category_terms)} terms in {selected_category} (excluding low severity)")
             
             # Find posts containing these terms
             if category_terms:
@@ -4971,21 +4973,38 @@ class LexiconsView(TemplateView):
                                 # Find metadata for this term
                                 metadata = next(
                                     (t for t in category_terms if t['term'].lower() == term),
-                                    {'severity': 'medium', 'target_entity': ''}
+                                    {'severity': 'medium', 'target_entity': '', 'language': ''}
                                 )
                                 all_matches.append({
                                     'term': term,
                                     'category': selected_category,
                                     'severity': metadata.get('severity', 'medium'),
                                     'target_entity': metadata.get('target_entity', ''),
+                                    'language': metadata.get('language', ''),
                                 })
                 
                 posts_scanned = len(posts_with_terms)
-                logger.info(f"✅ Found {len(posts_with_terms)} posts with {selected_category} terms")
+                logger.info(f"Found {len(posts_with_terms)} posts with {selected_category} terms")
         
         else:
             # MODE: Overview - scan all categories
-            logger.info("📊 Running overview scan...")
+            # Trigger background AI analysis if not already running
+            cache_key_ai = "lexicons_ai_insights_v1"
+            ai_insights = cache.get(cache_key_ai)
+            ai_is_running = cache.get("lexicons_ai_running")
+            if not ai_insights and not ai_is_running and total_posts > 10:
+                cache.set("lexicons_ai_running", True, 300)
+                post_ids = list(filtered_posts.values_list('id', flat=True)[:1000])
+                sample_ids = random.sample(post_ids, min(50, len(post_ids)))
+                thread = threading.Thread(
+                    target=self._run_ai_analysis_background,
+                    args=(sample_ids, cache_key_ai)
+                )
+                thread.daemon = True
+                thread.start()
+                logger.info("Started background analysis...")
+
+            logger.info("Running overview scan...")
             posts_to_scan = filtered_posts[:5000]
             
             for post in posts_to_scan.iterator():
@@ -5029,10 +5048,21 @@ class LexiconsView(TemplateView):
                     if len(term.strip()) <= 1:
                         continue
                     metadata = {}
+                    # Check CONFIG first
                     for cat, terms in CONFIG['lexicon'].items():
                         if term in terms:
                             metadata = terms[term]
                             break
+                    # If not in CONFIG, check DB (for LLM-discovered terms)
+                    if not metadata:
+                        db_term = LexiconTerm.objects.filter(term=term).first()
+                        if db_term:
+                            metadata = {
+                                'severity': db_term.severity,
+                                'target_entity': db_term.target_entity,
+                                'language': db_term.language
+                            }
+                    
                     top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
         except Exception as e:
             logger.error(f"Error aggregating analytics: {e}")
@@ -5073,23 +5103,7 @@ class LexiconsView(TemplateView):
             except Exception as e:
                 logger.error(f"Error extracting entities: {e}")
 
-        # 6. TRIGGER AI ANALYSIS (Non-blocking, only for overview)
-        cache_key_ai = "lexicons_ai_insights_v1"
-        ai_insights = cache.get(cache_key_ai)
-        ai_is_running = cache.get("lexicons_ai_running")
-        if not ai_insights and not ai_is_running and total_posts > 10 and not selected_category:
-            cache.set("lexicons_ai_running", True, 300)
-            post_ids = list(filtered_posts.values_list('id', flat=True)[:1000])
-            sample_ids = random.sample(post_ids, min(50, len(post_ids)))
-            thread = threading.Thread(
-                target=self._run_ai_analysis_background,
-                args=(sample_ids, cache_key_ai)
-            )
-            thread.daemon = True
-            thread.start()
-            logger.info("Started background analysis...")
-
-        # 7. PREPARE DATA TO CACHE (only for overview, not category view)
+        # 6. PREPARE DATA TO CACHE (only for overview, not category view)
         if not selected_category:
             results_to_cache = {
                 'active_tab': 'lexicons',
@@ -5124,13 +5138,13 @@ class LexiconsView(TemplateView):
                 'lexicon_term_count': self._get_lexicon_term_count(),
             })
         
-        context['ai_insights'] = ai_insights
-        context['ai_is_running'] = ai_is_running and not ai_insights
+        context['ai_insights'] = cache.get("lexicons_ai_insights_v1")
+        context['ai_is_running'] = cache.get("lexicons_ai_running") and not context.get('ai_insights')
         
         # Category-specific data
         context['selected_category'] = selected_category
         context['category_terms'] = category_terms
-        context['posts_with_terms'] = posts_with_terms[:10]  # Limit to 10 posts for performance
+        context['posts_with_terms'] = posts_with_terms[:50]  # Limit to 50 posts for performance
         
         return context
 
@@ -5198,7 +5212,7 @@ class LexiconsView(TemplateView):
         finally:
             cache.delete("lexicons_ai_running")
             logger.info("Background thread FINISHED and cleaned up")
-
+           
 class PEPsHubView(TemplateView):
     template_name = 'dashboard/peps_hub.html'
     
