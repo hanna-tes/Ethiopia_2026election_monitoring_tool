@@ -56,8 +56,8 @@
                     </p>
                     <div class="mt-2 flex gap-2 flex-wrap">
                         <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">Context-Aware</span>
-                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">🎯 19 Categories</span>
-                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">⚡ 4-bit Quantized</span>
+                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600"> 19 Categories</span>
+                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600"> 4-bit Quantized</span>
                     </div>
                 </div>
             </div>
@@ -152,7 +152,7 @@
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-semibold text-gray-200">📂 By Category</h3>
                 {% if selected_category %}
-                <a href="{% url 'lexicons' %}" class="text-xs text-blue-400 hover:text-blue-300">Clear Filter </a>
+                <a href="{% url 'lexicons' %}" class="text-xs text-blue-400 hover:text-blue-300">Clear Filter ✕</a>
                 {% endif %}
             </div>
             <div class="grid grid-cols-2 gap-3">
@@ -180,14 +180,14 @@
         </div>
     </div>
 
-    <!-- SELECTED CATEGORY DETAILS -->
+    <!--  SELECTED CATEGORY DETAILS (Terms + Posts) -->
     {% if selected_category %}
     <div class="mb-8 border-t border-blue-500/50 pt-6">
         <div class="flex items-center gap-3 mb-4">
-            <span class="text-3xl">🎯</span>
+            <span class="text-3xl"></span>
             <div>
                 <h3 class="text-xl font-bold text-blue-300">Category: "{{ selected_category|title }}"</h3>
-                <p class="text-sm text-blue-400">Terms and posts in this category</p>
+                <p class="text-sm text-blue-400">Terms in lexicon and posts containing them</p>
             </div>
         </div>
 
@@ -200,23 +200,23 @@
                 <div class="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-blue-500 transition-colors">
                     <div class="font-semibold text-blue-300 text-sm mb-1">{{ term_data.term }}</div>
                     <div class="flex gap-2 text-xs">
-                        {% if term_data.metadata.severity %}
+                        {% if term_data.severity %}
                         <span class="px-2 py-0.5 rounded 
-                            {% if term_data.metadata.severity == 'critical' %}bg-red-900/50 text-red-300
-                            {% elif term_data.metadata.severity == 'high' %}bg-orange-900/50 text-orange-300
-                            {% elif term_data.metadata.severity == 'medium' %}bg-yellow-900/50 text-yellow-300
+                            {% if term_data.severity == 'critical' %}bg-red-900/50 text-red-300
+                            {% elif term_data.severity == 'high' %}bg-orange-900/50 text-orange-300
+                            {% elif term_data.severity == 'medium' %}bg-yellow-900/50 text-yellow-300
                             {% else %}bg-green-900/50 text-green-300{% endif %}">
-                            {{ term_data.metadata.severity }}
+                            {{ term_data.severity }}
                         </span>
                         {% endif %}
-                        {% if term_data.metadata.language %}
+                        {% if term_data.language %}
                         <span class="px-2 py-0.5 rounded bg-gray-700 text-gray-300">
-                            {{ term_data.metadata.language }}
+                            {{ term_data.language }}
                         </span>
                         {% endif %}
                     </div>
-                    {% if term_data.metadata.target_entity %}
-                    <div class="text-xs text-gray-400 mt-1">Target: {{ term_data.metadata.target_entity }}</div>
+                    {% if term_data.target_entity %}
+                    <div class="text-xs text-gray-400 mt-1">Target: {{ term_data.target_entity }}</div>
                     {% endif %}
                 </div>
                 {% endfor %}
@@ -247,7 +247,7 @@
                         </a>
                         {% endif %}
                     </div>
-                    <p class="text-gray-300 text-sm mb-2">{{ post.text }}</p>
+                    <p class="text-gray-300 text-sm mb-2">{{ post.text }}{% if post.text|length > 300 %}...{% endif %}</p>
                     <div class="flex flex-wrap gap-2">
                         {% for term in post.matched_terms %}
                         <span class="px-2 py-1 bg-blue-900/50 text-blue-300 rounded text-xs border border-blue-700">
@@ -261,7 +261,7 @@
         </div>
         {% else %}
         <div class="bg-gray-800/50 rounded-lg p-6 text-center border border-gray-700">
-            <p class="text-gray-400">No posts found containing terms from this category.</p>
+            <p class="text-gray-400">No posts found containing terms from this category in the current date range.</p>
         </div>
         {% endif %}
     </div>
@@ -270,7 +270,7 @@
     <!-- SAMPLE POSTS FOR SELECTED CATEGORY (from regex scan) -->
     {% if selected_category and sample_posts_for_category %}
     <div class="mb-8 border-t border-blue-500/50 pt-6">
-        <h3 class="text-lg font-semibold text-blue-300 mb-4">📄 Sample Posts for "{{ selected_category|title }}"</h3>
+        <h3 class="text-lg font-semibold text-blue-300 mb-4"> Sample Posts for "{{ selected_category|title }}"</h3>
         <div class="space-y-4">
             {% for sample in sample_posts_for_category %}
             <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
@@ -285,7 +285,7 @@
     <!-- AI DISCOVERY SECTION -->
     <div class="mb-8 border-t border-purple-500/50 pt-6">
         <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-semibold text-purple-300"> New Trigger terms </h3>
+            <h3 class="text-lg font-semibold text-purple-300">🔍 New Trigger Terms Discovery</h3>
             <a href="?action=discover_terms" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium shadow-lg">
                 🔍 Discover New Terms
             </a>
