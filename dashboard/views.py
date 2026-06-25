@@ -1414,6 +1414,7 @@ def _get_ttp_severity(technique_id: str) -> str:
         return 'Medium'
     else:
         return 'Low'
+       
 def is_likely_normal_news(text):
     """Check if text appears to be normal news rather than coordinated manipulation"""
     if not text or len(text.strip()) < 20:
@@ -3963,8 +3964,9 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
             'negative_percentage': round(negative_pct, 1),
         })
     
-    return results
-   
+    return results 
+
+
 def extract_first_json_array(text):
     """Extract the first valid JSON array from a string by matching brackets."""
     start = text.find('[')
@@ -6137,3 +6139,30 @@ def ttp_radar_data_api(request):
             'records': [],
             'count': 0
         }, status=500)
+
+@login_required
+def trigger_llm_scan_api(request):
+    """API endpoint to trigger background LLM scan"""
+    from .utils.background_tasks import start_background_llm_scan
+    from .models import ProcessedPost
+    
+    # Get recent posts (last 500)
+    recent_posts = ProcessedPost.objects.filter(
+        is_election_related=True
+    ).order_by('-timestamp_share')[:500]
+    
+    post_ids = list(recent_posts.values_list('id', flat=True))
+    
+    started = start_background_llm_scan(post_ids, user_id=request.user.id)
+    
+    if started:
+        return JsonResponse({
+            'success': True,
+            'message': f'Scan started for {len(post_ids)} posts',
+            'posts_count': len(post_ids)
+        })
+    else:
+        return JsonResponse({
+            'success': False,
+            'message': 'Scan already in progress. Please wait.'
+        }, status=429)  
