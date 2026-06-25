@@ -3979,64 +3979,99 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
         })
     
     return results
+   
+def extract_first_json_array(text):
+    """Extract the first valid JSON array from a string by matching brackets."""
+    start = text.find('[')
+    if start == -1:
+        return None
+    
+    depth = 0
+    in_string = False
+    escape_next = False
+    
+    for i in range(start, len(text)):
+        char = text[i]
+        
+        if escape_next:
+            escape_next = False
+            continue
+            
+        if char == '\\':
+            escape_next = True
+            continue
+            
+        if char == '"':
+            in_string = not in_string
+            continue
+            
+        if in_string:
+            continue
+            
+        if char == '[':
+            depth += 1
+        elif char == ']':
+            depth -= 1
+            if depth == 0:
+                return text[start:i+1]
+    
+    return None
+
+
 def extract_new_trigger_terms_llm(text, existing_matches=None):
-    """
-    Use LLM to extract NEW trigger terms not in the lexicon.
-    Returns structured data for database addition.
-    """
+    """Use LLM to extract NEW trigger terms not in the lexicon."""
     if not text or len(text.strip()) < 20:
         return []
     
-    # Get existing terms to avoid duplicates
     existing_terms = set()
     if existing_matches:
         existing_terms = set(m['term'].lower() for m in existing_matches)
     
-    # Use regular string instead of f-string (no interpolation needed)
-    prompt = """
-You are an expert hate speech analyst extracting trigger terms from this text.
-TEXT: "{text}"
-TASK:
-1. Identify specific words or short phrases that constitute hate speech, threats, or harmful content
-2. For each term, determine:
-- The exact term/phrase as it appears in the text
-- The category it belongs to (ethnic_identity, violence_incitement, dehumanizing, religious_cultural, gender_misogynistic, discriminatory_homophobic, socio_economic_caste, political_groups, foreign_interference, election_governance)
-- Severity level (low, medium, high, critical)
-- Target entity (which group is being targeted, e.g., "Oromo", "Amhara", "Christians", "Women", etc.)
-- Language (Amharic, Oromo, English, Tigrigna or other)
-RULES:
-- Only extract terms that are actually harmful/threatening
-- Extract exact phrases as they appear in the text
-- Do NOT extract terms already in the lexicon (avoid duplicates)
-- Focus on specific slurs, threats, dehumanizing language, incitement
-- Return ONLY valid JSON, no other text
-OUTPUT FORMAT:
-[
-{
-"term": "exact phrase from text",
-"category": "category_name",
-"severity": "low|medium|high|critical",
-"target_entity": "targeted group",
-"language": "Amharic|Oromo|English|Tigrigna"
-}
-]
-If no new trigger terms found, return empty array: []
-""".replace("{text}", text)
+    for category, terms in CONFIG.get('lexicon', {}).items():
+        existing_terms.update(t.lower() for t in terms.keys())
+    
+    existing_list = ', '.join(list(existing_terms)[:50])
+    
+    # BULLETPROOF PROMPT: No triple quotes, no f-string curly brace escaping
+    prompt = (
+        "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language) "
+        "from this text that are NOT already in the lexicon.\n\n"
+        "TEXT:\n"
+        '"' + text + '"\n\n'
+        "EXISTING TERMS (do not extract these):\n"
+        + existing_list + "\n\n"
+        "Return ONLY a valid JSON array. Each object must have:\n"
+        '- "term": the exact phrase from the text\n'
+        '- "category": one of [ethnic_identity, violence_incitement, dehumanizing, religious_cultural, gender_misogynistic, discriminatory_homophobic, socio_economic_caste, political_groups, foreign_interference, election_governance]\n'
+        '- "severity": one of [low, medium, high, critical]\n'
+        '- "target_entity": the group being targeted (e.g., Amhara, Oromo, Women) or empty string\n'
+        '- "language": one of [Amharic, Oromo, English, Tigrinya, Somali]\n\n'
+        "EXAMPLE OUTPUT:\n"
+        '[\n'
+        '  {"term": "example slur", "category": "ethnic_identity", "severity": "high", "target_entity": "Group", "language": "Amharic"}\n'
+        ']\n\n'
+        "If no new terms found, return: []"
+    )
     
     try:
         response = safe_llm_call(prompt, max_tokens=1024)
         if not response:
             return []
         
-        # Extract JSON array from response
-        json_match = re.search(r'\[.*\]', response, re.DOTALL)
-        if not json_match:
-            logger.warning("No JSON array found in trigger term extraction response")
+        json_str = extract_first_json_array(response)
+        if not json_str:
+            logger.warning(f"No JSON array found in LLM response. Preview: {response[:200]}")
             return []
         
-        extracted_terms = json.loads(json_match.group(0))
+        try:
+            extracted_terms = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON: {e}. Preview: {json_str[:200]}")
+            return []
         
-        # Validate and filter
+        if not isinstance(extracted_terms, list):
+            return []
+        
         valid_terms = []
         valid_categories = ['ethnic_identity', 'violence_incitement', 'dehumanizing',
                           'religious_cultural', 'gender_misogynistic', 'discriminatory_homophobic',
@@ -4053,7 +4088,6 @@ If no new trigger terms found, return empty array: []
             if not term or len(term) < 2:
                 continue
             
-            # Skip if already in lexicon
             if term.lower() in existing_terms:
                 continue
             
@@ -4081,15 +4115,12 @@ If no new trigger terms found, return empty array: []
             })
         
         if valid_terms:
-            logger.info(f"Extracted {len(valid_terms)} new trigger terms via LLM")
+            logger.info(f"LLM extracted {len(valid_terms)} new trigger terms")
         
         return valid_terms
         
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in trigger term extraction: {e}")
-        return []
     except Exception as e:
-        logger.error(f"Error extracting trigger terms: {e}")
+        logger.error(f"Error in LLM trigger term extraction: {e}")
         return []
        
 def reports_landing(request):
