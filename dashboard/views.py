@@ -4761,29 +4761,72 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
 
     def _get_lexicon_term_count(self):
-        """Count total terms in CONFIG lexicon"""
+        """Count total terms in CONFIG lexicon + Database"""
         try:
             total = 0
             for category, terms in CONFIG.get('lexicon', {}).items():
                 total += len(terms)
+            # Add terms from database
+            total += LexiconTerm.objects.count()
             return total
         except Exception:
             return "1000+"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # 1. TRY TO LOAD CACHED RESULTS FIRST (Instant load)
+        
+        # Get query parameters
+        selected_category = self.request.GET.get('category')
+        action = self.request.GET.get('action')
+        newly_added_terms = []
+
+        # --- HANDLE AI DISCOVERY ACTION ---
+        if action == 'discover_terms':
+            # Take a small sample to avoid request timeout (5 posts)
+            sample_posts = ProcessedPost.objects.filter(
+                original_text__isnull=False
+            ).exclude(original_text='').order_by('?')[:5]
+            
+            existing_terms = set(LexiconTerm.objects.values_list('term', flat=True))
+            
+            for post in sample_posts:
+                # Use the existing LLM function to extract new terms
+                new_terms = extract_new_trigger_terms_llm(post.original_text)
+                for term_data in new_terms:
+                    term_text = term_data.get('term', '').lower().strip()
+                    # Only add if not already in database
+                    if term_text and term_text not in existing_terms:
+                        LexiconTerm.objects.create(
+                            term=term_text,
+                            category=term_data.get('category', 'uncategorized'),
+                            severity=term_data.get('severity', 'medium'),
+                            target_entity=term_data.get('target_entity', ''),
+                            language=term_data.get('language', 'english'),
+                            is_election_related=True
+                        )
+                        existing_terms.add(term_text)
+                        newly_added_terms.append(term_data)
+            
+            # Save to session to display on next load
+            self.request.session['newly_added_terms'] = newly_added_terms
+            # Redirect to clear the 'action' parameter from URL
+            return redirect('lexicons')
+
+        # --- EXISTING CACHING LOGIC ---
         cache_key = "lexicon_dashboard_data_v2"
         cached_data = cache.get(cache_key)
         if cached_data:
             context.update(cached_data)
             context['ai_insights'] = cache.get("lexicons_ai_insights_v1")
             context['ai_is_running'] = cache.get("lexicons_ai_running")
-            # Refresh term count even from cache (fast query)
             context['lexicon_term_count'] = self._get_lexicon_term_count()
+            # Add new context variables even if cached
+            context['selected_category'] = selected_category
+            context['sample_posts_for_category'] = [] # Will be populated below if needed
+            context['newly_added_terms'] = self.request.session.pop('newly_added_terms', [])
             return context
 
-        # 2. GET POSTS (Limit to recent 5000 for performance)
+        # --- SCAN POSTS ---
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
             total_posts = filtered_posts.count()
@@ -4802,46 +4845,73 @@ class LexiconsView(TemplateView):
                 'ai_insights': None,
                 'ai_is_running': False,
                 'lexicon_term_count': self._get_lexicon_term_count(),
+                'selected_category': selected_category,
+                'sample_posts_for_category': [],
+                'newly_added_terms': self.request.session.pop('newly_added_terms', []),
             })
             return context
 
-        # Only scan the most recent 5,000 posts to prevent timeout
         posts_to_scan = filtered_posts[:5000]
-
-        # 3. FAST REGEX SCAN
+        
         all_matches = []
         posts_scanned = 0
+        sample_posts_for_category = [] # Store samples for the clicked category
+
         try:
             for post in posts_to_scan.iterator():
                 if post.original_text:
                     try:
                         matches = scan_text_for_lexicon_terms(post.original_text)
                         if matches:
-                            # Filter out single-character terms
                             all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
                             posts_scanned += 1
+                            
+                            # If a category is selected, capture sample posts for it
+                            if selected_category:
+                                for m in matches:
+                                    if m['category'] == selected_category:
+                                        sample_posts_for_category.append({
+                                            'text': post.original_text[:300],
+                                            'matched_term': m['term'],
+                                            'post_id': post.id
+                                        })
+                                        # Limit to 5 samples per category
+                                        if len(sample_posts_for_category) >= 5:
+                                            break
                     except Exception as e:
                         logger.warning(f"Error scanning post {post.id}: {e}")
                         continue
         except Exception as e:
             logger.error(f"Error during lexicon scan: {e}")
 
-        # 4. AGGREGATE ANALYTICS
+        # --- AGGREGATE ANALYTICS ---
         try:
             from collections import Counter
             term_counts = Counter([m['term'] for m in all_matches])
             category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
+            
             top_terms = term_counts.most_common(15)
             top_terms_with_meta = []
             for term, count in top_terms:
                 if len(term.strip()) <= 1:
                     continue
                 metadata = {}
+                # Check CONFIG first
                 for cat, terms in CONFIG['lexicon'].items():
                     if term in terms:
                         metadata = terms[term]
                         break
+                # If not in CONFIG, check DB
+                if not metadata:
+                    db_term = LexiconTerm.objects.filter(term=term).first()
+                    if db_term:
+                        metadata = {
+                            'severity': db_term.severity,
+                            'target_entity': db_term.target_entity,
+                            'language': db_term.language
+                        }
+                
                 top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
         except Exception as e:
             logger.error(f"Error aggregating analytics: {e}")
@@ -4849,7 +4919,7 @@ class LexiconsView(TemplateView):
             category_counts = Counter()
             severity_counts = Counter()
 
-        # Word Cloud
+        # (Word Cloud and Targeted Entities logic remains the same)
         wordcloud_base64 = None
         if all_matches:
             try:
@@ -4860,7 +4930,6 @@ class LexiconsView(TemplateView):
             except Exception as e:
                 logger.warning(f"Word cloud failed: {e}")
 
-        # Targeted Entities
         targeted_entities = []
         try:
             entity_patterns = [
@@ -4881,7 +4950,7 @@ class LexiconsView(TemplateView):
         except Exception as e:
             logger.error(f"Error extracting entities: {e}")
 
-        # 5. TRIGGER AI ANALYSIS (Non-blocking)
+        # --- AI ANALYSIS TRIGGER ---
         cache_key_ai = "lexicons_ai_insights_v1"
         ai_insights = cache.get(cache_key_ai)
         ai_is_running = cache.get("lexicons_ai_running")
@@ -4897,7 +4966,7 @@ class LexiconsView(TemplateView):
             thread.start()
             logger.info("Started background analysis...")
 
-        # 6. PREPARE DATA TO CACHE
+        # --- SAVE TO CACHE ---
         results_to_cache = {
             'active_tab': 'lexicons',
             'top_terms': top_terms_with_meta,
@@ -4916,8 +4985,13 @@ class LexiconsView(TemplateView):
         context.update(results_to_cache)
         context['ai_insights'] = ai_insights
         context['ai_is_running'] = ai_is_running and not ai_insights
+        
+        # CONTEXT VARIABLES 
+        context['selected_category'] = selected_category
+        context['sample_posts_for_category'] = sample_posts_for_category
+        context['newly_added_terms'] = self.request.session.pop('newly_added_terms', [])
+        
         return context
-
     @staticmethod
     def _run_ai_analysis_background(post_ids, cache_key):
         """Runs the heavy AI model in the background and saves to cache."""
