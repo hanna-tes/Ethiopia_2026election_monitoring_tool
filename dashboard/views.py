@@ -54,6 +54,7 @@ from .models import MonitoringReport
 from typing import List, Dict, Any, Optional
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
+from django.contrib.auth.decorators import login_required
    
 
 
