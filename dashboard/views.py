@@ -814,7 +814,10 @@ def _get_cached_pattern(term, language):
     return _COMPILED_PATTERNS[cache_key]
 
 def scan_text_for_lexicon_terms(text, category_filter=None):
-    """Scan text for lexicon matches with context awareness"""
+    """
+    Scan text for lexicon matches with enhanced context awareness.
+    Now includes LLM-based detection for terms not in lexicon.
+    """
     if not isinstance(text, str) or not text.strip():
         return []
     
@@ -823,21 +826,23 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
     lexicon = CONFIG.get("lexicon", {})
     categories_to_check = category_filter if category_filter else lexicon.keys()
     
-    # Neutral context indicators (if these are present, ethnic mentions are likely neutral)
+    # Neutral context indicators
     neutral_indicators = [
+        'research', 'fieldwork', 'doctoral thesis', 'university', 'study',
         'regional state', 'development', 'news', 'media', 'platform',
         'solar', 'water access', 'farmers', 'installed', 'modernization',
-        'studied', 'experience', 'applied', 'wrote', 'seen',
         'diaspora', 'followers', 'condemns', 'urges', 'respect',
-        'sovereignty', 'ministry', 'foreign affairs'
+        'sovereignty', 'ministry', 'foreign affairs', 'philosophy',
+        'Namummaa', 'humanness', 'indigenous', 'peace building'
     ]
     
-    is_neutral_context = any(indicator in text_lower for indicator in neutral_indicators)
+    is_neutral_context = any(indicator.lower() in text_lower for indicator in neutral_indicators)
     
+    # 1. Traditional lexicon-based scanning
     for category in categories_to_check:
         if category not in lexicon:
             continue
-            
+        
         for term, metadata in lexicon[category].items():
             # Skip single-character terms (except Amharic)
             if len(term.strip()) < 2 and not re.match(r'^[\u1200-\u137F]+$', term):
@@ -851,7 +856,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
             if term.lower() in ['amhara', 'oromo', 'tigray', 'somali', 'afar'] and metadata.get('severity') == 'low':
                 # Check if there are any hateful terms in the same text
                 has_hate_terms = any(
-                    other_term in text_lower 
+                    other_term in text_lower
                     for other_cat, other_terms in lexicon.items()
                     for other_term, other_meta in other_terms.items()
                     if other_meta.get('severity') in ['high', 'critical']
@@ -866,12 +871,66 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     'category': category,
                     'severity': metadata.get('severity', 'medium'),
                     'target_entity': metadata.get('target_entity', ''),
-                    'language': metadata.get('language', 'english')
+                    'language': metadata.get('language', 'english'),
+                    'source': 'Lexicon'
                 })
+    
+    # 2. LLM-based detection for NEW terms not in lexicon
+    llm_matches = extract_new_trigger_terms_llm(text, matches)
+    matches.extend(llm_matches)
     
     return matches
 
-
+def auto_save_important_llm_terms(llm_terms):
+    """
+    Automatically save high-confidence LLM-discovered terms to database.
+    """
+    from dashboard.models import LexiconTerm
+    
+    saved_count = 0
+    for term_data in llm_terms:
+        # Only save high-severity terms with good confidence
+        if term_data.get('severity') in ['high', 'critical'] and term_data.get('confidence', 0) >= 0.6:
+            
+            # 1. Normalize language to match system values
+            detected_language = term_data.get('language', 'Unknown')
+            if detected_language:
+                detected_language = detected_language.strip().title()
+                # Map common variations to standard values
+                language_map = {
+                    'Amharic': 'amharic',
+                    'Oromo': 'oromo', 
+                    'Tigrinya': 'tigrinya',
+                    'English': 'english',
+                    'Somali': 'somali'
+                }
+                # Use mapped value or fallback to lowercase version
+                normalized_language = language_map.get(detected_language, detected_language.lower())
+            else:
+                normalized_language = 'unknown'
+            
+            # 2. Save to database (get_or_create prevents duplicates)
+            obj, created = LexiconTerm.objects.get_or_create(
+                term=term_data['term'],
+                defaults={
+                    'category': term_data['category'],
+                    'severity': term_data['severity'],
+                    'target_entity': term_data.get('target_entity', ''),
+                    'language': normalized_language,  # Uses detected language, not hardcoded
+                    'is_election_related': True,
+                    'is_active': True
+                }
+            )
+            
+            # 3. Log result only if it was actually new
+            if created:
+                saved_count += 1
+                logger.info(f"✅ Auto-saved NEW term: '{term_data['term']}' (Category: {term_data['category']}, Lang: {normalized_language})")
+            else:
+                logger.info(f"ℹ️ Term already exists: '{term_data['term']}'")
+                
+    return saved_count
+   
 def calculate_risk_score(matches):
     """Calculate risk score based on matched terms"""
     if not matches:
@@ -2493,6 +2552,8 @@ CONFIG = {
             "qomcee": {"severity": "high", "target_entity": "Amhara", "language": "Oromo"},
             "Kutichaa Minilik": {"severity": "high", "target_entity": "Amhara", "language": "Oromo"},
             "Jawsa": {"severity": "high", "target_entity": "Amhara", "language": "Oromo"},
+            "Jawisa": {"severity": "high", "target_entity": "Amhara", "language": "Oromo"},
+            "Jawisaa": {"severity": "high", "target_entity": "Amhara", "language": "Oromo"},
             "አማራ ጠል": {"severity": "high", "target_entity": "Amhara", "language": "Amharic"},
             "አማራ ስጋ": {"severity": "high", "target_entity": "Amhara", "language": "Amharic"},
             "Fota-wearer": {"severity": "medium", "target_entity": "Amhara", "language": "English"},
@@ -3918,7 +3979,119 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
         })
     
     return results
+def extract_new_trigger_terms_llm(text, existing_matches=None):
+    """
+    Use LLM to extract NEW trigger terms not in the lexicon.
+    Returns structured data for database addition.
+    """
+    if not text or len(text.strip()) < 20:
+        return []
     
+    # Get existing terms to avoid duplicates
+    existing_terms = set()
+    if existing_matches:
+        existing_terms = set(m['term'].lower() for m in existing_matches)
+    
+    # Use regular string instead of f-string (no interpolation needed)
+    prompt = """
+You are an expert hate speech analyst extracting trigger terms from this text.
+TEXT: "{text}"
+TASK:
+1. Identify specific words or short phrases that constitute hate speech, threats, or harmful content
+2. For each term, determine:
+- The exact term/phrase as it appears in the text
+- The category it belongs to (ethnic_identity, violence_incitement, dehumanizing, religious_cultural, gender_misogynistic, discriminatory_homophobic, socio_economic_caste, political_groups, foreign_interference, election_governance)
+- Severity level (low, medium, high, critical)
+- Target entity (which group is being targeted, e.g., "Oromo", "Amhara", "Christians", "Women", etc.)
+- Language (Amharic, Oromo, English, Tigrigna or other)
+RULES:
+- Only extract terms that are actually harmful/threatening
+- Extract exact phrases as they appear in the text
+- Do NOT extract terms already in the lexicon (avoid duplicates)
+- Focus on specific slurs, threats, dehumanizing language, incitement
+- Return ONLY valid JSON, no other text
+OUTPUT FORMAT:
+[
+{
+"term": "exact phrase from text",
+"category": "category_name",
+"severity": "low|medium|high|critical",
+"target_entity": "targeted group",
+"language": "Amharic|Oromo|English|Tigrigna"
+}
+]
+If no new trigger terms found, return empty array: []
+""".replace("{text}", text)
+    
+    try:
+        response = safe_llm_call(prompt, max_tokens=1024)
+        if not response:
+            return []
+        
+        # Extract JSON array from response
+        json_match = re.search(r'\[.*\]', response, re.DOTALL)
+        if not json_match:
+            logger.warning("No JSON array found in trigger term extraction response")
+            return []
+        
+        extracted_terms = json.loads(json_match.group(0))
+        
+        # Validate and filter
+        valid_terms = []
+        valid_categories = ['ethnic_identity', 'violence_incitement', 'dehumanizing',
+                          'religious_cultural', 'gender_misogynistic', 'discriminatory_homophobic',
+                          'socio_economic_caste', 'political_groups', 'foreign_interference',
+                          'election_governance']
+        valid_severities = ['low', 'medium', 'high', 'critical']
+        valid_languages = ['Amharic', 'Oromo', 'English', 'Tigrinya', 'Somali']
+        
+        for term_data in extracted_terms:
+            if not isinstance(term_data, dict):
+                continue
+            
+            term = term_data.get('term', '').strip()
+            if not term or len(term) < 2:
+                continue
+            
+            # Skip if already in lexicon
+            if term.lower() in existing_terms:
+                continue
+            
+            category = term_data.get('category', 'uncategorized')
+            if category not in valid_categories:
+                category = 'uncategorized'
+            
+            severity = term_data.get('severity', 'medium')
+            if severity not in valid_severities:
+                severity = 'medium'
+            
+            language = term_data.get('language', 'Amharic')
+            if language not in valid_languages:
+                language = 'Amharic'
+            
+            valid_terms.append({
+                'term': term,
+                'category': category,
+                'severity': severity,
+                'target_entity': term_data.get('target_entity', ''),
+                'language': language,
+                'confidence': term_data.get('confidence', 0.8),
+                'source': 'LLM Extraction',
+                'context': text[:200]
+            })
+        
+        if valid_terms:
+            logger.info(f"Extracted {len(valid_terms)} new trigger terms via LLM")
+        
+        return valid_terms
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error in trigger term extraction: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Error extracting trigger terms: {e}")
+        return []
+       
 def reports_landing(request):
     """Landing page showing all report categories as cards"""
     baseline_reports = MonitoringReport.objects.filter(report_category='baseline').order_by('-uploaded_at')[:3]
@@ -4030,8 +4203,7 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
         max_date=Max('timestamp_share')
     )
     
-    #  Respect the UI's date filter (posts_queryset is already filtered by the view)
-    # remove the 'cutoff' filter so it doesn't override custom date ranges older than 90 days
+    # Respect the UI's date filter (posts_queryset is already filtered by the view)
     recent_posts = posts_queryset.filter(
         original_text__isnull=False
     ).exclude(original_text='')
@@ -4062,6 +4234,7 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
     
     for post in posts_to_scan:
         if post.original_text and post.timestamp_share:
+            # This now includes both lexicon AND LLM-based detection
             matches = scan_text_for_lexicon_terms(post.original_text)
             day = post.timestamp_share.date()
             for match in matches:
@@ -4183,134 +4356,16 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
         'total_categories_tracked': len(categories),
         'total_posts_scanned': total_scanned,
         'date_range': f"{dates[0].strftime('%b %d')} - {dates[-1].strftime('%b %d, %Y')}" if dates else "",
-        'spikes_detected': spikes_detected,  # Return all spikes
-        'spike_alerts': spike_alerts,  # Formatted alerts for UI
-        'total_spikes': len(spikes_detected),  # Total count
-        'has_significant_spikes': len(spikes_detected) > 0  # Boolean flag
+        'spikes_detected': spikes_detected,
+        'spike_alerts': spike_alerts,
+        'total_spikes': len(spikes_detected),
+        'has_significant_spikes': len(spikes_detected) > 0
     }
     
     # 9. SAVE TO CACHE FOR 60 MINUTES
     cache.set(cache_key, final_result, 3600)
     
     return final_result
-   
-def extract_new_trigger_terms_llm(text, existing_matches=None):
-    """
-    Use LLM to extract NEW trigger terms not in the lexicon.
-    Returns structured data for database addition.
-    """
-    if not text or len(text.strip()) < 20:
-        return []
-    
-    # Get existing terms to avoid duplicates
-    existing_terms = set()
-    if existing_matches:
-        existing_terms = set(m['term'].lower() for m in existing_matches)
-    
-    # Use regular string instead of f-string (no interpolation needed)
-    prompt = """
-You are an expert hate speech analyst extracting trigger terms from this text.
-
-TEXT: "{text}"
-
-TASK:
-1. Identify specific words or short phrases (2-5 words max) that constitute hate speech, threats, or harmful content
-2. For each term, determine:
-   - The exact term/phrase as it appears in the text
-   - The category it belongs to (ethnic_identity, violence_incitement, dehumanizing, religious_cultural, gender_misogynistic, discriminatory_homophobic, socio_economic_caste, political_groups, foreign_interference, election_governance)
-   - Severity level (low, medium, high, critical)
-   - Target entity (which group is being targeted, e.g., "Oromo", "Amhara", "Christians", "Women", etc.)
-   - Language (Amharic, Oromo, English, or other)
-
-RULES:
-- Only extract terms that are actually harmful/threatening
-- Extract exact phrases as they appear in the text
-- Do NOT extract terms already in the lexicon (avoid duplicates)
-- Focus on specific slurs, threats, dehumanizing language, incitement
-- Return ONLY valid JSON, no other text
-
-OUTPUT FORMAT:
-[
-  {
-    "term": "exact phrase from text",
-    "category": "category_name",
-    "severity": "low|medium|high|critical",
-    "target_entity": "targeted group",
-    "language": "Amharic|Oromo|English"
-  }
-]
-
-If no new trigger terms found, return empty array: []
-""".replace("{text}", text)
-    
-    try:
-        response = safe_llm_call(prompt, max_tokens=1024)
-        if not response:
-            return []
-        
-        # Extract JSON array from response
-        json_match = re.search(r'\[.*\]', response, re.DOTALL)
-        if not json_match:
-            logger.warning("No JSON array found in trigger term extraction response")
-            return []
-        
-        extracted_terms = json.loads(json_match.group(0))
-        
-        # Validate and filter
-        valid_terms = []
-        valid_categories = ['ethnic_identity', 'violence_incitement', 'dehumanizing', 
-                          'religious_cultural', 'gender_misogynistic', 'discriminatory_homophobic',
-                          'socio_economic_caste', 'political_groups', 'foreign_interference', 
-                          'election_governance']
-        valid_severities = ['low', 'medium', 'high', 'critical']
-        valid_languages = ['Amharic', 'Oromo', 'English', 'Tigrinya', 'Somali']
-        
-        for term_data in extracted_terms:
-            if not isinstance(term_data, dict):
-                continue
-            
-            term = term_data.get('term', '').strip()
-            if not term or len(term) < 2:
-                continue
-            
-            # Skip if already in lexicon
-            if term.lower() in existing_terms:
-                continue
-            
-            category = term_data.get('category', 'uncategorized')
-            if category not in valid_categories:
-                category = 'uncategorized'
-            
-            severity = term_data.get('severity', 'medium')
-            if severity not in valid_severities:
-                severity = 'medium'
-            
-            language = term_data.get('language', 'Amharic')
-            if language not in valid_languages:
-                language = 'Amharic'
-            
-            valid_terms.append({
-                'term': term,
-                'category': category,
-                'severity': severity,
-                'target_entity': term_data.get('target_entity', ''),
-                'language': language,
-                'confidence': term_data.get('confidence', 0.8),
-                'source': 'LLM Extraction',
-                'context': text[:200]
-            })
-        
-        if valid_terms:
-            logger.info(f"Extracted {len(valid_terms)} new trigger terms via LLM")
-        
-        return valid_terms
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error in trigger term extraction: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"Error extracting trigger terms: {e}")
-        return []
        
 def _get_category_severity_display(category):
     """Map category to severity level for display"""
@@ -5059,7 +5114,7 @@ class LexiconsView(TemplateView):
         # Category-specific data
         context['selected_category'] = selected_category
         context['category_terms'] = category_terms
-        context['posts_with_terms'] = posts_with_terms[:50]  # Limit to 50 posts for performance
+        context['posts_with_terms'] = posts_with_terms[:10]  # Limit to 10 posts for performance
         
         return context
 
