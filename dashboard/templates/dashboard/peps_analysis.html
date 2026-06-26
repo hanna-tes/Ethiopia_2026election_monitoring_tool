@@ -45,6 +45,31 @@
         color: #93c5fd;
         text-decoration: underline;
     }
+    /* Sentiment bar styles */
+    .sentiment-bar {
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        display: flex;
+        background: rgba(15, 23, 42, 0.8);
+    }
+    .sentiment-negative { background: linear-gradient(90deg, #ef4444, #dc2626); }
+    .sentiment-neutral { background: linear-gradient(90deg, #6b7280, #4b5563); }
+    .sentiment-positive { background: linear-gradient(90deg, #10b981, #059669); }
+    .sentiment-mixed { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    
+    .sentiment-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 10px;
+        color: #94a3b8;
+    }
+    .sentiment-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
 </style>
 {% endblock %}
 
@@ -62,7 +87,7 @@
     </div>
     
     <div class="bg-blue-950/30 border border-blue-800/40 rounded-xl p-4 flex items-start gap-3">
-        <span class="text-xl shrink-0 mt-0.5"></span>
+        <span class="text-xl shrink-0 mt-0.5">📊</span>
         <div>
             <h3 class="text-sm font-semibold text-blue-300">Enhanced with Regional Council (RC) Members</h3>
             <p class="text-xs text-slate-400 mt-1 leading-relaxed">
@@ -100,6 +125,53 @@
             </div>
 
             <div class="p-6 space-y-5">
+                <!-- NEW: Sentiment Breakdown Visualization -->
+                {% if pep.sentiment_counts %}
+                <div>
+                    <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2.5">📊 Sentiment Breakdown</h4>
+                    
+                    <!-- Stacked Bar Chart -->
+                    <div class="sentiment-bar mb-2">
+                        {% if pep.sentiment_counts.negative > 0 %}
+                        <div class="sentiment-negative" style="width: {{ pep.sentiment_counts.negative|floatformat:0 }}%"></div>
+                        {% endif %}
+                        {% if pep.sentiment_counts.mixed > 0 %}
+                        <div class="sentiment-mixed" style="width: {{ pep.sentiment_counts.mixed|floatformat:0 }}%"></div>
+                        {% endif %}
+                        {% if pep.sentiment_counts.neutral > 0 %}
+                        <div class="sentiment-neutral" style="width: {{ pep.sentiment_counts.neutral|floatformat:0 }}%"></div>
+                        {% endif %}
+                        {% if pep.sentiment_counts.positive > 0 %}
+                        <div class="sentiment-positive" style="width: {{ pep.sentiment_counts.positive|floatformat:0 }}%"></div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Legend with counts -->
+                    <div class="flex flex-wrap gap-3">
+                        <div class="sentiment-legend-item">
+                            <div class="sentiment-dot" style="background: #ef4444;"></div>
+                            <span>Critical: {{ pep.sentiment_counts.negative }}</span>
+                        </div>
+                        <div class="sentiment-legend-item">
+                            <div class="sentiment-dot" style="background: #6b7280;"></div>
+                            <span>Neutral: {{ pep.sentiment_counts.neutral }}</span>
+                        </div>
+                        {% if pep.sentiment_counts.mixed > 0 %}
+                        <div class="sentiment-legend-item">
+                            <div class="sentiment-dot" style="background: #f59e0b;"></div>
+                            <span>Mixed: {{ pep.sentiment_counts.mixed }}</span>
+                        </div>
+                        {% endif %}
+                        {% if pep.sentiment_counts.positive > 0 %}
+                        <div class="sentiment-legend-item">
+                            <div class="sentiment-dot" style="background: #10b981;"></div>
+                            <span>Positive: {{ pep.sentiment_counts.positive }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
                 <div>
                     <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2.5">📱 Platform Distribution</h4>
                     <div class="flex flex-wrap gap-2">
@@ -160,7 +232,7 @@
 
                 {% if pep.top_hashtags %}
                 <div>
-                    <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">#️ Weaponized Hashtags</h4>
+                    <h4 class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">#️⃣ Weaponized Hashtags</h4>
                     <div class="flex flex-wrap gap-1.5">
                         {% for hashtag in pep.top_hashtags %}
                         <span class="hashtag-tag-dark text-slate-300 px-2.5 py-1 rounded-md text-xs font-medium cursor-pointer">
