@@ -2373,9 +2373,9 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     instead of exact text matches.
     """
     import networkx as nx
-    
     G = nx.Graph()
     account_roles = {}
+    account_data = {}  # Store additional data for each account
     
     # Build graph from coordination groups
     for group in coordination_groups:
@@ -2388,11 +2388,18 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
         
         # Track which accounts posted what and when
         account_timestamps = {}
+        account_platforms = {}
+        account_post_counts = {}
+        
         for post in sample_posts:
             username = post.get('username', '')
             timestamp = post.get('timestamp', '')
+            platform = post.get('platform', 'Unknown')
+            
             if username and timestamp and timestamp != 'N/A':
                 account_timestamps[username] = timestamp
+                account_platforms[username] = platform
+                account_post_counts[username] = account_post_counts.get(username, 0) + 1
         
         # Determine source (earliest poster) and amplifiers
         if account_timestamps:
@@ -2403,6 +2410,15 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
                 for acc, _ in sorted_accounts[1:]:
                     if acc not in account_roles:
                         account_roles[acc] = 'amplifier'
+        
+        # Store account data
+        for acc in accounts:
+            if acc not in account_data:
+                account_data[acc] = {
+                    'platform': account_platforms.get(acc, 'Unknown'),
+                    'post_count': account_post_counts.get(acc, 0),
+                    'is_bot': True  # bot detection logic
+                }
         
         # Connect all accounts in this group (clique)
         for i in range(len(accounts)):
@@ -2434,41 +2450,47 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     for node in G_top.nodes():
         degree = G_top.degree(node)
         node_type = account_roles.get(node, 'source')
+        node_data = account_data.get(node, {'platform': 'Unknown', 'post_count': 0, 'is_bot': False})
+        
         node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'
         
         nodes.append({
-            'id': node, 
-            'label': node, 
+            'id': node,
+            'label': node,
             'degree': degree,
-            'x': float(pos[node][0]), 
+            'x': float(pos[node][0]),
             'y': float(pos[node][1]),
             'size': max(15, degree * 3),
-            'color': node_color, 
-            'type': node_type
+            'color': node_color,
+            'type': node_type,
+            'platform': node_data.get('platform', 'Unknown'),
+            'post_count': node_data.get('post_count', 0),
+            'is_bot': node_data.get('is_bot', False)
         })
     
     edges = []
     for u, v, data in G_top.edges(data=True):
         if u in pos and v in pos:
             edges.append({
-                'source': u, 
+                'source': u,
                 'target': v,
                 'weight': data.get('weight', 1),
-                'source_x': float(pos[u][0]), 
+                'source_x': float(pos[u][0]),
                 'source_y': float(pos[u][1]),
-                'target_x': float(pos[v][0]), 
+                'target_x': float(pos[v][0]),
                 'target_y': float(pos[v][1]),
             })
     
     return {
-        'nodes': nodes, 
+        'nodes': nodes,
         'edges': edges,
         'stats': {
-            'nodes': len(nodes), 
+            'nodes': len(nodes),
             'edges': len(edges),
             'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
         }
-    }   
+    }
+   
 def calculate_ethiopia_relevance(text):
     if not text:
         return 0
@@ -5375,11 +5397,17 @@ class NetworksView(TemplateView):
             top_n = int(request.GET.get('top_n') or 30)
         except (ValueError, TypeError):
             min_connections, top_n = 2, 30
-            
-        layout_style = request.GET.get('layout', 'spring') or 'spring'
         
-        # Respect view_all parameter
+        layout_style = request.GET.get('layout', 'spring') or 'spring'
         view_all = request.GET.get('view_all') == 'true'
+        
+        # Get the selected network group ID (if any)
+        selected_group_id = request.GET.get('group_id')
+        if selected_group_id:
+            try:
+                selected_group_id = int(selected_group_id)
+            except (ValueError, TypeError):
+                selected_group_id = None
         
         # Get posts using the centralized helper
         try:
@@ -5406,6 +5434,12 @@ class NetworksView(TemplateView):
         except Exception:
             disarm_ttp_reference = []
         
+        # Get posts for the selected network group (if any)
+        selected_group_posts = []
+        if selected_group_id and 0 <= selected_group_id < len(coordination_groups):
+            group = coordination_groups[selected_group_id]
+            selected_group_posts = group.get('sample_posts_with_urls', [])
+        
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
@@ -5423,6 +5457,8 @@ class NetworksView(TemplateView):
             'view_all': view_all,
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
+            'selected_group_id': selected_group_id,
+            'selected_group_posts': selected_group_posts,
         }
         
         context.update(context_data)
