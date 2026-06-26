@@ -1,301 +1,289 @@
-{% extends 'dashboard/base.html' %}
-{% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
+{% extends "base.html" %}
+{% load static %}
 
-{% block extra_head %}
-<!-- vis.js for interactive network graph -->
-<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-<style>
-    #network-graph {
-        width: 100%;
-        height: 600px;
-        background: #0f172a;
-        border-radius: 0.75rem;
-        border: 1px solid #334155;
-    }
-    .group-card {
-        transition: all 0.2s ease;
-        cursor: pointer;
-    }
-    .group-card:hover {
-        background: #1e293b;
-        transform: translateX(4px);
-    }
-    .group-card.active {
-        background: #1e3a8a;
-        border-left: 4px solid #3b82f6;
-    }
-</style>
-{% endblock %}
+{% block title %}Networks & Coordination - Ethiopia Election Monitor{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
-    <!-- Header -->
-    <div class="flex justify-between items-center">
-        <div>
-            <h1 class="text-2xl font-bold text-white">🕸️ Networks & TTPs</h1>
-            <p class="text-sm text-slate-400 mt-1">Coordination detection and TTPs analysis</p>
-        </div>
-        <div class="flex gap-3">
-            <span class="px-4 py-2 bg-blue-900/50 text-blue-200 rounded-lg text-sm font-medium border border-blue-700">
-                👥 {{ total_coordinated_accounts }} accounts
-            </span>
-            <span class="px-4 py-2 bg-purple-900/50 text-purple-200 rounded-lg text-sm font-medium border border-purple-700">
-                📝 {{ total_posts }} posts
-            </span>
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="fas fa-project-diagram"></i> Coordination Networks & TTPs</h2>
+            <p class="text-muted">Analyze coordinated inauthentic behavior and tactics, techniques, and procedures</p>
         </div>
     </div>
 
-    <!-- Main Grid: Graph + Group List -->
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- Graph Area (3/4 width) -->
-        <div class="lg:col-span-3 space-y-4">
-            <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-bold text-white">Coordination Network Graph</h3>
-                    <button onclick="resetGraph()" class="px-3 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-600 transition">
-                        🔄 Show All Groups
-                    </button>
+    <!-- Date Range Filter -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <form method="get" class="form-inline">
+                <div class="form-group mr-3">
+                    <label for="start_date" class="mr-2">Start Date:</label>
+                    <input type="date" id="start_date" name="start_date" class="form-control" 
+                           value="{{ start_date }}">
                 </div>
-                <div id="network-graph"></div>
-                <div class="mt-3 flex gap-4 text-xs text-slate-400">
-                    <span class="flex items-center gap-1"><div class="w-3 h-3 rounded-full bg-blue-500"></div> Source Account</span>
-                    <span class="flex items-center gap-1"><div class="w-3 h-3 rounded-full bg-orange-500"></div> Amplifier Account</span>
+                <div class="form-group mr-3">
+                    <label for="end_date" class="mr-2">End Date:</label>
+                    <input type="date" id="end_date" name="end_date" class="form-control" 
+                           value="{{ end_date }}">
                 </div>
-            </div>
+                <div class="form-group mr-3">
+                    <label for="min_connections" class="mr-2">Min Connections:</label>
+                    <input type="number" id="min_connections" name="min_connections" 
+                           class="form-control" value="{{ min_connections }}" min="2">
+                </div>
+                <div class="form-group mr-3">
+                    <label for="top_n" class="mr-2">Top Nodes:</label>
+                    <input type="number" id="top_n" name="top_n" 
+                           class="form-control" value="{{ top_n }}" min="10" max="100">
+                </div>
+                <div class="form-group mr-3">
+                    <label for="layout" class="mr-2">Layout:</label>
+                    <select id="layout" name="layout" class="form-control">
+                        <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
+                        <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
+                        <option value="kamada_kawai" {% if layout_style == 'kamada_kawai' %}selected{% endif %}>Kamada-Kawai</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Apply Filters</button>
+            </form>
+        </div>
+    </div>
 
-            <!-- Posts Container (Hidden initially, shown when a group is clicked) -->
-            <div id="group-posts-container" class="bg-slate-800 rounded-xl p-4 border border-slate-700" style="display: none;">
-                <h3 class="text-lg font-bold text-white mb-4">
-                    📝 Posts for Group <span id="selected-group-id" class="text-blue-400"></span>
-                </h3>
-                <div id="group-posts-list" class="space-y-3 max-h-96 overflow-y-auto pr-2">
-                    <!-- Posts will be injected here by JavaScript -->
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Coordinated Groups</h5>
+                    <h2>{{ total_coordinated_groups }}</h2>
                 </div>
             </div>
         </div>
-
-        <!-- Group List (1/4 width) -->
-        <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col" style="max-height: 700px;">
-            <h3 class="text-lg font-bold text-white mb-3">
-                🔗 Detected Groups ({{ coordination_groups|length }})
-            </h3>
-            <p class="text-xs text-slate-400 mb-3">Click a group to filter the graph and view posts.</p>
-            
-            <div class="overflow-y-auto flex-1 space-y-2 pr-2">
-                {% for group in coordination_groups %}
-                <div class="group-card bg-slate-900/50 rounded-lg p-3 border border-slate-700" 
-                     onclick="selectGroup({{ group.id }})" 
-                     id="group-card-{{ group.id }}">
-                    <div class="flex justify-between items-start mb-1">
-                        <span class="font-bold text-blue-400 text-sm">Group #{{ group.id }}</span>
-                        <span class="text-[10px] px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full">
-                            {{ group.account_count }} accounts
-                        </span>
-                    </div>
-                    <div class="text-xs text-slate-400 mb-2">{{ group.post_count }} posts • {{ group.coordination_type }}</div>
-                    <div class="text-[10px] text-slate-500 truncate">
-                        {{ group.accounts|slice:":3"|join:", " }}{% if group.accounts|length > 3 %}...{% endif %}
-                    </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Coordinated Accounts</h5>
+                    <h2>{{ total_coordinated_accounts }}</h2>
                 </div>
-                {% empty %}
-                <div class="text-center text-slate-500 text-sm py-8">
-                    No coordination groups detected.
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Total Posts Analyzed</h5>
+                    <h2>{{ total_posts }}</h2>
                 </div>
-                {% endfor %}
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Max Group Size</h5>
+                    <h2>{{ max_group_size }}</h2>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- TTPs Section -->
-    {% if ttps %}
-    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
-        <h3 class="text-lg font-bold text-white mb-4">⚠️ Tactics, Techniques & Procedures (TTPs)</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {% for ttp in ttps %}
-            <div class="bg-slate-900/50 rounded-lg p-4 border-l-4 
-                {% if ttp.severity == 'Critical' %}border-red-500
-                {% elif ttp.severity == 'High' %}border-orange-500
-                {% elif ttp.severity == 'Medium' %}border-yellow-500
-                {% else %}border-blue-500{% endif %}">
-                <div class="flex justify-between items-start mb-2">
-                    <h4 class="font-bold text-white text-sm">{{ ttp.name }}</h4>
-                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold
-                        {% if ttp.severity == 'Critical' %}bg-red-900/50 text-red-300
-                        {% elif ttp.severity == 'High' %}bg-orange-900/50 text-orange-300
-                        {% elif ttp.severity == 'Medium' %}bg-yellow-900/50 text-yellow-300
-                        {% else %}bg-blue-900/50 text-blue-300{% endif %}">
-                        {{ ttp.severity }}
-                    </span>
+    <!-- Network Graph -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-network-wired"></i> Coordination Network Graph</h5>
                 </div>
-                <p class="text-xs text-slate-400 mb-2">{{ ttp.description }}</p>
-                <div class="text-[10px] text-slate-500 bg-slate-800 p-2 rounded">
-                    <strong>Evidence:</strong> {{ ttp.evidence }}
+                <div class="card-body">
+                    <div id="network-graph" style="height: 600px;"></div>
                 </div>
             </div>
-            {% endfor %}
         </div>
     </div>
-    {% endif %}
+
+    <!-- TTPs Analysis -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-shield-alt"></i> Detected TTPs (Tactics, Techniques, and Procedures)</h5>
+                </div>
+                <div class="card-body">
+                    {% if ttps %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>TTP Name</th>
+                                        <th>Severity</th>
+                                        <th>Description</th>
+                                        <th>Evidence</th>
+                                        <th>Source</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for ttp in ttps %}
+                                    <tr>
+                                        <td>{{ ttp.name }}</td>
+                                        <td>
+                                            <span class="badge badge-{% if ttp.severity == 'Critical' %}danger{% elif ttp.severity == 'High' %}warning{% elif ttp.severity == 'Medium' %}info{% else %}secondary{% endif %}">
+                                                {{ ttp.severity }}
+                                            </span>
+                                        </td>
+                                        <td>{{ ttp.description }}</td>
+                                        <td>{{ ttp.evidence }}</td>
+                                        <td>{{ ttp.source }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No TTPs detected in the current dataset.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Coordination Groups List -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-users"></i> Top Coordination Groups</h5>
+                </div>
+                <div class="card-body">
+                    {% if coordination_groups %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Group ID</th>
+                                        <th>Accounts</th>
+                                        <th>Post Count</th>
+                                        <th>Bot %</th>
+                                        <th>Coordination Type</th>
+                                        <th>Platforms</th>
+                                        <th>Sample Text</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for group in coordination_groups %}
+                                    <tr>
+                                        <td>{{ group.id }}</td>
+                                        <td>
+                                            <small>{{ group.account_count }} accounts</small>
+                                            <br>
+                                            {% for account in group.accounts|slice:":3" %}
+                                                <span class="badge badge-secondary">{{ account|truncatechars:15 }}</span>
+                                            {% endfor %}
+                                            {% if group.accounts|length > 3 %}
+                                                <span class="badge badge-info">+{{ group.accounts|length|add:"-3" }}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ group.post_count }}</td>
+                                        <td>
+                                            <span class="badge badge-{% if group.bot_percentage > 50 %}danger{% elif group.bot_percentage > 25 %}warning{% else %}success{% endif %}">
+                                                {{ group.bot_percentage }}%
+                                            </span>
+                                        </td>
+                                        <td>{{ group.coordination_type }}</td>
+                                        <td>
+                                            {% for platform in group.platforms %}
+                                                <span class="badge badge-primary">{{ platform }}</span>
+                                            {% endfor %}
+                                        </td>
+                                        <td><small>{{ group.text_sample|truncatechars:100 }}</small></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No coordination groups detected with the current filters.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
+<script src="https://d3js.org/d3.v5.min.js"></script>
 <script>
-    // Load data from Django context
-    const graphData = {{ network_graph_json|safe|default:"{}" }};
-    const coordinationGroups = {{ coordination_groups_json|safe|default:"[]" }};
+// Network Graph Visualization
+const graphData = {{ network_graph_json|safe }};
 
-    let network;
-    let allNodes;
-    let allEdges;
-
-    function initNetwork() {
-        const container = document.getElementById('network-graph');
-        if (!container || !graphData.nodes || graphData.nodes.length === 0) {
-            if(container) container.innerHTML = '<div class="flex items-center justify-center h-full text-slate-400">No coordination networks detected.</div>';
-            return;
-        }
-
-        // Map nodes for vis.js
-        const nodes = new vis.DataSet(graphData.nodes.map(n => ({
-            id: n.id,
-            label: n.label,
-            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}`,
-            color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size || 15,
-            font: { color: '#ffffff', size: 12 }
-        })));
+if (graphData.nodes && graphData.nodes.length > 0) {
+    const width = document.getElementById('network-graph').offsetWidth;
+    const height = 600;
+    
+    const svg = d3.select("#network-graph")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+    
+    // Create force simulation
+    const simulation = d3.forceSimulation(graphData.nodes)
+        .force("link", d3.forceLink(graphData.edges).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-300))
+        .force("center", d3.forceCenter(width / 2, height / 2));
+    
+    // Draw links
+    const link = svg.append("g")
+        .selectAll("line")
+        .data(graphData.edges)
+        .enter().append("line")
+        .attr("stroke", "#999")
+        .attr("stroke-opacity", 0.6)
+        .attr("stroke-width", d => Math.sqrt(d.weight));
+    
+    // Draw nodes
+    const node = svg.append("g")
+        .selectAll("circle")
+        .data(graphData.nodes)
+        .enter().append("circle")
+        .attr("r", d => d.size || 10)
+        .attr("fill", d => d.color || "#3b82f6")
+        .call(d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended));
+    
+    // Add tooltips
+    node.append("title")
+        .text(d => `${d.label}\nDegree: ${d.degree}\nType: ${d.type}`);
+    
+    // Update positions on tick
+    simulation.on("tick", () => {
+        link
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
         
-        // Map edges for vis.js
-        const edges = new vis.DataSet(graphData.edges.map(e => ({
-            from: e.source,
-            to: e.target,
-            title: `Weight: ${e.weight || 1}`,
-            color: { color: '#475569', highlight: '#3b82f6' }
-        })));
-
-        const data = { nodes: nodes, edges: edges };
-        const options = {
-            physics: {
-                stabilization: true,
-                barnesHut: { 
-                    gravitationalConstant: -2000,
-                    springLength: 150
-                }
-            },
-            nodes: {
-                borderWidth: 2,
-                shadow: true
-            },
-            edges: {
-                smooth: false,
-                shadow: true,
-                width: 1
-            },
-            interaction: {
-                hover: true,
-                tooltipDelay: 200
-            }
-        };
-
-        network = new vis.Network(container, data, options);
-        allNodes = nodes;
-        allEdges = edges;
+        node
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y);
+    });
+    
+    // Drag functions
+    function dragstarted(d) {
+        if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
     }
-
-    function selectGroup(groupId) {
-        const group = coordinationGroups.find(g => g.id == groupId);
-        if (!group) return;
-
-        // Highlight the clicked card
-        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
-        const card = document.getElementById(`group-card-${groupId}`);
-        if (card) card.classList.add('active');
-
-        // Filter nodes and edges to only this group
-        const groupAccounts = new Set(group.accounts);
-        
-        const filteredNodes = graphData.nodes.filter(n => groupAccounts.has(n.id));
-        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-        const filteredEdges = graphData.edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
-
-        // Update the network graph
-        allNodes.clear();
-        allNodes.add(filteredNodes.map(n => ({
-            id: n.id,
-            label: n.label,
-            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}`,
-            color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size || 15,
-            font: { color: '#ffffff', size: 12 }
-        })));
-        
-        allEdges.clear();
-        allEdges.add(filteredEdges.map(e => ({
-            from: e.source,
-            to: e.target,
-            title: `Weight: ${e.weight || 1}`,
-            color: { color: '#475569', highlight: '#3b82f6' }
-        })));
-
-        // Show the posts for this group
-        const postsContainer = document.getElementById('group-posts-container');
-        const postsList = document.getElementById('group-posts-list');
-        document.getElementById('selected-group-id').innerText = groupId;
-        
-        postsList.innerHTML = '';
-        if (group.sample_posts_with_urls && group.sample_posts_with_urls.length > 0) {
-            group.sample_posts_with_urls.forEach(post => {
-                const postEl = document.createElement('div');
-                postEl.className = 'bg-slate-900 p-4 rounded-lg border border-slate-700';
-                postEl.innerHTML = `
-                    <div class="flex justify-between text-xs text-slate-400 mb-2">
-                        <span class="font-bold text-blue-400">${post.username || 'Unknown'}</span>
-                        <span>${post.platform || ''} • ${post.timestamp || ''}</span>
-                    </div>
-                    <p class="text-sm text-slate-300 mb-2">${post.text_preview || ''}</p>
-                    ${post.url ? `<a href="${post.url}" target="_blank" class="text-xs text-blue-400 hover:underline">🔗 View Original Post</a>` : ''}
-                `;
-                postsList.appendChild(postEl);
-            });
-            postsContainer.style.display = 'block';
-        } else {
-            postsList.innerHTML = '<p class="text-slate-500 text-sm">No sample posts available for this group.</p>';
-            postsContainer.style.display = 'block';
-        }
-        
-        // Smooth scroll to the posts container
-        postsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+    function dragged(d) {
+        d.fx = d3.event.x;
+        d.fy = d3.event.y;
     }
-
-    function resetGraph() {
-        if (!allNodes || !allEdges) return;
-        
-        // Restore all nodes and edges
-        allNodes.clear();
-        allNodes.add(graphData.nodes.map(n => ({
-            id: n.id,
-            label: n.label,
-            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}`,
-            color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size || 15,
-            font: { color: '#ffffff', size: 12 }
-        })));
-        
-        allEdges.clear();
-        allEdges.add(graphData.edges.map(e => ({
-            from: e.source,
-            to: e.target,
-            title: `Weight: ${e.weight || 1}`,
-            color: { color: '#475569', highlight: '#3b82f6' }
-        })));
-
-        // Hide posts container
-        document.getElementById('group-posts-container').style.display = 'none';
-        
-        // Remove active class from all cards
-        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
+    
+    function dragended(d) {
+        if (!d3.event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
     }
-
-    // Initialize the graph when the page loads
-    document.addEventListener('DOMContentLoaded', initNetwork);
+} else {
+    d3.select("#network-graph").html("<p class='text-muted text-center'>No network data available with current filters.</p>");
+}
 </script>
 {% endblock %}
