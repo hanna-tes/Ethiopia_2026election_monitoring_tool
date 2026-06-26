@@ -5526,18 +5526,11 @@ class NetworksView(TemplateView):
         try:
             min_connections = int(request.GET.get('min_connections') or 2)
             top_n = int(request.GET.get('top_n') or 30)
-            #  Dynamic limit. Defaults to 50 but can be changed to show more than this
-            
-            display_limit = int(request.GET.get('limit', 50))
         except (ValueError, TypeError):
-            min_connections, top_n, display_limit = 2, 30, 50
+            min_connections, top_n = 2, 30
             
         layout_style = request.GET.get('layout', 'spring') or 'spring'
         
-        # Respect view_all parameter
-        view_all = request.GET.get('view_all') == 'true'
-        
-        # Get posts using the centralized helper
         try:
             posts_queryset, start_date, end_date = get_election_posts_queryset(request)
             posts = posts_queryset.exclude(
@@ -5548,17 +5541,8 @@ class NetworksView(TemplateView):
             posts = ProcessedPost.objects.none()
             start_date = end_date = timezone.now()
         
-        # Use display_limit for max_groups so it actually find up to 50 (or more) groups
-        coordination_groups = get_coordination_groups(
-            posts, 
-            min_accounts=min_connections, 
-            max_groups=display_limit 
-        )
-        
-        # Build graph FROM the coordination groups (not exact text matches)
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
         graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
-        
-        # Analyze TTPs
         ttps = analyze_ttps(coordination_groups, posts)
         
         try:
@@ -5566,22 +5550,30 @@ class NetworksView(TemplateView):
         except Exception:
             disarm_ttp_reference = []
         
+        # Convert coordination groups to JSON for JavaScript
+        groups_json = []
+        for group in coordination_groups[:50]:
+            groups_json.append({
+                'id': group['id'],
+                'accounts': group['accounts'],
+                'account_count': group['account_count'],
+                'post_count': group['post_count'],
+                'coordination_type': group['coordination_type'],
+                'sample_posts': group.get('sample_posts_with_urls', [])[:5]
+            })
+        
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            # UPDATED: Pass the groups directly (up to your display_limit)
-            'coordination_groups': coordination_groups, 
+            'coordination_groups_json': json.dumps(groups_json, default=str),
+            'coordination_groups': coordination_groups[:15],
             'total_coordinated_groups': len(coordination_groups),
             'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
             'total_posts': posts.count(),
-            'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
             'ttps': ttps,
-            'disarm_ttp_reference': disarm_ttp_reference,
-            'disarm_dataset_size': 80000,
-            'view_all': view_all,
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         }
