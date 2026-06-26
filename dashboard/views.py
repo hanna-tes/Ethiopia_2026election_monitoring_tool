@@ -5544,22 +5544,28 @@ class NetworksView(TemplateView):
             posts = ProcessedPost.objects.none()
             start_date = end_date = timezone.now()
         
-        # Get coordination groups FIRST (using TF-IDF similarity)
-        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
+        # Get ALL coordination groups (don't filter yet)
+        all_coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
         
-        # Filter groups if one is selected
+        # For the graph: filter if a group is selected
+        graph_coordination_groups = all_coordination_groups
+        selected_group_data = None
+        
         if selected_group:
             try:
                 selected_group_id = int(selected_group)
-                coordination_groups = [g for g in coordination_groups if g.get('id') == selected_group_id]
+                # Filter for graph generation only
+                graph_coordination_groups = [g for g in all_coordination_groups if g.get('id') == selected_group_id]
+                # Get the selected group data for displaying posts
+                selected_group_data = next((g for g in all_coordination_groups if g.get('id') == selected_group_id), None)
             except (ValueError, TypeError):
                 pass
         
-        # Build graph FROM the coordination groups (not exact text matches)
-        graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
+        # Build graph FROM the (possibly filtered) coordination groups
+        graph_data = generate_network_graph_from_groups(graph_coordination_groups, top_n=top_n, layout=layout_style)
         
-        # Analyze TTPs
-        ttps = analyze_ttps(coordination_groups, posts)
+        # Analyze TTPs from ALL groups (not just selected)
+        ttps = analyze_ttps(all_coordination_groups, posts)
         
         try:
             disarm_ttp_reference = get_disarm_ttp_reference()
@@ -5569,11 +5575,11 @@ class NetworksView(TemplateView):
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups[:10],  # Show top 10 in the list
-            'total_coordinated_groups': len(coordination_groups),
-            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
+            'coordination_groups': all_coordination_groups[:10],  # Show top 10 in sidebar (ALL groups)
+            'total_coordinated_groups': len(all_coordination_groups),
+            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in all_coordination_groups),
             'total_posts': posts.count(),
-            'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
+            'max_group_size': max([g.get('account_count', 0) for g in all_coordination_groups]) if all_coordination_groups else 0,
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
@@ -5581,6 +5587,7 @@ class NetworksView(TemplateView):
             'disarm_ttp_reference': disarm_ttp_reference,
             'disarm_dataset_size': 80000,
             'selected_group': selected_group,
+            'selected_group_data': selected_group_data,  # Pass selected group data for posts display
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         }
