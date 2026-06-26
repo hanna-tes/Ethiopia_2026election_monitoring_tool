@@ -2420,21 +2420,13 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     top_node_names = [n for n, _ in top_nodes]
     G_top = G.subgraph(top_node_names).copy()
     
-    # Layout computation with BETTER parameters
+    # Layout computation
     if layout == 'circular':
         pos = nx.circular_layout(G_top)
     elif layout == 'kamada_kawai':
         pos = nx.kamada_kawai_layout(G_top)
     else:
-        # IMPROVED spring layout parameters
-        pos = nx.spring_layout(
-            G_top, 
-            k=1.5,  # Increased from 0.6 for better spacing
-            iterations=100,  # Increased from 50 for better convergence
-            seed=42,
-            center=(0, 0),  # Center the graph
-            scale=2.0  # Scale to fit better
-        )
+        pos = nx.spring_layout(G_top, k=0.6, iterations=50, seed=42)
     
     # Build JSON for frontend
     nodes = []
@@ -2442,17 +2434,12 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
         degree = G_top.degree(node)
         node_type = account_roles.get(node, 'source')
         node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'
-        
-        # Ensure coordinates are valid
-        x_pos = float(pos[node][0]) if node in pos else 0.0
-        y_pos = float(pos[node][1]) if node in pos else 0.0
-        
         nodes.append({
             'id': node,
             'label': node,
             'degree': degree,
-            'x': x_pos,
-            'y': y_pos,
+            'x': float(pos[node][0]),
+            'y': float(pos[node][1]),
             'size': max(15, degree * 3),
             'color': node_color,
             'type': node_type
@@ -5518,10 +5505,13 @@ class NetworksView(TemplateView):
             top_n = int(request.GET.get('top_n') or 30)
         except (ValueError, TypeError):
             min_connections, top_n = 2, 30
-            
+        
         layout_style = request.GET.get('layout', 'spring') or 'spring'
+        
+        # Respect view_all parameter
         view_all = request.GET.get('view_all') == 'true'
         
+        # Get posts using the centralized helper
         try:
             posts_queryset, start_date, end_date = get_election_posts_queryset(request)
             posts = posts_queryset.exclude(
@@ -5546,25 +5536,10 @@ class NetworksView(TemplateView):
         except Exception:
             disarm_ttp_reference = []
         
-        # Prepare coordination groups for JavaScript (include sample posts)
-        groups_for_js = []
-        for g in coordination_groups:
-            groups_for_js.append({
-                'id': g.get('id'),
-                'accounts': g.get('accounts', []),
-                'account_count': g.get('account_count', 0),
-                'post_count': g.get('post_count', 0),
-                'coordination_type': g.get('coordination_type', ''),
-                'sub_narrative': g.get('sub_narrative', ''),
-                'sample_posts_with_urls': g.get('sample_posts_with_urls', []),
-                'platforms': g.get('platforms', []),
-            })
-        
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups,  # show all 50
-            'coordination_groups_json': json.dumps(groups_for_js, default=str), # JSON for JS
+            'coordination_groups': coordination_groups[:15],  # Show top 15 in the list
             'total_coordinated_groups': len(coordination_groups),
             'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
             'total_posts': posts.count(),
