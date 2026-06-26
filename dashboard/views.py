@@ -4534,18 +4534,63 @@ def detect_tfgbv_in_text(text, tfgbv_terms):
 
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
-    Enhanced PEP analysis with Groq sentiment analysis 
-    and lexicon-based TFGBV detection (no false positives).
+    Enhanced PEP analysis focused on hateful/critical content tailored to the Ethiopian context.
+    Tracks sentiment distribution and categorizes negative or hostile rhetoric dynamically.
     """
     from collections import defaultdict, Counter
     import re
+    import logging
+
+    logger = logging.getLogger(__name__)
     
     pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset if pep.name}
     
-    # Load TFGBV terms ONCE before the loop (performance optimization)
-    tfgbv_terms = get_tfgbv_lexicon_terms()
-    logger.info(f"Loaded {len(tfgbv_terms)} TFGBV lexicon terms for PEP analysis")
+    # Load TFGBV terms ONCE before the loop
+    try:
+        tfgbv_terms = get_tfgbv_lexicon_terms()
+        logger.info(f"Loaded {len(tfgbv_terms)} TFGBV lexicon terms for PEP analysis")
+    except NameError:
+        tfgbv_terms = []
+        logger.warning("get_tfgbv_lexicon_terms() not found; using fallback empty list.")
     
+    # --- ETHIOPIAN CONTEXT CRITICAL KEYWORDS (Transliterated & English) ---
+    critical_keywords = [
+        # Conflict & Violence
+        'kill', 'attack', 'hate', 'enemy', 'genocide', 'massacre', 'kill them', 'death to', 
+        'destroy', 'eliminate', 'remove', 'terrorist', 'extremist', 'war', 'fano', 'tpdf', 'ola', 
+        'ህወሃት', 'ፋኖ', 'ኦነግ', 'ጦርነት', 'ግድያ', 'ፈጅ',
+        
+        # Political/Historical Slurs & Ethno-nationalist Labels
+        'banda', 'woyane', 'neftegna', 'galla', 'junta', 'gim 7', 'pp', 'prosperity', 'ብልጽግና', 
+        'ነፍጠኛ', 'ወያኔ', 'ጁንታ', 'ባንዳ', 'ሰፈር', 'ክልል', 'አማራ', 'ኦሮሞ', 'ትግራይ', 'ጎሳ',
+        
+        # Governance & Corruption Accusations
+        'corrupt', 'thief', 'traitor', 'criminal', 'dictator', 'tyrant', 'oppressor', 'liar', 
+        'betrayal', 'conspiracy', 'plot', 'scheme', 'failed state', 'famine', 'hunger', 'ሌባ', 
+        'ከሃዲ', 'ውሸታም', 'አምባገነን', 'ሙስና',
+        
+        # Electoral & Institutional Discrediting
+        'rigged', 'fraud', 'stolen', 'fake', 'nebe', 'electoral', 'ህገ-ወጥ', 'ማጭበርበር',
+        
+        # Failure & Insults
+        'incompetent', 'failed', 'useless', 'worthless', 'disgrace', 'shame', 'arrest', 
+        'jail', 'prison', 'prosecute', 'punish', 'resist', 'overthrow', 'topple', 'revolt', 'rebellion',
+        'አላዋቂ', 'ውድቀት', 'ውርደት', 'ታሰረ', 'አውርድ'
+    ]
+    
+    # --- DYNAMIC CRITICISM REGEX PATTERNS ---
+    # Captures hostile syntax and structural cues (e.g., "down with X", cursing, demanding resignation)
+    # even if specific terms are absent.
+    hostile_patterns = [
+        r'(down with|ውድቀት ለ|ይውረድ)\b',
+        r'(blood on hands|ደምናችሁ|ደም ያፈሰሰ)',
+        r'(puppet of|የ\w+ ተላላኪ|መሳሪያ)',
+        r'(destroying the country|አገር አፈራሽ|ሀገር አጥፊ)',
+        r'(step down|ስልጣን ልቀቅ|ልቀቁ)',
+        r'\b(flee|fled|amora|አሞራ)\b' # Local contextual framing
+    ]
+    compiled_patterns = [re.compile(pat, re.IGNORECASE) for pat in hostile_patterns]
+
     pep_mentions = defaultdict(lambda: {
         'count': 0,
         'platforms': Counter(),
@@ -4553,17 +4598,21 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'hashtags': Counter(),
         'bot_probability': 0,
         'is_gendered_target': False,
-        'tfgbv_matches': [],        # All TFGBV terms found across posts
-        'tfgbv_post_count': 0,      # Number of posts with TFGBV content
+        'tfgbv_matches': [],
+        'tfgbv_post_count': 0,
         'narrative_clusters': defaultdict(list),
         'sample_posts': [],
         'all_post_texts': [],
+        'sentiment_counts': {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0},
+        'critical_posts': [],  
+        'negative_post_texts': [],  
     })
     
     # Analyze posts
     for post in posts_queryset[:5000]:
         if not post.original_text:
             continue
+        
         text_lower = post.original_text.lower()
         
         for pep_name, pep_obj in pep_names.items():
@@ -4581,35 +4630,72 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                 hashtags = re.findall(r'#(\w+)', post.original_text)
                 data['hashtags'].update(hashtags)
                 
-                # 🔥 TFGBV DETECTION: Scan against verified lexicon terms ONLY
-                tfgbv_hits = detect_tfgbv_in_text(post.original_text, tfgbv_terms)
-                
+                # TFGBV detection (using loaded function dynamically)
+                tfgbv_hits = []
+                if tfgbv_terms:
+                    try:
+                        tfgbv_hits = detect_tfgbv_in_text(post.original_text, tfgbv_terms)
+                    except NameError:
+                        pass
+                        
                 if tfgbv_hits:
                     data['is_gendered_target'] = True
                     data['tfgbv_post_count'] += 1
-                    
-                    # Store the matched terms (avoid duplicates)
                     for hit in tfgbv_hits:
                         if not any(m['term'] == hit['term'] for m in data['tfgbv_matches']):
                             data['tfgbv_matches'].append(hit)
                 
-                # Narrative clustering
-                if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe']):
+                # Regional Narrative clustering
+                if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe', 'ማጭበርበር']):
                     data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
-                if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray']):
-                    data['narrative_clusters']['Ethnic Dynamics'].append(post.original_text[:100])
+                if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray', 'fano', 'ola', 'ነፍጠኛ', 'ጁንታ', 'ወያኔ']):
+                    data['narrative_clusters']['Ethnic Dynamics & Conflict'].append(post.original_text[:100])
                 
-                # Store sample post with URL
+                # --- FLEXIBLE HATE/CRITICISM DETECTOR ---
+                # Check 1: Matches explicit updated Ethiopian keywords list
+                is_keyword_critical = any(kw in text_lower for kw in critical_keywords)
+                
+                # Check 2: Matches structural structural hate patterns (Regex dynamic fallback)
+                is_pattern_critical = any(pattern.search(post.original_text) for pattern in compiled_patterns)
+                
+                # Check 3: Check metadata tags or high-risk labels assigned automatically downstream
+                risk_level = getattr(post, 'risk_level', 'medium') or 'medium'
+                is_high_risk = risk_level in ['high', 'critical']
+                has_hate_terms = len(tfgbv_hits) > 0
+                
+                # Combine checks to catch all critical items
+                is_critical = is_keyword_critical or is_pattern_critical or has_hate_terms or is_high_risk
+                
+                # Store critical posts (prioritizing broad negative scope)
+                if is_critical:
+                    data['sentiment_counts']['negative'] += 1
+                    data['negative_post_texts'].append(post.original_text[:200])
+                    
+                    if len(data['critical_posts']) < 5:  # Keep top 5 critical posts
+                        data['critical_posts'].append({
+                            'text': post.original_text[:200],
+                            'platform': platform,
+                            'timestamp': post.timestamp_share,
+                            'risk_level': risk_level,
+                            'url': post.url if post.url and str(post.url).startswith('http') else None,
+                            'is_hate_speech': has_hate_terms or is_pattern_critical,
+                            'is_high_risk': is_high_risk,
+                        })
+                else:
+                    data['sentiment_counts']['neutral'] += 1
+                
+                # Store sample posts
                 if len(data['sample_posts']) < 3:
                     data['sample_posts'].append({
                         'text': post.original_text[:150],
                         'platform': platform,
                         'timestamp': post.timestamp_share,
-                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
+                        'risk_level': risk_level,
                         'url': post.url if post.url and str(post.url).startswith('http') else None,
+                        'is_critical': is_critical,
                     })
     
-    # Build final results with sentiment analysis
+    # Build final results
     results = []
     for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
         if data['count'] < 2:
@@ -4626,22 +4712,32 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         
         clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
         
-        # ANALYZE SENTIMENT USING GROQ
-        sentiment = analyze_pep_sentiment_groq(data['all_post_texts'], pep_name)
-        
-        # Calculate risk score based on sentiment
-        if sentiment == 'Negative':
-            risk_score = 8
-        elif sentiment == 'Mixed':
-            risk_score = 5
-        elif sentiment == 'Positive':
-            risk_score = 2
+        sentiment_total = sum(data['sentiment_counts'].values())
+        if sentiment_total > 0:
+            sentiment_percentages = {
+                'negative': round((data['sentiment_counts']['negative'] / sentiment_total) * 100, 1),
+                'neutral': round((data['sentiment_counts']['neutral'] / sentiment_total) * 100, 1),
+                'positive': round((data['sentiment_counts']['positive'] / sentiment_total) * 100, 1),
+                'mixed': round((data['sentiment_counts']['mixed'] / sentiment_total) * 100, 1),
+            }
         else:
-            risk_score = 3
+            sentiment_percentages = {'negative': 0, 'neutral': 100, 'positive': 0, 'mixed': 0}
         
-        # Increase risk if TFGBV terms were found
+        negative_ratio = sentiment_percentages['negative'] / 100 if sentiment_percentages['negative'] else 0
+        risk_score = min(10, int(negative_ratio * 10))
+        
         if data['tfgbv_post_count'] > 0:
             risk_score = min(10, risk_score + 2)
+        
+        if sentiment_percentages['negative'] > 50:
+            overall_sentiment = 'Negative'
+            sentiment_label = '🔴 High Criticism'
+        elif sentiment_percentages['negative'] > 30:
+            overall_sentiment = 'Mixed'
+            sentiment_label = '🟡 Mixed Sentiment'
+        else:
+            overall_sentiment = 'Neutral'
+            sentiment_label = '⚪ Mostly Neutral'
         
         results.append({
             'pep_name': pep_name,
@@ -4653,12 +4749,18 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'bot_score': 0,
             'bot_level': '🟢 Low (Likely Human)',
             'is_gendered_target': data['is_gendered_target'],
-            'tfgbv_matches': data['tfgbv_matches'],          # Matched TFGBV terms
-            'tfgbv_post_count': data['tfgbv_post_count'],    # Posts containing TFGBV
+            'tfgbv_matches': data['tfgbv_matches'],
+            'tfgbv_post_count': data['tfgbv_post_count'],
             'narrative_clusters': clusters,
             'sample_posts': data['sample_posts'],
+            'critical_posts': data['critical_posts'],
             'risk_score': risk_score,
-            'sentiment': sentiment,
+            'sentiment': overall_sentiment,
+            'sentiment_label': sentiment_label,
+            'sentiment_counts': data['sentiment_counts'],
+            'sentiment_percentages': sentiment_percentages,
+            'negative_post_count': data['sentiment_counts']['negative'],
+            'neutral_post_count': data['sentiment_counts']['neutral'],
         })
     
     return results
