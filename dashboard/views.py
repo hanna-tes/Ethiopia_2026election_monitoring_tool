@@ -5508,21 +5508,20 @@ class PEPsView(TemplateView):
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         request = self.request
-
+        
         try:
             min_connections = int(request.GET.get('min_connections') or 2)
             top_n = int(request.GET.get('top_n') or 30)
         except (ValueError, TypeError):
             min_connections, top_n = 2, 30
-
+            
         layout_style = request.GET.get('layout', 'spring') or 'spring'
         view_all = request.GET.get('view_all') == 'true'
-
-        # Get posts using the centralized helper
+        
         try:
             posts_queryset, start_date, end_date = get_election_posts_queryset(request)
             posts = posts_queryset.exclude(
@@ -5532,56 +5531,44 @@ class NetworksView(TemplateView):
             logger.error(f"Error fetching posts: {e}")
             posts = ProcessedPost.objects.none()
             start_date = end_date = timezone.now()
-
-        # BUILD GRAPH 
-        graph_data = generate_network_graph_data(
-            posts,
-            min_connections=min_connections,
-            top_n=top_n,
-            layout=layout_style
-        )
-
-        # GET COORDINATION GROUPS for the sidebar list
-        coordination_groups = get_coordination_groups(
-            posts,
-            min_accounts=min_connections,
-            max_groups=50
-        )
-
+        
+        # Get coordination groups FIRST (using TF-IDF similarity)
+        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
+        
+        # Build graph FROM the coordination groups (not exact text matches)
+        graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
+        
         # Analyze TTPs
         ttps = analyze_ttps(coordination_groups, posts)
-
+        
         try:
             disarm_ttp_reference = get_disarm_ttp_reference()
         except Exception:
             disarm_ttp_reference = []
-
-        # Convert coordination groups to JSON for JavaScript click handler
+        
+        # Prepare coordination groups for JavaScript (include sample posts)
         groups_for_js = []
-        for idx, group in enumerate(coordination_groups):
+        for g in coordination_groups:
             groups_for_js.append({
-                'id': group.get('id', idx),
-                'accounts': group.get('accounts', []),
-                'account_count': group.get('account_count', 0),
-                'post_count': group.get('post_count', 0),
-                'coordination_type': group.get('coordination_type', 'Unknown'),
-                'similarity_score': group.get('similarity_score', 0),
-                'sample_posts_with_urls': group.get('sample_posts_with_urls', [])[:10],
+                'id': g.get('id'),
+                'accounts': g.get('accounts', []),
+                'account_count': g.get('account_count', 0),
+                'post_count': g.get('post_count', 0),
+                'coordination_type': g.get('coordination_type', ''),
+                'sub_narrative': g.get('sub_narrative', ''),
+                'sample_posts_with_urls': g.get('sample_posts_with_urls', []),
+                'platforms': g.get('platforms', []),
             })
-
+        
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups,
-            'coordination_groups_json': json.dumps(groups_for_js, default=str),
+            'coordination_groups': coordination_groups,  # show all 50
+            'coordination_groups_json': json.dumps(groups_for_js, default=str), # JSON for JS
             'total_coordinated_groups': len(coordination_groups),
-            'total_coordinated_accounts': sum(
-                g.get('account_count', 0) for g in coordination_groups
-            ),
+            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
             'total_posts': posts.count(),
-            'max_group_size': max(
-                [g.get('account_count', 0) for g in coordination_groups]
-            ) if coordination_groups else 0,
+            'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
@@ -5592,7 +5579,7 @@ class NetworksView(TemplateView):
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         }
-
+        
         context.update(context_data)
         return context
         
