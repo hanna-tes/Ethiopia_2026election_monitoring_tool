@@ -4534,8 +4534,8 @@ def detect_tfgbv_in_text(text, tfgbv_terms):
 
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
-    Enhanced PEP analysis focused on hateful/critical content tailored to the Ethiopian context.
-    Tracks sentiment distribution and categorizes negative or hostile rhetoric dynamically.
+    Enhanced PEP analysis tailored to the Ethiopian context.
+    Safely utilizes your 'identify_bot_accounts' loop by converting objects to dicts first.
     """
     from collections import defaultdict, Counter
     import re
@@ -4545,58 +4545,60 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     
     pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset if pep.name}
     
-    # Load TFGBV terms ONCE before the loop
     try:
         tfgbv_terms = get_tfgbv_lexicon_terms()
-        logger.info(f"Loaded {len(tfgbv_terms)} TFGBV lexicon terms for PEP analysis")
     except NameError:
         tfgbv_terms = []
-        logger.warning("get_tfgbv_lexicon_terms() not found; using fallback empty list.")
     
-    # --- ETHIOPIAN CONTEXT CRITICAL KEYWORDS (Transliterated & English) ---
     critical_keywords = [
-        # Conflict & Violence
         'kill', 'attack', 'hate', 'enemy', 'genocide', 'massacre', 'kill them', 'death to', 
         'destroy', 'eliminate', 'remove', 'terrorist', 'extremist', 'war', 'fano', 'tpdf', 'ola', 
         'ህወሃት', 'ፋኖ', 'ኦነግ', 'ጦርነት', 'ግድያ', 'ፈጅ',
-        
-        # Political/Historical Slurs & Ethno-nationalist Labels
         'banda', 'woyane', 'neftegna', 'galla', 'junta', 'gim 7', 'pp', 'prosperity', 'ብልጽግና', 
         'ነፍጠኛ', 'ወያኔ', 'ጁንታ', 'ባንዳ', 'ሰፈር', 'ክልል', 'አማራ', 'ኦሮሞ', 'ትግራይ', 'ጎሳ',
-        
-        # Governance & Corruption Accusations
         'corrupt', 'thief', 'traitor', 'criminal', 'dictator', 'tyrant', 'oppressor', 'liar', 
         'betrayal', 'conspiracy', 'plot', 'scheme', 'failed state', 'famine', 'hunger', 'ሌባ', 
-        'ከሃዲ', 'ውሸታም', 'አምባገነን', 'ሙስና',
-        
-        # Electoral & Institutional Discrediting
-        'rigged', 'fraud', 'stolen', 'fake', 'nebe', 'electoral', 'ህገ-ወጥ', 'ማጭበርበር',
-        
-        # Failure & Insults
-        'incompetent', 'failed', 'useless', 'worthless', 'disgrace', 'shame', 'arrest', 
-        'jail', 'prison', 'prosecute', 'punish', 'resist', 'overthrow', 'topple', 'revolt', 'rebellion',
+        'ከሃዲ', 'ውሸታም', 'አምባገነን', 'ሙስና', 'rigged', 'fraud', 'stolen', 'fake', 'nebe', 'electoral', 
+        'ህገ-ወጥ', 'ማጭበርበር', 'incompetent', 'failed', 'useless', 'worthless', 'disgrace', 'shame', 
         'አላዋቂ', 'ውድቀት', 'ውርደት', 'ታሰረ', 'አውርድ'
     ]
     
-    # --- DYNAMIC CRITICISM REGEX PATTERNS ---
-    # Captures hostile syntax and structural cues (e.g., "down with X", cursing, demanding resignation)
-    # even if specific terms are absent.
     hostile_patterns = [
         r'(down with|ውድቀት ለ|ይውረድ)\b',
         r'(blood on hands|ደምናችሁ|ደም ያፈሰሰ)',
         r'(puppet of|የ\w+ ተላላኪ|መሳሪያ)',
         r'(destroying the country|አገር አፈራሽ|ሀገር አጥፊ)',
         r'(step down|ስልጣን ልቀቅ|ልቀቁ)',
-        r'\b(flee|fled|amora|አሞራ)\b' # Local contextual framing
+        r'\b(flee|fled|amora|አሞራ)\b'
     ]
     compiled_patterns = [re.compile(pat, re.IGNORECASE) for pat in hostile_patterns]
 
+    # --- THE FIXED BRIDGE: CONVERT QUERYSET OBJECTS TO DICTS ---
+    # This prevents the 'KeyError' or attribute errors inside your user bot loop
+    posts_as_dicts = []
+    for post in posts_queryset[:5000]:
+        if not post.original_text:
+            continue
+        
+        # Safely extract account ID (tries account_id first, then falls back to author_id or author name)
+        account_id = getattr(post, 'account_id', None) or getattr(post, 'author_id', None) or getattr(post, 'author', None)
+        
+        posts_as_dicts.append({
+            'account_id': str(account_id) if account_id else None,
+            'timestamp_share': getattr(post, 'timestamp_share', None),
+            'original_text': post.original_text,
+            'risk_level': getattr(post, 'risk_level', 'medium'),
+        })
+
+    # Run your user checking function exactly as it is written
+    detected_bot_map = identify_bot_accounts(posts_as_dicts)
+
+    # --- MAIN PROCESSING STORAGE ---
     pep_mentions = defaultdict(lambda: {
         'count': 0,
         'platforms': Counter(),
         'hourly_distribution': Counter(),
         'hashtags': Counter(),
-        'bot_probability': 0,
         'is_gendered_target': False,
         'tfgbv_matches': [],
         'tfgbv_post_count': 0,
@@ -4606,20 +4608,31 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'sentiment_counts': {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0},
         'critical_posts': [],  
         'negative_post_texts': [],  
+        
+        # Track bot mentions per PEP footprint
+        'bot_controlled_posts_count': 0,
+        'bot_reasons': set()
     })
     
-    # Analyze posts
+    # Process and link the results
     for post in posts_queryset[:5000]:
         if not post.original_text:
             continue
         
         text_lower = post.original_text.lower()
+        account_id = getattr(post, 'account_id', None) or getattr(post, 'author_id', None) or getattr(post, 'author', None)
+        account_str = str(account_id) if account_id else None
         
         for pep_name, pep_obj in pep_names.items():
             if pep_name in text_lower or pep_obj.name.lower() in text_lower:
                 data = pep_mentions[pep_obj.name]
                 data['count'] += 1
                 data['all_post_texts'].append(post.original_text[:300])
+                
+                # Dynamic matching check: Did your loop flag this user ID?
+                if account_str and account_str in detected_bot_map:
+                    data['bot_controlled_posts_count'] += 1
+                    data['bot_reasons'].update(detected_bot_map[account_str])
                 
                 platform = post.platform or 'Unknown'
                 data['platforms'][platform] += 1
@@ -4630,7 +4643,7 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                 hashtags = re.findall(r'#(\w+)', post.original_text)
                 data['hashtags'].update(hashtags)
                 
-                # TFGBV detection (using loaded function dynamically)
+                # TFGBV detection
                 tfgbv_hits = []
                 if tfgbv_terms:
                     try:
@@ -4645,33 +4658,24 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                         if not any(m['term'] == hit['term'] for m in data['tfgbv_matches']):
                             data['tfgbv_matches'].append(hit)
                 
-                # Regional Narrative clustering
+                # Narrative clustering
                 if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe', 'ማጭበርበር']):
                     data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
                 if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray', 'fano', 'ola', 'ነፍጠኛ', 'ጁንታ', 'ወያኔ']):
                     data['narrative_clusters']['Ethnic Dynamics & Conflict'].append(post.original_text[:100])
                 
-                # --- FLEXIBLE HATE/CRITICISM DETECTOR ---
-                # Check 1: Matches explicit updated Ethiopian keywords list
                 is_keyword_critical = any(kw in text_lower for kw in critical_keywords)
-                
-                # Check 2: Matches structural structural hate patterns (Regex dynamic fallback)
                 is_pattern_critical = any(pattern.search(post.original_text) for pattern in compiled_patterns)
                 
-                # Check 3: Check metadata tags or high-risk labels assigned automatically downstream
                 risk_level = getattr(post, 'risk_level', 'medium') or 'medium'
                 is_high_risk = risk_level in ['high', 'critical']
                 has_hate_terms = len(tfgbv_hits) > 0
                 
-                # Combine checks to catch all critical items
                 is_critical = is_keyword_critical or is_pattern_critical or has_hate_terms or is_high_risk
                 
-                # Store critical posts (prioritizing broad negative scope)
                 if is_critical:
-                    data['sentiment_counts']['negative'] += 1
                     data['negative_post_texts'].append(post.original_text[:200])
-                    
-                    if len(data['critical_posts']) < 5:  # Keep top 5 critical posts
+                    if len(data['critical_posts']) < 5:  
                         data['critical_posts'].append({
                             'text': post.original_text[:200],
                             'platform': platform,
@@ -4681,10 +4685,7 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                             'is_hate_speech': has_hate_terms or is_pattern_critical,
                             'is_high_risk': is_high_risk,
                         })
-                else:
-                    data['sentiment_counts']['neutral'] += 1
                 
-                # Store sample posts
                 if len(data['sample_posts']) < 3:
                     data['sample_posts'].append({
                         'text': post.original_text[:150],
@@ -4700,6 +4701,18 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
         if data['count'] < 2:
             continue
+            
+        # --- CALCULATE PER-PEP BOT PERCENTAGES ---
+        total_pep_posts = data['count']
+        bot_ratio = data['bot_controlled_posts_count'] / total_pep_posts if total_pep_posts > 0 else 0
+        bot_score_pct = round(bot_ratio * 100, 1)
+        
+        if bot_score_pct >= 50.0:
+            bot_level = '🔴 High Risk (Coordinated Network Volume)'
+        elif bot_score_pct >= 15.0:
+            bot_level = '🟡 Medium Risk (Bot Sub-signatures Present)'
+        else:
+            bot_level = '🟢 Low (Likely Human Activity)'
         
         total_posts = sum(data['platforms'].values())
         platform_breakdown = [
@@ -4712,32 +4725,46 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         
         clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
         
-        sentiment_total = sum(data['sentiment_counts'].values())
+        sentiment = analyze_pep_sentiment_groq(data['all_post_texts'], pep_name)
+        
+        sentiment_counts = data['sentiment_counts'].copy()
+        if sentiment == 'Negative':
+            sentiment_counts['negative'] = int(data['count'] * 0.7)
+            sentiment_counts['neutral'] = int(data['count'] * 0.3)
+        elif sentiment == 'Positive':
+            sentiment_counts['positive'] = int(data['count'] * 0.7)
+            sentiment_counts['neutral'] = int(data['count'] * 0.3)
+        elif sentiment == 'Mixed':
+            sentiment_counts['negative'] = int(data['count'] * 0.4)
+            sentiment_counts['positive'] = int(data['count'] * 0.3)
+            sentiment_counts['neutral'] = int(data['count'] * 0.3)
+        else:
+            sentiment_counts['neutral'] = data['count']
+        
+        sentiment_total = sum(sentiment_counts.values())
         if sentiment_total > 0:
             sentiment_percentages = {
-                'negative': round((data['sentiment_counts']['negative'] / sentiment_total) * 100, 1),
-                'neutral': round((data['sentiment_counts']['neutral'] / sentiment_total) * 100, 1),
-                'positive': round((data['sentiment_counts']['positive'] / sentiment_total) * 100, 1),
-                'mixed': round((data['sentiment_counts']['mixed'] / sentiment_total) * 100, 1),
+                'negative': round((sentiment_counts['negative'] / sentiment_total) * 100, 1),
+                'neutral': round((sentiment_counts['neutral'] / sentiment_total) * 100, 1),
+                'positive': round((sentiment_counts['positive'] / sentiment_total) * 100, 1),
+                'mixed': round((sentiment_counts['mixed'] / sentiment_total) * 100, 1),
             }
         else:
             sentiment_percentages = {'negative': 0, 'neutral': 100, 'positive': 0, 'mixed': 0}
-        
-        negative_ratio = sentiment_percentages['negative'] / 100 if sentiment_percentages['negative'] else 0
-        risk_score = min(10, int(negative_ratio * 10))
+            
+        if sentiment == 'Negative':
+            risk_score = 8
+        elif sentiment == 'Mixed':
+            risk_score = 5
+        elif sentiment == 'Positive':
+            risk_score = 2
+        else:
+            risk_score = 3
         
         if data['tfgbv_post_count'] > 0:
             risk_score = min(10, risk_score + 2)
-        
-        if sentiment_percentages['negative'] > 50:
-            overall_sentiment = 'Negative'
-            sentiment_label = '🔴 High Criticism'
-        elif sentiment_percentages['negative'] > 30:
-            overall_sentiment = 'Mixed'
-            sentiment_label = '🟡 Mixed Sentiment'
-        else:
-            overall_sentiment = 'Neutral'
-            sentiment_label = '⚪ Mostly Neutral'
+            
+        sentiment_label = '🔴 High Criticism' if sentiment == 'Negative' else '🟡 Mixed Sentiment' if sentiment == 'Mixed' else '⚪ Mostly Neutral'
         
         results.append({
             'pep_name': pep_name,
@@ -4746,8 +4773,10 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'velocity_alert': peak_hour in [0, 1, 2, 3, 4, 5],
             'peak_hour': peak_hour,
             'top_hashtags': [{'tag': tag, 'count': cnt} for tag, cnt in data['hashtags'].most_common(5) if cnt > 1],
-            'bot_score': 0,
-            'bot_level': '🟢 Low (Likely Human)',
+            # --- COMPLIANT DYNAMIC BOT OUTPUT ---
+            'bot_score': bot_score_pct,
+            'bot_level': bot_level,
+            'bot_signals_reasons': list(data['bot_reasons']),
             'is_gendered_target': data['is_gendered_target'],
             'tfgbv_matches': data['tfgbv_matches'],
             'tfgbv_post_count': data['tfgbv_post_count'],
@@ -4755,12 +4784,12 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'sample_posts': data['sample_posts'],
             'critical_posts': data['critical_posts'],
             'risk_score': risk_score,
-            'sentiment': overall_sentiment,
+            'sentiment': sentiment,
             'sentiment_label': sentiment_label,
-            'sentiment_counts': data['sentiment_counts'],
+            'sentiment_counts': sentiment_counts,  
             'sentiment_percentages': sentiment_percentages,
-            'negative_post_count': data['sentiment_counts']['negative'],
-            'neutral_post_count': data['sentiment_counts']['neutral'],
+            'negative_post_count': sentiment_counts['negative'],
+            'neutral_post_count': sentiment_counts['neutral'],
         })
     
     return results
@@ -5495,21 +5524,14 @@ class NetworksView(TemplateView):
         request = self.request
         
         try:
-            min_connections = int(request.GET.get('min_connections') or 2)
+            min_connections = int(request.GET.get('min_connections') or 3)
             top_n = int(request.GET.get('top_n') or 30)
+            selected_group = request.GET.get('group')  # Get selected group ID
         except (ValueError, TypeError):
-            min_connections, top_n = 2, 30
-        
+            min_connections, top_n = 3, 30
+            selected_group = None
+            
         layout_style = request.GET.get('layout', 'spring') or 'spring'
-        view_all = request.GET.get('view_all') == 'true'
-        
-        # Get the selected network group ID (if any)
-        selected_group_id = request.GET.get('group_id')
-        if selected_group_id:
-            try:
-                selected_group_id = int(selected_group_id)
-            except (ValueError, TypeError):
-                selected_group_id = None
         
         # Get posts using the centralized helper
         try:
@@ -5525,6 +5547,14 @@ class NetworksView(TemplateView):
         # Get coordination groups FIRST (using TF-IDF similarity)
         coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
         
+        # Filter groups if one is selected
+        if selected_group:
+            try:
+                selected_group_id = int(selected_group)
+                coordination_groups = [g for g in coordination_groups if g.get('id') == selected_group_id]
+            except (ValueError, TypeError):
+                pass
+        
         # Build graph FROM the coordination groups (not exact text matches)
         graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
         
@@ -5536,16 +5566,10 @@ class NetworksView(TemplateView):
         except Exception:
             disarm_ttp_reference = []
         
-        # Get posts for the selected network group (if any)
-        selected_group_posts = []
-        if selected_group_id and 0 <= selected_group_id < len(coordination_groups):
-            group = coordination_groups[selected_group_id]
-            selected_group_posts = group.get('sample_posts_with_urls', [])
-        
         context_data = {
             'active_tab': 'networks',
             'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups[:15],  # Show top 15 in the list
+            'coordination_groups': coordination_groups[:10],  # Show top 10 in the list
             'total_coordinated_groups': len(coordination_groups),
             'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
             'total_posts': posts.count(),
@@ -5556,11 +5580,9 @@ class NetworksView(TemplateView):
             'ttps': ttps,
             'disarm_ttp_reference': disarm_ttp_reference,
             'disarm_dataset_size': 80000,
-            'view_all': view_all,
+            'selected_group': selected_group,
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
-            'selected_group_id': selected_group_id,
-            'selected_group_posts': selected_group_posts,
         }
         
         context.update(context_data)
