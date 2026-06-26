@@ -2,20 +2,14 @@
 {% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
 
 {% block extra_head %}
-<!-- D3.js for Network Graph -->
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
-    /* Classic Network Graph Styles */
     #network-graph {
         width: 100%;
         height: 600px;
-        background: #0f172a; /* Dark slate background */
-        border-radius: 0.75rem;
+        background: #1e293b;
+        border-radius: 8px;
         overflow: hidden;
-        cursor: grab;
-    }
-    #network-graph:active {
-        cursor: grabbing;
     }
     .node circle {
         stroke: #fff;
@@ -33,23 +27,16 @@
         stroke-opacity: 0.4;
         stroke-width: 1px;
     }
-    .node:hover circle {
-        stroke: #3b82f6;
-        stroke-width: 3px;
-        r: 12px !important;
-    }
-    
-    /* Group List Styles */
-    .group-item {
-        transition: all 0.2s;
+    .group-card {
         cursor: pointer;
+        transition: all 0.2s;
     }
-    .group-item:hover {
-        background: #1e293b;
+    .group-card:hover {
+        background: #334155;
         transform: translateX(4px);
     }
-    .group-item.active {
-        background: #1e3a8a; /* Blue highlight */
+    .group-card.active {
+        background: #1e3a8a;
         border-left: 4px solid #3b82f6;
     }
 </style>
@@ -62,7 +49,7 @@
     <div class="flex justify-between items-center">
         <div>
             <h1 class="text-2xl font-bold text-white">🕸️ Networks & TTPs</h1>
-            <p class="text-sm text-slate-400 mt-1">Coordination detection and tactical analysis</p>
+            <p class="text-sm text-slate-400 mt-1">Coordination detection and TTPs analysis</p>
         </div>
         <div class="flex gap-3">
             <span class="px-4 py-2 bg-blue-900/50 text-blue-200 rounded-lg text-sm font-medium border border-blue-700">
@@ -81,15 +68,9 @@
         <div class="lg:col-span-3 bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-lg">
             <div class="flex justify-between items-center mb-3">
                 <h3 class="text-lg font-bold text-white">Coordination Network Graph</h3>
-                <div class="flex gap-2">
-                    <button onclick="resetGraph()" class="px-3 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-600 transition">
-                        🔄 Reset View
-                    </button>
-                    <select id="layout-select" onchange="changeLayout(this.value)" class="bg-slate-700 text-white rounded text-xs px-2 py-1 border border-slate-600">
-                        <option value="spring">Spring Layout</option>
-                        <option value="circular">Circular Layout</option>
-                    </select>
-                </div>
+                <button onclick="resetGraph()" class="px-3 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-600 transition">
+                    🔄 Reset View
+                </button>
             </div>
             <div id="network-graph"></div>
         </div>
@@ -97,54 +78,35 @@
         <!-- Coordination Groups List (Takes 1/4 width) -->
         <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-lg flex flex-col" style="max-height: 650px;">
             <h3 class="text-lg font-bold text-white mb-3">
-                🔗 Detected Groups ({{ coordination_groups|length }})
+                🔗 Detected Groups ({{ total_coordinated_groups }})
             </h3>
             <div class="text-xs text-slate-400 mb-3">Click a group to filter the graph and view posts.</div>
             
             <div class="overflow-y-auto flex-1 space-y-2 pr-2" id="group-list-container">
-                {% for group in coordination_groups %}
-                <div class="group-item bg-slate-900/50 rounded-lg p-3 border border-slate-700" 
-                     onclick="selectGroup({{ group.id }})" 
-                     id="group-card-{{ group.id }}">
-                    <div class="flex justify-between items-start mb-1">
-                        <span class="font-bold text-blue-400 text-sm">Group #{{ group.id }}</span>
-                        <span class="text-[10px] px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full">
-                            {{ group.account_count }} accounts
-                        </span>
-                    </div>
-                    <div class="text-xs text-slate-400 mb-2">{{ group.post_count }} posts • {{ group.coordination_type }}</div>
-                    <div class="text-[10px] text-slate-500 truncate">
-                        {{ group.accounts|join:", " }}
-                    </div>
-                </div>
-                {% empty %}
-                <div class="text-center text-slate-500 text-sm py-8">
-                    No coordination groups detected with current filters.
-                </div>
-                {% endfor %}
+                <!-- Groups will be populated by JavaScript -->
             </div>
         </div>
     </div>
 
-    <!-- Posts Section (Updates when group is clicked) -->
-    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg">
+    <!-- Selected Group Posts -->
+    <div id="posts-section" class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg hidden">
         <div class="flex justify-between items-center mb-4">
             <h3 class="text-lg font-bold text-white" id="posts-header">
                 📄 Posts from Selected Group
             </h3>
-            <span class="text-xs text-slate-400" id="posts-subheader">Select a group from the list to view posts</span>
+            <button onclick="closePostsSection()" class="text-slate-400 hover:text-white">
+                ✕ Close
+            </button>
         </div>
         <div id="posts-container" class="space-y-3">
-            <div class="text-center text-slate-500 py-8 bg-slate-900/30 rounded-lg border border-dashed border-slate-700">
-                👆 Click on a coordination group above to see the posts shared by those accounts.
-            </div>
+            <!-- Posts will be populated by JavaScript -->
         </div>
     </div>
 
-    <!-- TTPs Section (Keep your existing TTP display here) -->
+    <!-- TTPs Section -->
     {% if ttps %}
     <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-lg">
-        <h3 class="text-lg font-bold text-white mb-4">⚠️ Detected Tactics, Techniques & Procedures (TTPs)</h3>
+        <h3 class="text-lg font-bold text-white mb-4">⚠️ Tactics, Techniques & Procedures (TTPs)</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for ttp in ttps %}
             <div class="bg-slate-900/50 rounded-lg p-4 border-l-4 
@@ -174,25 +136,60 @@
 
 </div>
 
-<!-- JavaScript for Graph and Filtering -->
 <script>
     // Data from Django
     const graphData = {{ network_graph_json|safe }};
-    const coordinationGroups = {{ coordination_groups|safe }};
+    const coordinationGroups = {{ coordination_groups_json|safe }};
     
-    let simulation, svg, link, node, label;
-    let originalNodes = [...graphData.nodes];
-    let originalLinks = [...graphData.edges];
-    let currentLayout = 'spring';
+    let simulation, svg, link, node;
+    let originalNodes = [...(graphData.nodes || [])];
+    let originalLinks = [...(graphData.edges || [])];
 
-    // Initialize Graph
+    // Initialize on load
+    document.addEventListener('DOMContentLoaded', () => {
+        renderGroupList();
+        if (originalNodes.length > 0) {
+            initGraph();
+        } else {
+            document.getElementById('network-graph').innerHTML = 
+                '<div class="flex items-center justify-center h-full text-slate-400">No coordination networks detected</div>';
+        }
+    });
+
+    // Render group list
+    function renderGroupList() {
+        const container = document.getElementById('group-list-container');
+        if (!coordinationGroups || coordinationGroups.length === 0) {
+            container.innerHTML = '<div class="text-center text-slate-500 text-sm py-8">No groups detected</div>';
+            return;
+        }
+        
+        container.innerHTML = coordinationGroups.map(group => `
+            <div class="group-card bg-slate-900/50 rounded-lg p-3 border border-slate-700" 
+                 onclick="selectGroup(${group.id})" 
+                 id="group-card-${group.id}">
+                <div class="flex justify-between items-start mb-1">
+                    <span class="font-bold text-blue-400 text-sm">Group #${group.id}</span>
+                    <span class="text-[10px] px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full">
+                        ${group.account_count} accounts
+                    </span>
+                </div>
+                <div class="text-xs text-slate-400 mb-2">${group.post_count} posts • ${group.coordination_type}</div>
+                <div class="text-[10px] text-slate-500 truncate">
+                    ${group.accounts.slice(0, 3).join(', ')}${group.accounts.length > 3 ? '...' : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // Initialize D3 graph
     function initGraph() {
         const container = document.getElementById('network-graph');
         const width = container.clientWidth;
         const height = 600;
-
+        
         d3.select("#network-graph").selectAll("*").remove();
-
+        
         svg = d3.select("#network-graph")
             .append("svg")
             .attr("width", width)
@@ -200,118 +197,101 @@
             .call(d3.zoom().on("zoom", (event) => {
                 svg.select("g").attr("transform", event.transform);
             }));
-
+        
         const g = svg.append("g");
-
-        // Force Simulation
-        simulation = d3.forceSimulation(graphData.nodes)
-            .force("link", d3.forceLink(graphData.edges).id(d => d.id).distance(100))
+        
+        simulation = d3.forceSimulation(originalNodes)
+            .force("link", d3.forceLink(originalLinks).id(d => d.id).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
-            .force("center", d3.forceCenter(width / 2, height / 2))
-            .force("collide", d3.forceCollide().radius(20));
-
-        // Draw Links
+            .force("center", d3.forceCenter(width / 2, height / 2));
+        
         link = g.append("g")
             .selectAll("line")
-            .data(graphData.edges)
+            .data(originalLinks)
             .enter().append("line")
             .attr("class", "link");
-
-        // Draw Nodes
+        
         node = g.append("g")
             .selectAll("g")
-            .data(graphData.nodes)
+            .data(originalNodes)
             .enter().append("g")
             .attr("class", "node")
             .call(d3.drag()
                 .on("start", dragstarted)
                 .on("drag", dragged)
                 .on("end", dragended));
-
+        
         node.append("circle")
             .attr("r", d => Math.max(8, d.degree * 2))
-            .attr("fill", d => d.type === 'source' ? '#3b82f6' : '#f97316'); // Blue for source, Orange for amplifier
-
+            .attr("fill", d => d.type === 'source' ? '#3b82f6' : '#f59e0b');
+        
         node.append("text")
             .attr("dx", 12)
             .attr("dy", ".35em")
             .text(d => d.label);
-
+        
         simulation.on("tick", () => {
             link
                 .attr("x1", d => d.source.x)
                 .attr("y1", d => d.source.y)
                 .attr("x2", d => d.target.x)
                 .attr("y2", d => d.target.y);
-
+            
             node
                 .attr("transform", d => `translate(${d.x},${d.y})`);
         });
     }
 
-    // Filter Graph by Group
+    // Select group and filter graph
     function selectGroup(groupId) {
-        // Highlight active group card
-        document.querySelectorAll('.group-item').forEach(el => el.classList.remove('active'));
-        document.getElementById(`group-card-${groupId}`).classList.add('active');
-
+        // Highlight active group
+        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
+        const card = document.getElementById(`group-card-${groupId}`);
+        if (card) card.classList.add('active');
+        
         // Find group data
         const group = coordinationGroups.find(g => g.id === groupId);
         if (!group) return;
-
-        const groupAccounts = new Set(group.accounts);
-
+        
         // Filter nodes and links
+        const groupAccounts = new Set(group.accounts);
         const filteredNodes = originalNodes.filter(n => groupAccounts.has(n.id));
         const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
         const filteredLinks = originalLinks.filter(l => 
             filteredNodeIds.has(l.source.id || l.source) && 
             filteredNodeIds.has(l.target.id || l.target)
         );
-
-        // Update Graph
+        
+        // Update graph
         updateGraph(filteredNodes, filteredLinks);
-
-        // Update Posts Section
-        updatePostsSection(group);
+        
+        // Show posts
+        showGroupPosts(group);
     }
 
-    // Reset Graph to show all
-    function resetGraph() {
-        document.querySelectorAll('.group-item').forEach(el => el.classList.remove('active'));
-        updateGraph(originalNodes, originalLinks);
-        document.getElementById('posts-header').innerText = '📄 Posts from Selected Group';
-        document.getElementById('posts-subheader').innerText = 'Select a group from the list to view posts';
-        document.getElementById('posts-container').innerHTML = `
-            <div class="text-center text-slate-500 py-8 bg-slate-900/30 rounded-lg border border-dashed border-slate-700">
-                👆 Click on a coordination group above to see the posts shared by those accounts.
-            </div>
-        `;
-    }
-
-    // Helper to update D3 graph with new data
+    // Update graph with filtered data
     function updateGraph(nodes, links) {
         const container = document.getElementById('network-graph');
         const width = container.clientWidth;
         const height = 600;
-
+        
         d3.select("#network-graph svg").selectAll("*").remove();
         const g = d3.select("#network-graph svg").append("g");
-
+        
         simulation = d3.forceSimulation(nodes)
             .force("link", d3.forceLink(links).id(d => d.id).distance(100))
             .force("charge", d3.forceManyBody().strength(-300))
             .force("center", d3.forceCenter(width / 2, height / 2));
-
+        
         link = g.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
         
         node = g.append("g").selectAll("g").data(nodes).enter().append("g").attr("class", "node")
             .call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
-
+        
         node.append("circle").attr("r", d => Math.max(8, d.degree * 2))
-            .attr("fill", d => d.type === 'source' ? '#3b82f6' : '#f97316');
+            .attr("fill", d => d.type === 'source' ? '#3b82f6' : '#f59e0b');
         node.append("text").attr("dx", 12).attr("dy", ".35em").text(d => d.label);
-
+        
         simulation.on("tick", () => {
             link.attr("x1", d => d.source.x).attr("y1", d => d.source.y)
                 .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
@@ -319,39 +299,48 @@
         });
     }
 
-    // Update Posts HTML
-    function updatePostsSection(group) {
-        document.getElementById('posts-header').innerText = `📄 Posts from Group #${group.id} (${group.accounts.length} accounts)`;
-        document.getElementById('posts-subheader').innerText = `${group.post_count} posts • ${group.coordination_type}`;
-
+    // Show posts from selected group
+    function showGroupPosts(group) {
+        const section = document.getElementById('posts-section');
+        const header = document.getElementById('posts-header');
         const container = document.getElementById('posts-container');
-        if (!group.sample_posts_with_urls || group.sample_posts_with_urls.length === 0) {
-            container.innerHTML = '<div class="text-slate-500 text-sm">No sample posts available for this group.</div>';
+        
+        section.classList.remove('hidden');
+        header.innerText = `📄 Posts from Group #${group.id} (${group.accounts.length} accounts)`;
+        
+        if (!group.sample_posts || group.sample_posts.length === 0) {
+            container.innerHTML = '<div class="text-slate-400 text-sm">No sample posts available for this group.</div>';
             return;
         }
-
-        let html = '<div class="space-y-3">';
-        group.sample_posts_with_urls.forEach(post => {
-            html += `
-                <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700 hover:border-blue-500 transition">
-                    <div class="flex justify-between items-start mb-2">
-                        <div class="flex items-center gap-2">
-                            <span class="font-bold text-blue-400 text-sm">${post.username}</span>
-                            <span class="text-xs text-slate-500">• ${post.platform}</span>
-                            <span class="text-xs text-slate-500">• ${post.timestamp}</span>
-                        </div>
-                        ${post.is_bot ? '<span class="text-[10px] px-2 py-0.5 bg-red-900/50 text-red-300 rounded-full border border-red-800">🤖 Bot</span>' : ''}
+        
+        container.innerHTML = group.sample_posts.map(post => `
+            <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                <div class="flex justify-between items-start mb-2">
+                    <div class="flex gap-2 text-xs text-slate-400">
+                        <span class="font-semibold text-blue-400">${post.username || 'Unknown'}</span>
+                        <span>•</span>
+                        <span>${post.platform || 'Unknown'}</span>
+                        <span>•</span>
+                        <span>${post.timestamp || 'N/A'}</span>
                     </div>
-                    <p class="text-sm text-slate-300 mb-3 leading-relaxed">${post.text_preview}</p>
-                    <div class="flex justify-between items-center">
-                        <span class="text-[10px] text-slate-500">Risk: ${post.risk_level}</span>
-                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-xs text-blue-400 hover:text-blue-300">🔗 View Original Post</a>` : ''}
-                    </div>
+                    ${post.is_bot ? '<span class="text-[10px] px-2 py-0.5 bg-red-900/50 text-red-300 rounded-full border border-red-800">🤖 Bot</span>' : ''}
                 </div>
-            `;
-        });
-        html += '</div>';
-        container.innerHTML = html;
+                <p class="text-sm text-slate-300 mb-2">${post.text_preview || ''}</p>
+                ${post.url ? `<a href="${post.url}" target="_blank" class="text-xs text-blue-400 hover:text-blue-300">🔗 View Original Post</a>` : ''}
+            </div>
+        `).join('');
+    }
+
+    // Reset graph to show all
+    function resetGraph() {
+        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
+        updateGraph(originalNodes, originalLinks);
+        closePostsSection();
+    }
+
+    // Close posts section
+    function closePostsSection() {
+        document.getElementById('posts-section').classList.add('hidden');
     }
 
     // Drag functions
@@ -369,9 +358,5 @@
         d.fx = null;
         d.fy = null;
     }
-
-    // Initialize on load
-    window.addEventListener('DOMContentLoaded', initGraph);
-    window.addEventListener('resize', initGraph);
 </script>
 {% endblock %}
