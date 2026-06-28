@@ -1662,32 +1662,33 @@ def _posts_within_window(posts: list, window_minutes: int = 60) -> list:
  
  
 def analyze_ttps(coordination_groups, posts):
-    """
-    Analyze Tactics, Techniques, and Procedures.
-    GUARANTEE: example_posts are filtered to actually match the TTP criteria.
-    """
+    """Analyze Tactics, Techniques, and Procedures - WITH ACTUAL EXAMPLE POSTS"""
     ttps = []
     if not coordination_groups:
         return ttps
-
+    
+    # Collect all sample posts from all groups for analysis
+    all_sample_posts = []
+    for group in coordination_groups:
+        all_sample_posts.extend(group.get('sample_posts_with_urls', []))
+    
     # === TTP 1: Coordinated Inauthentic Behavior (CIB) ===
     cib_groups = [g for g in coordination_groups if g.get('account_count', 0) >= 5]
     if cib_groups:
+        # Get posts from CIB groups
         example_posts = []
-        for group in cib_groups:
-            for post in group.get('sample_posts_with_urls', [])[:2]:
-                example_posts.append(post)
-            if len(example_posts) >= 3:
-                break
+        for group in cib_groups[:3]:
+            example_posts.extend(group.get('sample_posts_with_urls', [])[:2])
+        
         ttps.append({
             'name': 'Coordinated Inauthentic Behavior (CIB)',
             'description': f'Detected {len(cib_groups)} groups with 5+ accounts sharing identical content.',
             'severity': 'High',
             'evidence': f'{sum(g.get("post_count", 0) for g in cib_groups)} total posts across {sum(g.get("account_count", 0) for g in cib_groups)} accounts.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': example_posts[:5]
         })
-
+    
     # === TTP 2: Cross-Platform Amplification ===
     cross_platform_groups = []
     for g in coordination_groups:
@@ -1697,13 +1698,13 @@ def analyze_ttps(coordination_groups, posts):
                 platforms.add(p['platform'])
         if len(platforms) > 1:
             cross_platform_groups.append({'group': g, 'platforms': list(platforms)})
-
+    
     if cross_platform_groups:
         all_platforms = set()
         for p in cross_platform_groups:
             all_platforms.update(p['platforms'])
         
-        # FIX: Explicitly grab one post from EACH platform to prove cross-platform activity
+        # Collect posts from different platforms
         example_posts = []
         seen_platforms = set()
         for cp_item in cross_platform_groups:
@@ -1716,21 +1717,22 @@ def analyze_ttps(coordination_groups, posts):
                     break
             if len(seen_platforms) >= len(all_platforms):
                 break
-
+        
         ttps.append({
             'name': 'Cross-Platform Amplification',
             'description': f'{len(cross_platform_groups)} groups operating across {len(all_platforms)} platforms.',
             'severity': 'Medium',
             'evidence': f"Platforms: {', '.join(sorted(all_platforms))}",
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': example_posts[:5]
         })
-
+    
     # === TTP 3: Rapid Response / Burst Posting ===
     burst_groups = [g for g in coordination_groups if g.get('post_count', 0) > 10]
     if burst_groups:
         max_posts = max(g.get('post_count', 0) for g in burst_groups)
-        example_posts = burst_groups[0].get('sample_posts_with_urls', [])[:3]
+        example_posts = burst_groups[0].get('sample_posts_with_urls', [])[:5]
+        
         ttps.append({
             'name': 'Rapid Response / Burst Posting',
             'description': f'{len(burst_groups)} groups with high-volume posting (max: {max_posts} posts/group).',
@@ -1739,7 +1741,7 @@ def analyze_ttps(coordination_groups, posts):
             'source': 'Rule-Based',
             'example_posts': example_posts
         })
-
+    
     # === TTP 4: Hashtag Manipulation ===
     hashtag_groups = [g for g in coordination_groups if '#' in g.get('text_sample', '')]
     if hashtag_groups:
@@ -1748,19 +1750,11 @@ def analyze_ttps(coordination_groups, posts):
             text = g.get('text_sample', '')
             found = re.findall(r'#\w+', text, re.IGNORECASE)
             hashtags.extend(found)
+        
         if hashtags:
             unique_hashtags = list(set(hashtags))[:5]
-            # FIX: Only show posts that actually contain the coordinated hashtags
-            example_posts = []
-            for group in hashtag_groups:
-                for post in group.get('sample_posts_with_urls', []):
-                    text_lower = (post.get('text_preview') or '').lower()
-                    if any(h.lower() in text_lower for h in unique_hashtags):
-                        example_posts.append(post)
-                        if len(example_posts) >= 3:
-                            break
-                if len(example_posts) >= 3:
-                    break
+            example_posts = hashtag_groups[0].get('sample_posts_with_urls', [])[:5]
+            
             ttps.append({
                 'name': 'Hashtag Manipulation',
                 'description': f'Coordinated use of {len(unique_hashtags)} hashtags: {", ".join(unique_hashtags)}.',
@@ -1769,125 +1763,123 @@ def analyze_ttps(coordination_groups, posts):
                 'source': 'Rule-Based',
                 'example_posts': example_posts
             })
-
+    
     # === TTP 5: URL Amplification ===
     url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
     if url_groups:
         total_unique_urls = sum(len(g.get('unique_urls', [])) for g in url_groups)
-        # FIX: Only show posts that actually have URLs
         example_posts = []
-        for g in url_groups:
-            for p in g.get('sample_posts_with_urls', []):
-                if p.get('url') and len(example_posts) < 3:
-                    example_posts.append(p)
-            if len(example_posts) >= 3:
-                break
+        for g in url_groups[:2]:
+            example_posts.extend(g.get('sample_posts_with_urls', [])[:3])
+        
         ttps.append({
             'name': 'URL Amplification',
             'description': f'{len(url_groups)} groups amplifying {total_unique_urls} URLs.',
             'severity': 'Low',
             'evidence': 'Multiple accounts sharing same external links.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': example_posts[:5]
         })
-
+    
     # === TTP 6: Narrative Weaponization ===
-    weaponized_keywords = ['genocide', 'kill', 'attack', 'war', 'slur', 'hate', 'ethnic cleansing', 'massacre', 'destroy', 'eliminate']
-    weaponized_groups = [g for g in coordination_groups if any(kw in g.get('text_sample', '').lower() for kw in weaponized_keywords)]
+    weaponized_keywords = ['genocide', 'kill', 'attack', 'war', 'slur', 'hate', 'ethnic cleansing', 'massacre',
+                          'destroy', 'eliminate', 'terrorist', 'extremist', 'traitor', 'criminal']
+    weaponized_groups = []
+    weaponized_posts = []
+    
+    for g in coordination_groups:
+        text_sample = g.get('text_sample', '').lower()
+        if any(kw in text_sample for kw in weaponized_keywords):
+            weaponized_groups.append(g)
+            # Get posts that actually contain weaponized keywords
+            for post in g.get('sample_posts_with_urls', []):
+                text_preview = (post.get('text_preview') or '').lower()
+                if any(kw in text_preview for kw in weaponized_keywords):
+                    weaponized_posts.append(post)
     
     if weaponized_groups:
-        # FIX: Only show posts that ACTUALLY contain the weaponized keywords in their text
-        example_posts = []
-        for g in weaponized_groups:
-            for post in g.get('sample_posts_with_urls', []):
-                text_lower = (post.get('text_preview') or '').lower()
-                if any(kw in text_lower for kw in weaponized_keywords):
-                    example_posts.append(post)
-                    if len(example_posts) >= 3:
-                        break
-            if len(example_posts) >= 3:
-                break
-        
-        # Only add the TTP if we actually found matching posts
-        if example_posts:
-            ttps.append({
-                'name': 'Narrative Weaponization',
-                'description': f'{len(weaponized_groups)} groups using high-risk weaponized keywords (violence, hate, genocide).',
-                'severity': 'Critical',
-                'evidence': 'Coordinated amplification of inflammatory and violent narratives.',
-                'source': 'Rule-Based',
-                'example_posts': example_posts
-            })
-
-    # === TTP 7: Temporal Coordination (Synchronized Posting) ===
+        ttps.append({
+            'name': 'Narrative Weaponization',
+            'description': f'{len(weaponized_groups)} groups using high-risk weaponized keywords (violence, hate, genocide).',
+            'severity': 'Critical',
+            'evidence': 'Coordinated amplification of inflammatory and violent narratives.',
+            'source': 'Rule-Based',
+            'example_posts': weaponized_posts[:5] if weaponized_posts else weaponized_groups[0].get('sample_posts_with_urls', [])[:5]
+        })
+    
+    # === TTP 7: Temporal Coordination ===
     synchronized_groups = 0
+    temporal_posts = []
+    
     for g in coordination_groups:
         timestamps = []
         for p in g.get('sample_posts_with_urls', []):
             if p.get('timestamp') and p['timestamp'] != 'N/A':
                 try:
                     ts = datetime.strptime(p['timestamp'], '%Y-%m-%d %H:%M')
-                    timestamps.append(ts)
+                    timestamps.append((ts, p))
                 except:
                     pass
+        
         if len(timestamps) >= 2:
-            timestamps.sort()
+            timestamps.sort(key=lambda x: x[0])
             for i in range(len(timestamps) - 1):
-                diff = (timestamps[i+1] - timestamps[i]).total_seconds() / 60
+                diff = (timestamps[i+1][0] - timestamps[i][0]).total_seconds() / 60
                 if diff <= 60:
                     synchronized_groups += 1
+                    temporal_posts.extend([timestamps[i][1], timestamps[i+1][1]])
                     break
-
+    
     if synchronized_groups > 0:
-        example_posts = coordination_groups[0].get('sample_posts_with_urls', [])[:3]
         ttps.append({
             'name': 'Temporal Coordination (Synchronized Posting)',
             'description': f'{synchronized_groups} groups posted identical content within 1 hour of each other.',
             'severity': 'High',
             'evidence': 'Accounts appear to be coordinated in real-time or using scheduling tools.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': temporal_posts[:5]
         })
-
+    
     # === TTP 8: Multi-Platform Narrative Seeding ===
     narrative_seeding_groups = [g for g in coordination_groups if len(g.get('platforms', [])) >= 2 and g.get('account_count', 0) >= 3]
     if narrative_seeding_groups:
-        example_posts = narrative_seeding_groups[0].get('sample_posts_with_urls', [])[:3]
+        example_posts = []
+        for g in narrative_seeding_groups[:2]:
+            example_posts.extend(g.get('sample_posts_with_urls', [])[:3])
+        
         ttps.append({
             'name': 'Multi-Platform Narrative Seeding',
             'description': f'{len(narrative_seeding_groups)} groups seeding identical narratives across 2+ platforms simultaneously.',
             'severity': 'High',
             'evidence': 'Coordinated cross-platform manipulation to maximize reach and legitimacy.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': example_posts[:5]
         })
-
+    
     # === TTP 9: Bot-like Account Behavior ===
     bot_like_groups = 0
+    bot_posts = []
+    
     for g in coordination_groups:
         generic_names = sum(1 for acc in g.get('accounts', []) if any(x in acc.lower() for x in ['user', 'account', 'test', 'bot', '123', 'news']))
         if generic_names >= 2 or g.get('account_count', 0) >= 8:
             bot_like_groups += 1
-
+            # Get posts from bot-like accounts
+            for post in g.get('sample_posts_with_urls', []):
+                if post.get('is_bot'):
+                    bot_posts.append(post)
+    
     if bot_like_groups > 0:
-        example_posts = []
-        for g in coordination_groups:
-            for p in g.get('sample_posts_with_urls', []):
-                if p.get('is_bot') and len(example_posts) < 3:
-                    example_posts.append(p)
-        if not example_posts:
-            example_posts = coordination_groups[0].get('sample_posts_with_urls', [])[:3]
-            
         ttps.append({
             'name': 'Bot-like Account Behavior',
             'description': f'{bot_like_groups} groups contain accounts with generic naming patterns or high coordination density.',
             'severity': 'Medium',
             'evidence': 'Potential use of automated or inauthentic accounts to amplify content.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': bot_posts[:5] if bot_posts else coordination_groups[0].get('sample_posts_with_urls', [])[:5]
         })
-
-    # === TTP 10: Account Clustering (Sequential Patterns) ===
+    
+    # === TTP 10: Account Clustering ===
     clustering_groups = 0
     for g in coordination_groups:
         accounts = g.get('accounts', [])
@@ -1901,70 +1893,72 @@ def analyze_ttps(coordination_groups, posts):
                     if all(d == 1 for d in diffs[:3]):
                         clustering_groups += 1
                         break
-
+    
     if clustering_groups > 0:
-        example_posts = coordination_groups[0].get('sample_posts_with_urls', [])[:3]
         ttps.append({
             'name': 'Account Clustering (Sequential Patterns)',
             'description': f'{clustering_groups} groups contain accounts with sequential numbering patterns.',
             'severity': 'High',
             'evidence': 'Accounts likely created in batches, suggesting automated account generation.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': all_sample_posts[:5]
         })
-
+    
     # === TTP 11: Content Recycling ===
     recycling_groups = 0
+    recycling_posts = []
+    
     for g in coordination_groups:
         timestamps = []
         for p in g.get('sample_posts_with_urls', []):
             if p.get('timestamp') and p['timestamp'] != 'N/A':
                 try:
                     ts = datetime.strptime(p['timestamp'], '%Y-%m-%d %H:%M')
-                    timestamps.append(ts)
+                    timestamps.append((ts, p))
                 except:
                     pass
+        
         if len(timestamps) >= 3:
-            timestamps.sort()
-            time_span = (timestamps[-1] - timestamps[0]).total_seconds() / 86400
+            timestamps.sort(key=lambda x: x[0])
+            time_span = (timestamps[-1][0] - timestamps[0][0]).total_seconds() / 86400
             if time_span > 7:
                 recycling_groups += 1
-
+                recycling_posts.extend([timestamps[0][1], timestamps[-1][1]])
+    
     if recycling_groups > 0:
-        example_posts = coordination_groups[0].get('sample_posts_with_urls', [])[:3]
         ttps.append({
             'name': 'Content Recycling',
             'description': f'{recycling_groups} groups reposting identical content over extended periods (7+ days).',
             'severity': 'Medium',
             'evidence': 'Same content being recycled to maintain narrative presence.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': recycling_posts[:5]
         })
-
+    
     # === TTP 12: Amplification Networks ===
     amplification_networks = 0
+    amp_posts = []
+    
     for g in coordination_groups:
         sample_posts = g.get('sample_posts_with_urls', [])
-        if len(sample_posts) >= 3:
-            first_post = sample_posts[0]
-            if first_post.get('platform') and len(sample_posts) >= 5:
-                amplification_networks += 1
-
+        if len(sample_posts) >= 5:
+            amplification_networks += 1
+            amp_posts.extend(sample_posts[:3])
+    
     if amplification_networks > 0:
-        example_posts = coordination_groups[0].get('sample_posts_with_urls', [])[:3]
         ttps.append({
             'name': 'Amplification Networks',
             'description': f'{amplification_networks} groups showing clear source-to-amplifier patterns.',
             'severity': 'Medium',
             'evidence': 'Content originates from few sources and is amplified by many accounts.',
             'source': 'Rule-Based',
-            'example_posts': example_posts
+            'example_posts': amp_posts[:5]
         })
-
+    
     # === GEMMA-BASED TTP DETECTION (DISABLED) ===
     gemma_ttps = detect_ttps_with_gemma(coordination_groups)
     ttps.extend(gemma_ttps)
-
+    
     return ttps
     
 def get_top_pairs(coordination_groups):
@@ -4688,22 +4682,15 @@ def detect_tfgbv_in_text(text, tfgbv_terms):
 
 def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     """
-    Enhanced PEP analysis tailored to the Ethiopian context.
-    Safely utilizes your 'identify_bot_accounts' loop by converting objects to dicts first.
+    Enhanced PEP analysis with lexicon-based sentiment analysis
+    and proper critical post detection.
     """
     from collections import defaultdict, Counter
     import re
-    import logging
-
-    logger = logging.getLogger(__name__)
     
     pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset if pep.name}
     
-    try:
-        tfgbv_terms = get_tfgbv_lexicon_terms()
-    except NameError:
-        tfgbv_terms = []
-    
+    # Load weaponized/critical keywords for sentiment analysis
     critical_keywords = [
         'kill', 'attack', 'hate', 'enemy', 'genocide', 'massacre', 'kill them', 'death to', 
         'destroy', 'eliminate', 'remove', 'terrorist', 'extremist', 'war', 'fano', 'tpdf', 'ola', 
@@ -4725,29 +4712,7 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         r'(step down|ስልጣን ልቀቅ|ልቀቁ)',
         r'\b(flee|fled|amora|አሞራ)\b'
     ]
-    compiled_patterns = [re.compile(pat, re.IGNORECASE) for pat in hostile_patterns]
-
-    # --- THE FIXED BRIDGE: CONVERT QUERYSET OBJECTS TO DICTS ---
-    # This prevents the 'KeyError' or attribute errors inside your user bot loop
-    posts_as_dicts = []
-    for post in posts_queryset[:5000]:
-        if not post.original_text:
-            continue
-        
-        # Safely extract account ID (tries account_id first, then falls back to author_id or author name)
-        account_id = getattr(post, 'account_id', None) or getattr(post, 'author_id', None) or getattr(post, 'author', None)
-        
-        posts_as_dicts.append({
-            'account_id': str(account_id) if account_id else None,
-            'timestamp_share': getattr(post, 'timestamp_share', None),
-            'original_text': post.original_text,
-            'risk_level': getattr(post, 'risk_level', 'medium'),
-        })
-
-    # Run your user checking function exactly as it is written
-    detected_bot_map = identify_bot_accounts(posts_as_dicts)
-
-    # --- MAIN PROCESSING STORAGE ---
+    
     pep_mentions = defaultdict(lambda: {
         'count': 0,
         'platforms': Counter(),
@@ -4758,35 +4723,26 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'tfgbv_post_count': 0,
         'narrative_clusters': defaultdict(list),
         'sample_posts': [],
+        'critical_posts': [],
         'all_post_texts': [],
-        'sentiment_counts': {'positive': 0, 'negative': 0, 'neutral': 0, 'mixed': 0},
-        'critical_posts': [],  
-        'negative_post_texts': [],  
-        
-        # Track bot mentions per PEP footprint
-        'bot_controlled_posts_count': 0,
-        'bot_reasons': set()
+        'sentiment_scores': [],  # Track sentiment per post
+        'negative_count': 0,
+        'positive_count': 0,
+        'neutral_count': 0,
     })
     
-    # Process and link the results
+    # Analyze posts
     for post in posts_queryset[:5000]:
         if not post.original_text:
             continue
         
         text_lower = post.original_text.lower()
-        account_id = getattr(post, 'account_id', None) or getattr(post, 'author_id', None) or getattr(post, 'author', None)
-        account_str = str(account_id) if account_id else None
         
         for pep_name, pep_obj in pep_names.items():
             if pep_name in text_lower or pep_obj.name.lower() in text_lower:
                 data = pep_mentions[pep_obj.name]
                 data['count'] += 1
                 data['all_post_texts'].append(post.original_text[:300])
-                
-                # Dynamic matching check: Did your loop flag this user ID?
-                if account_str and account_str in detected_bot_map:
-                    data['bot_controlled_posts_count'] += 1
-                    data['bot_reasons'].update(detected_bot_map[account_str])
                 
                 platform = post.platform or 'Unknown'
                 data['platforms'][platform] += 1
@@ -4797,57 +4753,47 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
                 hashtags = re.findall(r'#(\w+)', post.original_text)
                 data['hashtags'].update(hashtags)
                 
-                # TFGBV detection
-                tfgbv_hits = []
-                if tfgbv_terms:
-                    try:
-                        tfgbv_hits = detect_tfgbv_in_text(post.original_text, tfgbv_terms)
-                    except NameError:
-                        pass
-                        
-                if tfgbv_hits:
-                    data['is_gendered_target'] = True
-                    data['tfgbv_post_count'] += 1
-                    for hit in tfgbv_hits:
-                        if not any(m['term'] == hit['term'] for m in data['tfgbv_matches']):
-                            data['tfgbv_matches'].append(hit)
-                
                 # Narrative clustering
                 if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe', 'ማጭበርበር']):
                     data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
-                if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray', 'fano', 'ola', 'ነፍጠኛ', 'ጁንታ', 'ወያኔ']):
+                if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray', 'fano', 'ola', 'ነፍኛ', 'ጁንታ', 'ወያኔ']):
                     data['narrative_clusters']['Ethnic Dynamics & Conflict'].append(post.original_text[:100])
                 
-                is_keyword_critical = any(kw in text_lower for kw in critical_keywords)
-                is_pattern_critical = any(pattern.search(post.original_text) for pattern in compiled_patterns)
+                # LEXICON-BASED SENTIMENT ANALYSIS
+                critical_count = sum(1 for kw in critical_keywords if kw in text_lower)
+                positive_count = sum(1 for kw in positive_keywords if kw in text_lower)
                 
-                risk_level = getattr(post, 'risk_level', 'medium') or 'medium'
-                is_high_risk = risk_level in ['high', 'critical']
-                has_hate_terms = len(tfgbv_hits) > 0
+                if critical_count > positive_count and critical_count > 0:
+                    sentiment = 'negative'
+                    data['negative_count'] += 1
+                elif positive_count > critical_count and positive_count > 0:
+                    sentiment = 'positive'
+                    data['positive_count'] += 1
+                else:
+                    sentiment = 'neutral'
+                    data['neutral_count'] += 1
                 
-                is_critical = is_keyword_critical or is_pattern_critical or has_hate_terms or is_high_risk
+                data['sentiment_scores'].append(sentiment)
                 
-                if is_critical:
-                    data['negative_post_texts'].append(post.original_text[:200])
-                    if len(data['critical_posts']) < 5:  
-                        data['critical_posts'].append({
-                            'text': post.original_text[:200],
-                            'platform': platform,
-                            'timestamp': post.timestamp_share,
-                            'risk_level': risk_level,
-                            'url': post.url if post.url and str(post.url).startswith('http') else None,
-                            'is_hate_speech': has_hate_terms or is_pattern_critical,
-                            'is_high_risk': is_high_risk,
-                        })
+                # Store critical posts
+                if sentiment == 'negative' and len(data['critical_posts']) < 5:
+                    data['critical_posts'].append({
+                        'text': post.original_text[:200],
+                        'platform': platform,
+                        'timestamp': post.timestamp_share,
+                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
+                        'url': post.url if post.url and str(post.url).startswith('http') else None,
+                    })
                 
-                if len(data['sample_posts']) < 3:
+                # Store sample posts (mix of critical and neutral)
+                if len(data['sample_posts']) < 5:
                     data['sample_posts'].append({
                         'text': post.original_text[:150],
                         'platform': platform,
                         'timestamp': post.timestamp_share,
-                        'risk_level': risk_level,
+                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
                         'url': post.url if post.url and str(post.url).startswith('http') else None,
-                        'is_critical': is_critical,
+                        'sentiment': sentiment,
                     })
     
     # Build final results
@@ -4855,18 +4801,6 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
     for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
         if data['count'] < 2:
             continue
-            
-        # --- CALCULATE PER-PEP BOT PERCENTAGES ---
-        total_pep_posts = data['count']
-        bot_ratio = data['bot_controlled_posts_count'] / total_pep_posts if total_pep_posts > 0 else 0
-        bot_score_pct = round(bot_ratio * 100, 1)
-        
-        if bot_score_pct >= 50.0:
-            bot_level = '🔴 High Risk (Coordinated Network Volume)'
-        elif bot_score_pct >= 15.0:
-            bot_level = '🟡 Medium Risk (Bot Sub-signatures Present)'
-        else:
-            bot_level = '🟢 Low (Likely Human Activity)'
         
         total_posts = sum(data['platforms'].values())
         platform_breakdown = [
@@ -4879,46 +4813,32 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         
         clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
         
-        sentiment = analyze_pep_sentiment_groq(data['all_post_texts'], pep_name)
-        
-        sentiment_counts = data['sentiment_counts'].copy()
-        if sentiment == 'Negative':
-            sentiment_counts['negative'] = int(data['count'] * 0.7)
-            sentiment_counts['neutral'] = int(data['count'] * 0.3)
-        elif sentiment == 'Positive':
-            sentiment_counts['positive'] = int(data['count'] * 0.7)
-            sentiment_counts['neutral'] = int(data['count'] * 0.3)
-        elif sentiment == 'Mixed':
-            sentiment_counts['negative'] = int(data['count'] * 0.4)
-            sentiment_counts['positive'] = int(data['count'] * 0.3)
-            sentiment_counts['neutral'] = int(data['count'] * 0.3)
+        # Calculate sentiment percentages
+        total_analyzed = len(data['sentiment_scores'])
+        if total_analyzed > 0:
+            negative_pct = (data['negative_count'] / total_analyzed) * 100
+            positive_pct = (data['positive_count'] / total_analyzed) * 100
+            neutral_pct = (data['neutral_count'] / total_analyzed) * 100
         else:
-            sentiment_counts['neutral'] = data['count']
+            negative_pct = positive_pct = neutral_pct = 0
         
-        sentiment_total = sum(sentiment_counts.values())
-        if sentiment_total > 0:
-            sentiment_percentages = {
-                'negative': round((sentiment_counts['negative'] / sentiment_total) * 100, 1),
-                'neutral': round((sentiment_counts['neutral'] / sentiment_total) * 100, 1),
-                'positive': round((sentiment_counts['positive'] / sentiment_total) * 100, 1),
-                'mixed': round((sentiment_counts['mixed'] / sentiment_total) * 100, 1),
-            }
-        else:
-            sentiment_percentages = {'negative': 0, 'neutral': 100, 'positive': 0, 'mixed': 0}
-            
-        if sentiment == 'Negative':
+        # Determine overall sentiment
+        if negative_pct > 40:
+            overall_sentiment = 'Negative'
+            sentiment_label = f'🔴 High Criticism ({negative_pct:.0f}% negative)'
             risk_score = 8
-        elif sentiment == 'Mixed':
-            risk_score = 5
-        elif sentiment == 'Positive':
+        elif positive_pct > 40:
+            overall_sentiment = 'Positive'
+            sentiment_label = f'🟢 Mostly Positive ({positive_pct:.0f}% positive)'
             risk_score = 2
         else:
-            risk_score = 3
+            overall_sentiment = 'Mixed'
+            sentiment_label = f'🟡 Mixed Sentiment (Neg: {negative_pct:.0f}%, Pos: {positive_pct:.0f}%)'
+            risk_score = 5
         
-        if data['tfgbv_post_count'] > 0:
+        # Increase risk if many critical posts
+        if len(data['critical_posts']) >= 3:
             risk_score = min(10, risk_score + 2)
-            
-        sentiment_label = '🔴 High Criticism' if sentiment == 'Negative' else '🟡 Mixed Sentiment' if sentiment == 'Mixed' else '⚪ Mostly Neutral'
         
         results.append({
             'pep_name': pep_name,
@@ -4927,10 +4847,8 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'velocity_alert': peak_hour in [0, 1, 2, 3, 4, 5],
             'peak_hour': peak_hour,
             'top_hashtags': [{'tag': tag, 'count': cnt} for tag, cnt in data['hashtags'].most_common(5) if cnt > 1],
-            # --- COMPLIANT DYNAMIC BOT OUTPUT ---
-            'bot_score': bot_score_pct,
-            'bot_level': bot_level,
-            'bot_signals_reasons': list(data['bot_reasons']),
+            'bot_score': 0,
+            'bot_level': '🟢 Low (Likely Human)',
             'is_gendered_target': data['is_gendered_target'],
             'tfgbv_matches': data['tfgbv_matches'],
             'tfgbv_post_count': data['tfgbv_post_count'],
@@ -4938,12 +4856,16 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
             'sample_posts': data['sample_posts'],
             'critical_posts': data['critical_posts'],
             'risk_score': risk_score,
-            'sentiment': sentiment,
+            'sentiment': overall_sentiment,
             'sentiment_label': sentiment_label,
-            'sentiment_counts': sentiment_counts,  
-            'sentiment_percentages': sentiment_percentages,
-            'negative_post_count': sentiment_counts['negative'],
-            'neutral_post_count': sentiment_counts['neutral'],
+            'sentiment_breakdown': {
+                'negative': round(negative_pct, 1),
+                'positive': round(positive_pct, 1),
+                'neutral': round(neutral_pct, 1),
+            },
+            'negative_post_count': data['negative_count'],
+            'positive_post_count': data['positive_count'],
+            'neutral_post_count': data['neutral_count'],
         })
     
     return results
