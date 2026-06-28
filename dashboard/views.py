@@ -4703,6 +4703,16 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'ህገ-ወጥ', 'ማጭበርበር', 'incompetent', 'failed', 'useless', 'worthless', 'disgrace', 'shame', 
         'አላዋቂ', 'ውድቀት', 'ውርደት', 'ታሰረ', 'አውርድ'
     ]
+   
+   
+    positive_keywords = [
+        'congratulate', 'support', 'praise', 'excellent', 'great', 'wonderful', 'amazing',
+        'thank you', 'appreciate', 'love', 'best', 'success', 'victory', 'win', 'progress',
+        'development', 'achievement', 'proud', 'honor', 'respect', 'admire', 'inspire',
+        'መልካም', 'እንኳን ደስ አለዎት', 'አመሰግናለሁ', 'ይመስገን', 'ጥ', 'ድል', 'ስኬት', 'ልማት',
+        'peace', 'unity', 'hope', 'future', 'together', 'strong', 'leader', 'vision',
+        'democracy', 'freedom', 'justice', 'fair', 'honest', 'trust', 'believe'
+    ]
     
     hostile_patterns = [
         r'(down with|ውድቀት ለ|ይውረድ)\b',
