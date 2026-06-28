@@ -4865,50 +4865,52 @@ def detect_tfgbv_in_text(text, tfgbv_terms):
     return matches
 
 
-def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
+def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=8):
     """
-    Enhanced PEP analysis with lexicon-based sentiment analysis
-    and proper critical post detection.
+    Enhanced PEP analysis – scans all posts, correct sentiment, real critical posts.
     """
-    from collections import defaultdict, Counter
-    import re
-    
     pep_names = {pep.name.lower().strip(): pep for pep in peps_queryset if pep.name}
-    
-    # Load weaponized/critical keywords for sentiment analysis
-    critical_keywords = [
-        'kill', 'attack', 'hate', 'enemy', 'genocide', 'massacre', 'kill them', 'death to', 
-        'destroy', 'eliminate', 'remove', 'terrorist', 'extremist', 'war', 'fano', 'tpdf', 'ola', 
-        'ህወሃት', 'ፋኖ', 'ኦነግ', 'ጦርነት', 'ግድያ', 'ፈጅ',
-        'banda', 'woyane', 'neftegna', 'galla', 'junta', 'gim 7', 'pp', 'prosperity', 'ብልጽግና', 
-        'ነፍጠኛ', 'ወያኔ', 'ጁንታ', 'ባንዳ', 'ሰፈር', 'ክልል', 'አማራ', 'ኦሮሞ', 'ትግራይ', 'ጎሳ',
-        'corrupt', 'thief', 'traitor', 'criminal', 'dictator', 'tyrant', 'oppressor', 'liar', 
-        'betrayal', 'conspiracy', 'plot', 'scheme', 'failed state', 'famine', 'hunger', 'ሌባ', 
-        'ከሃዲ', 'ውሸታም', 'አምባገነን', 'ሙስና', 'rigged', 'fraud', 'stolen', 'fake', 'nebe', 'electoral', 
-        'ህገ-ወጥ', 'ማጭበርበር', 'incompetent', 'failed', 'useless', 'worthless', 'disgrace', 'shame', 
-        'አላዋቂ', 'ውድቀት', 'ውርደት', 'ታሰረ', 'አውርድ'
-    ]
-   
-   
-    positive_keywords = [
-        'congratulate', 'support', 'praise', 'excellent', 'great', 'wonderful', 'amazing',
-        'thank you', 'appreciate', 'love', 'best', 'success', 'victory', 'win', 'progress',
-        'development', 'achievement', 'proud', 'honor', 'respect', 'admire', 'inspire',
-        'መልካም', 'እንኳን ደስ አለዎት', 'አመሰግናለሁ', 'ይመስገን', 'ጥ', 'ድል', 'ስኬት', 'ልማት',
-        'peace', 'unity', 'hope', 'future', 'together', 'strong', 'leader', 'vision',
-        'democracy', 'freedom', 'justice', 'fair', 'honest', 'trust', 'believe'
-    ]
-    
-    hostile_patterns = [
-        r'(down with|ውድቀት ለ|ይውረድ)\b',
-        r'(blood on hands|ደምናችሁ|ደም ያፈሰሰ)',
-        r'(puppet of|የ\w+ ተላላኪ|መሳሪያ)',
-        r'(destroying the country|አገር አፈራሽ|ሀገር አጥፊ)',
-        r'(step down|ስልጣን ልቀቅ|ልቀቁ)',
-        r'\b(flee|fled|amora|አሞራ)\b'
-    ]
-    
-    pep_mentions = defaultdict(lambda: {
+    if not pep_names:
+        return []
+ 
+    try:
+        tfgbv_terms = get_tfgbv_lexicon_terms()
+    except Exception:
+        tfgbv_terms = []
+ 
+    # Word-boundary aware critical / positive keyword check
+    _CRIT_RE = re.compile(
+        r'\b(' + '|'.join(re.escape(k) for k in [
+            'kill', 'attack', 'hate', 'enemy', 'genocide', 'massacre',
+            'slaughter', 'destroy', 'eliminate', 'terrorist', 'extremist',
+            'traitor', 'criminal', 'dictator', 'oppressor', 'failed state',
+            'woyane', 'junta', 'banda', 'neftegna', 'galla', 'fano', 'ola',
+            'corrupt', 'thief', 'betrayal', 'conspiracy', 'rigged', 'fraud',
+            'stolen', 'incompetent', 'useless', 'worthless', 'disgrace',
+            # Amharic
+            'ግድያ', 'ጦርነት', 'ፈጅ', 'ጥቃት', 'ባንዳ', 'ወያኔ', 'ጁንታ',
+            'ነፍጠኛ', 'ሌባ', 'ከሃዲ', 'ውሸታም', 'አምባገነን', 'ሙስና',
+        ]) + r')\b',
+        re.IGNORECASE,
+    )
+    _POS_RE = re.compile(
+        r'\b(' + '|'.join(re.escape(k) for k in [
+            'congratulate', 'support', 'praise', 'excellent', 'wonderful',
+            'thank you', 'appreciate', 'success', 'victory', 'progress',
+            'achievement', 'proud', 'honor', 'respect', 'admire', 'inspire',
+            'peace', 'unity', 'hope', 'together', 'strong', 'vision',
+            'democracy', 'freedom', 'justice', 'fair', 'honest', 'trust',
+        ]) + r')\b',
+        re.IGNORECASE,
+    )
+    _HOSTILE_RE = re.compile(
+        r'(down with|ውድቀት ለ|ይውረድ|blood on hands|ደምናችሁ|ደም ያፈሰሰ'
+        r'|puppet of|የ\w+ ተላላኪ|destroying the country|አገር አፈራሽ'
+        r'|step down|ስልጣን ልቀቅ|ልቀቁ)',
+        re.IGNORECASE,
+    )
+ 
+    pep_data = defaultdict(lambda: {
         'count': 0,
         'platforms': Counter(),
         'hourly_distribution': Counter(),
@@ -4917,153 +4919,240 @@ def get_enhanced_pep_analysis(posts_queryset, peps_queryset, limit=6):
         'tfgbv_matches': [],
         'tfgbv_post_count': 0,
         'narrative_clusters': defaultdict(list),
-        'sample_posts': [],
-        'critical_posts': [],
-        'all_post_texts': [],
-        'sentiment_scores': [],  # Track sentiment per post
+        'critical_posts': [],      # up to 20 confirmed negative posts
+        'positive_posts': [],
+        'sample_texts': [],        # first 50 texts for Groq
         'negative_count': 0,
         'positive_count': 0,
         'neutral_count': 0,
     })
-    
-    # Analyze posts
-    for post in posts_queryset[:5000]:
+ 
+    # ── Scan ALL posts with iterator (memory efficient) ───────────────────
+    total_scanned = 0
+    for post in posts_queryset.iterator(chunk_size=500):
         if not post.original_text:
             continue
-        
-        text_lower = post.original_text.lower()
-        
+        total_scanned += 1
+        text = post.original_text
+        text_lower = text.lower()
+ 
         for pep_name, pep_obj in pep_names.items():
-            if pep_name in text_lower or pep_obj.name.lower() in text_lower:
-                data = pep_mentions[pep_obj.name]
-                data['count'] += 1
-                data['all_post_texts'].append(post.original_text[:300])
-                
-                platform = post.platform or 'Unknown'
-                data['platforms'][platform] += 1
-                
-                if post.timestamp_share:
-                    data['hourly_distribution'][post.timestamp_share.hour] += 1
-                
-                hashtags = re.findall(r'#(\w+)', post.original_text)
-                data['hashtags'].update(hashtags)
-                
-                # Narrative clustering
-                if any(kw in text_lower for kw in ['rigged', 'stolen', 'fraud', 'nebe', 'ማጭበርበር']):
-                    data['narrative_clusters']['Election Integrity'].append(post.original_text[:100])
-                if any(kw in text_lower for kw in ['ethnic', 'tribal', 'amhara', 'oromo', 'tigray', 'fano', 'ola', 'ነፍኛ', 'ጁንታ', 'ወያኔ']):
-                    data['narrative_clusters']['Ethnic Dynamics & Conflict'].append(post.original_text[:100])
-                
-                # LEXICON-BASED SENTIMENT ANALYSIS
-                critical_count = sum(1 for kw in critical_keywords if kw in text_lower)
-                positive_count = sum(1 for kw in positive_keywords if kw in text_lower)
-                
-                if critical_count > positive_count and critical_count > 0:
-                    sentiment = 'negative'
-                    data['negative_count'] += 1
-                elif positive_count > critical_count and positive_count > 0:
-                    sentiment = 'positive'
-                    data['positive_count'] += 1
-                else:
-                    sentiment = 'neutral'
-                    data['neutral_count'] += 1
-                
-                data['sentiment_scores'].append(sentiment)
-                
-                # Store critical posts
-                if sentiment == 'negative' and len(data['critical_posts']) < 5:
-                    data['critical_posts'].append({
-                        'text': post.original_text[:200],
-                        'platform': platform,
-                        'timestamp': post.timestamp_share,
-                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
-                        'url': post.url if post.url and str(post.url).startswith('http') else None,
-                    })
-                
-                # Store sample posts (mix of critical and neutral)
-                if len(data['sample_posts']) < 5:
-                    data['sample_posts'].append({
-                        'text': post.original_text[:150],
-                        'platform': platform,
-                        'timestamp': post.timestamp_share,
-                        'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
-                        'url': post.url if post.url and str(post.url).startswith('http') else None,
-                        'sentiment': sentiment,
-                    })
-    
-    # Build final results
+            if pep_name not in text_lower:
+                continue
+ 
+            d = pep_data[pep_obj.name]
+            d['count'] += 1
+ 
+            platform = post.platform or 'Unknown'
+            d['platforms'][platform] += 1
+            if post.timestamp_share:
+                d['hourly_distribution'][post.timestamp_share.hour] += 1
+            for h in re.findall(r'#(\w+)', text):
+                d['hashtags'][h] += 1
+ 
+            # Narrative clusters
+            if any(kw in text_lower for kw in
+                   ['rigged', 'stolen', 'fraud', 'nebe', 'ማጭበርበር',
+                    'election', 'vote', 'ballot', 'tally']):
+                d['narrative_clusters']['Election Integrity'].append(text[:100])
+            if any(kw in text_lower for kw in
+                   ['amhara', 'oromo', 'tigray', 'ethnic', 'fano', 'ola',
+                    'ነፍጠኛ', 'ጁንታ', 'ወያኔ', 'tribal']):
+                d['narrative_clusters']['Ethnic Dynamics & Conflict'].append(text[:100])
+            if any(kw in text_lower for kw in
+                   ['corrupt', 'corruption', 'bribe', 'embezzle', 'steal',
+                    'misuse', 'abuse', 'ሙስና', 'ሌባ']):
+                d['narrative_clusters']['Corruption & Accountability'].append(text[:100])
+ 
+            # TFGBV check
+            if tfgbv_terms:
+                hits = detect_tfgbv_in_text(text, tfgbv_terms)
+                if hits:
+                    d['is_gendered_target'] = True
+                    d['tfgbv_post_count'] += 1
+                    for hit in hits:
+                        if not any(m['term'] == hit['term']
+                                   for m in d['tfgbv_matches']):
+                            d['tfgbv_matches'].append(hit)
+ 
+            # Sentiment scoring
+            crit_hits = len(_CRIT_RE.findall(text))
+            pos_hits  = len(_POS_RE.findall(text))
+            hostile   = bool(_HOSTILE_RE.search(text))
+ 
+            is_negative = (crit_hits > pos_hits and crit_hits > 0) or hostile
+            is_positive = (pos_hits > crit_hits and pos_hits > 0) and not hostile
+ 
+            post_dict = {
+                'text':       text[:250],
+                'platform':   platform,
+                'timestamp':  post.timestamp_share,
+                'risk_level': getattr(post, 'risk_level', 'medium') or 'medium',
+                'url': (post.url if post.url
+                        and str(post.url).startswith('http') else None),
+            }
+ 
+            if is_negative:
+                d['negative_count'] += 1
+                if len(d['critical_posts']) < 20:
+                    d['critical_posts'].append(post_dict)
+            elif is_positive:
+                d['positive_count'] += 1
+                if len(d['positive_posts']) < 10:
+                    d['positive_posts'].append(post_dict)
+            else:
+                d['neutral_count'] += 1
+ 
+            # Collect sample texts for Groq (first 50 per PEP)
+            if len(d['sample_texts']) < 50:
+                d['sample_texts'].append(text[:300])
+ 
+    logger.info(f"get_enhanced_pep_analysis: scanned {total_scanned} posts")
+ 
+    # ── Build results ──────────────────────────────────────────────────────
     results = []
-    for pep_name, data in sorted(pep_mentions.items(), key=lambda x: x[1]['count'], reverse=True)[:limit]:
-        if data['count'] < 2:
+    for pep_name, d in sorted(
+            pep_data.items(), key=lambda x: x[1]['count'], reverse=True
+    )[:limit]:
+        if d['count'] < 2:
             continue
-        
-        total_posts = sum(data['platforms'].values())
-        platform_breakdown = [
-            {'name': plat, 'count': cnt, 'percent': round(cnt/total_posts*100) if total_posts > 0 else 0}
-            for plat, cnt in data['platforms'].most_common(3)
-        ]
-        
-        peak_hour = data['hourly_distribution'].most_common(1)
-        peak_hour = peak_hour[0][0] if peak_hour else 0
-        
-        clusters = [{'name': name, 'count': len(posts)} for name, posts in data['narrative_clusters'].items()]
-        
-        # Calculate sentiment percentages
-        total_analyzed = len(data['sentiment_scores'])
-        if total_analyzed > 0:
-            negative_pct = (data['negative_count'] / total_analyzed) * 100
-            positive_pct = (data['positive_count'] / total_analyzed) * 100
-            neutral_pct = (data['neutral_count'] / total_analyzed) * 100
+ 
+        total_analyzed = d['negative_count'] + d['positive_count'] + d['neutral_count']
+        if total_analyzed == 0:
+            continue
+ 
+        neg_pct = d['negative_count'] / total_analyzed * 100
+        pos_pct = d['positive_count'] / total_analyzed * 100
+ 
+        # Call Groq ONCE per PEP using a representative sample
+        try:
+            groq_sentiment = analyze_pep_sentiment_groq(
+                d['sample_texts'][:10], pep_name
+            )
+        except Exception:
+            groq_sentiment = None
+ 
+        # Prefer Groq if available, fall back to lexicon counts
+        if groq_sentiment in ('Positive', 'Negative', 'Mixed', 'Neutral'):
+            overall_sentiment = groq_sentiment
         else:
-            negative_pct = positive_pct = neutral_pct = 0
-        
-        # Determine overall sentiment
-        if negative_pct > 40:
-            overall_sentiment = 'Negative'
-            sentiment_label = f'🔴 High Criticism ({negative_pct:.0f}% negative)'
-            risk_score = 8
-        elif positive_pct > 40:
-            overall_sentiment = 'Positive'
-            sentiment_label = f'🟢 Mostly Positive ({positive_pct:.0f}% positive)'
-            risk_score = 2
-        else:
-            overall_sentiment = 'Mixed'
-            sentiment_label = f'🟡 Mixed Sentiment (Neg: {negative_pct:.0f}%, Pos: {positive_pct:.0f}%)'
-            risk_score = 5
-        
-        # Increase risk if many critical posts
-        if len(data['critical_posts']) >= 3:
+            if neg_pct > 40:
+                overall_sentiment = 'Negative'
+            elif pos_pct > 40:
+                overall_sentiment = 'Positive'
+            elif neg_pct > 20:
+                overall_sentiment = 'Mixed'
+            else:
+                overall_sentiment = 'Neutral'
+ 
+        # Risk score
+        risk_score = {'Negative': 8, 'Mixed': 5,
+                      'Positive': 2, 'Neutral': 3}.get(overall_sentiment, 3)
+        if d['tfgbv_post_count'] > 0:
             risk_score = min(10, risk_score + 2)
-        
+        if len(d['critical_posts']) >= 5:
+            risk_score = min(10, risk_score + 1)
+ 
+        sentiment_label = {
+            'Negative': f'🔴 High Criticism ({neg_pct:.0f}% negative)',
+            'Mixed':    f'🟡 Mixed Sentiment (Neg: {neg_pct:.0f}%, Pos: {pos_pct:.0f}%)',
+            'Positive': f'🟢 Mostly Positive ({pos_pct:.0f}% positive)',
+            'Neutral':  f'⚪ Mostly Neutral',
+        }.get(overall_sentiment, '⚪ Neutral')
+ 
+        total_posts = sum(d['platforms'].values())
+        platform_breakdown = [
+            {'name': pl, 'count': cnt,
+             'percent': round(cnt / total_posts * 100) if total_posts else 0}
+            for pl, cnt in d['platforms'].most_common(3)
+        ]
+ 
+        peak_hour = d['hourly_distribution'].most_common(1)
+        peak_hour = peak_hour[0][0] if peak_hour else 0
+ 
+        # sample_posts: show critical ones first, then pad with others
+        sample_posts = []
+        for p in d['critical_posts'][:3]:
+            sample_posts.append({**p, 'sentiment': 'negative'})
+        for p in d['positive_posts'][:2]:
+            if len(sample_posts) < 5:
+                sample_posts.append({**p, 'sentiment': 'positive'})
+ 
         results.append({
-            'pep_name': pep_name,
-            'mention_count': data['count'],
+            'pep_name':          pep_name,
+            'mention_count':     d['count'],
             'platform_breakdown': platform_breakdown,
-            'velocity_alert': peak_hour in [0, 1, 2, 3, 4, 5],
-            'peak_hour': peak_hour,
-            'top_hashtags': [{'tag': tag, 'count': cnt} for tag, cnt in data['hashtags'].most_common(5) if cnt > 1],
-            'bot_score': 0,
-            'bot_level': '🟢 Low (Likely Human)',
-            'is_gendered_target': data['is_gendered_target'],
-            'tfgbv_matches': data['tfgbv_matches'],
-            'tfgbv_post_count': data['tfgbv_post_count'],
-            'narrative_clusters': clusters,
-            'sample_posts': data['sample_posts'],
-            'critical_posts': data['critical_posts'],
-            'risk_score': risk_score,
-            'sentiment': overall_sentiment,
-            'sentiment_label': sentiment_label,
+            'velocity_alert':    peak_hour in [0, 1, 2, 3, 4, 5],
+            'peak_hour':         peak_hour,
+            'top_hashtags':      [
+                {'tag': t, 'count': c}
+                for t, c in d['hashtags'].most_common(5) if c > 1
+            ],
+            'bot_score':         0,
+            'bot_level':         '🟢 Low (Likely Human)',
+            'is_gendered_target': d['is_gendered_target'],
+            'tfgbv_matches':     d['tfgbv_matches'],
+            'tfgbv_post_count':  d['tfgbv_post_count'],
+            'narrative_clusters': [
+                {'name': n, 'count': len(posts)}
+                for n, posts in d['narrative_clusters'].items()
+            ],
+            'sample_posts':      sample_posts,
+            'critical_posts':    d['critical_posts'][:5],
+            'risk_score':        risk_score,
+            'sentiment':         overall_sentiment,
+            'sentiment_label':   sentiment_label,
             'sentiment_breakdown': {
-                'negative': round(negative_pct, 1),
-                'positive': round(positive_pct, 1),
-                'neutral': round(neutral_pct, 1),
+                'negative': round(neg_pct, 1),
+                'positive': round(pos_pct, 1),
+                'neutral':  round(100 - neg_pct - pos_pct, 1),
             },
-            'negative_post_count': data['negative_count'],
-            'positive_post_count': data['positive_count'],
-            'neutral_post_count': data['neutral_count'],
+            'negative_post_count': d['negative_count'],
+            'positive_post_count': d['positive_count'],
+            'neutral_post_count':  d['neutral_count'],
         })
-    
+ 
     return results
+
+_INNOCUOUS_RE = re.compile(
+    r'\b(peace|democracy|award|commend|congratulate|showcase|celebrate'
+    r'|civic|positive|progress|development|strong|engage|youth|student'
+    r'|burundi|kenya|foreign observer|international|observer|commend'
+    r'|general election|voting|polling station|civic spirit|youth engagement'
+    r'|step towards democracy|democratic)\b',
+    re.IGNORECASE,
+)
+ 
+ 
+def _is_genuine_match(term: str, text_lower: str, severity: str,
+                       is_innocuous_context: bool) -> bool:
+    """
+    Return True only when the term is a genuine harmful match.
+ 
+    Rules:
+    1. ASCII terms must appear as whole words (word-boundary check).
+       This prevents 'war' matching 'award', 'forward', 'cowardly'.
+    2. Low/medium-severity terms are suppressed in innocuous contexts.
+    3. Non-ASCII (Amharic/Oromo) terms use substring matching as before.
+    """
+    # Non-ASCII (Ge'ez / Ethiopic script) — substring OK
+    if re.search(r'[^\x00-\x7F]', term):
+        if term.lower() not in text_lower:
+            return False
+        # Still suppress low-severity in innocuous context
+        if is_innocuous_context and severity in ('low',):
+            return False
+        return True
+ 
+    # ASCII term — require word boundary
+    if not re.search(r'\b' + re.escape(term.lower()) + r'\b', text_lower):
+        return False
+ 
+    # Suppress low/medium severity in clearly positive/neutral posts
+    if is_innocuous_context and severity in ('low', 'medium'):
+        return False
+ 
+    return True
     
 class BaseTabMixin:
     """Adds consistent navigation tabs to any class-based view"""
@@ -5282,322 +5371,358 @@ class NarrativesView(TemplateView):
 
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
-
+ 
     def _get_lexicon_term_count(self):
-        """Count total terms in CONFIG lexicon + Database"""
+        """Count total terms in CONFIG lexicon + Database."""
         try:
-            total = 0
-            for category, terms in CONFIG.get('lexicon', {}).items():
-                total += len(terms)
-            # Add terms from database
+            total = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values())
             total += LexiconTerm.objects.count()
             return total
         except Exception:
             return "1000+"
-
+ 
+    def _scan_post(self, text: str, category_filter=None):
+        """
+        Scan one post's text.  Returns a (possibly empty) list of match dicts
+        after applying word-boundary and innocuous-context filters.
+        """
+        if not text or len(text.strip()) < 10:
+            return []
+ 
+        text_lower = text.lower()
+        is_innocuous = bool(_INNOCUOUS_RE.search(text_lower))
+ 
+        raw_matches = scan_text_for_lexicon_terms(text, category_filter=category_filter)
+ 
+        filtered = []
+        for m in raw_matches:
+            if len(m['term'].strip()) <= 1:
+                continue
+            if _is_genuine_match(m['term'], text_lower,
+                                  m.get('severity', 'medium'), is_innocuous):
+                filtered.append(m)
+ 
+        return filtered
+ 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # 1. GET SELECTED CATEGORY FROM URL PARAMS
+ 
+        # ── 1. URL params ──────────────────────────────────────────────────
         selected_category = self.request.GET.get('category', '').strip()
-        
-        # 2. TRY TO LOAD CACHED RESULTS FIRST (Instant load for main view)
-        cache_key = "lexicon_dashboard_data_v2"
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end   = self.request.GET.get('end_date', '')
+ 
+        # ── 2. Cache (overview only, keyed to date range) ─────────────────
+        cache_key = f"lexicon_dashboard_v3_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
-        
-        # If we have a selected category, we bypass cache to get fresh filtered data
+ 
         if cached_data and not selected_category:
             context.update(cached_data)
-            context['ai_insights'] = cache.get("lexicons_ai_insights_v1")
+            context['ai_insights']  = cache.get("lexicons_ai_insights_v1")
             context['ai_is_running'] = cache.get("lexicons_ai_running")
-            # Refresh term count even from cache (fast query)
             context['lexicon_term_count'] = self._get_lexicon_term_count()
             context['selected_category'] = ''
-            context['category_terms'] = []
-            context['posts_with_terms'] = []
+            context['category_terms']    = []
+            context['posts_with_terms']  = []
             return context
-
-        # 3. GET POSTS (Limit to recent 5000 for performance)
+ 
+        # ── 3. Fetch posts ─────────────────────────────────────────────────
         try:
-            filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+            filtered_posts, start_date, end_date = get_election_posts_queryset(
+                self.request)
             total_posts = filtered_posts.count()
         except Exception as e:
-            logger.error(f"Error getting posts: {e}")
+            logger.error(f"LexiconsView: error fetching posts: {e}")
             context.update({
                 'active_tab': 'lexicons',
-                'top_terms': [],
-                'category_counts': {},
-                'severity_counts': {},
-                'total_matches': 0,
-                'posts_scanned': 0,
-                'total_posts': 0,
-                'wordcloud_base64': None,
-                'targeted_entities': [],
-                'ai_insights': None,
-                'ai_is_running': False,
+                'top_terms': [], 'category_counts': {}, 'severity_counts': {},
+                'total_matches': 0, 'posts_scanned': 0, 'total_posts': 0,
+                'wordcloud_base64': None, 'targeted_entities': [],
+                'ai_insights': None, 'ai_is_running': False,
                 'lexicon_term_count': self._get_lexicon_term_count(),
                 'selected_category': selected_category,
-                'category_terms': [],
-                'posts_with_terms': [],
+                'category_terms': [], 'posts_with_terms': [],
             })
             return context
-
-        # 4. HANDLE CATEGORY SELECTION
-        category_terms = []
+ 
+        start_str = (start_date.date().isoformat()
+                     if hasattr(start_date, 'date') else str(start_date))
+        end_str   = (end_date.date().isoformat()
+                     if hasattr(end_date, 'date') else str(end_date))
+ 
+        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
+        category_terms  = []
         posts_with_terms = []
-        all_matches = []
-        posts_scanned = 0
-        
+        all_matches     = []
+        posts_scanned   = 0
+ 
         if selected_category:
-            # MODE: Show all terms in selected category + matching posts
-            logger.info(f"Viewing category: {selected_category}")
-            
-            # Fetch terms from DB for this category
-            # EXCLUDE low-severity terms (like "amhara", "oromo" which are neutral mentions)
+            logger.info(f"LexiconsView: category view → {selected_category}")
+ 
+            # Load terms (medium/high/critical only — skip 'low')
             db_terms = LexiconTerm.objects.filter(
                 category=selected_category
-            ).exclude(
-                severity='low'  # Exclude low-severity terms
-            )
-            
-            # If DB is empty, fallback to CONFIG (also excluding low severity)
-            if not db_terms.exists() and selected_category in CONFIG['lexicon']:
+            ).exclude(severity='low')
+ 
+            if db_terms.exists():
                 category_terms = [
-                    {'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')}
-                    for t, m in CONFIG['lexicon'][selected_category].items()
-                    if m.get('severity', 'medium') != 'low'  # Exclude low severity
-                ]
-            else:
-                category_terms = [
-                    {'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language}
+                    {'term': t.term, 'severity': t.severity,
+                     'target_entity': t.target_entity, 'language': t.language}
                     for t in db_terms
                 ]
-            
-            logger.info(f"Found {len(category_terms)} terms in {selected_category} (excluding low severity)")
-            
-            # Find posts containing these terms
+            elif selected_category in CONFIG.get('lexicon', {}):
+                category_terms = [
+                    {'term': t,
+                     'severity': m.get('severity', 'medium'),
+                     'target_entity': m.get('target_entity', ''),
+                     'language': m.get('language', '')}
+                    for t, m in CONFIG['lexicon'][selected_category].items()
+                    if m.get('severity', 'medium') != 'low'
+                ]
+ 
+            logger.info(f"  {len(category_terms)} terms loaded for {selected_category}")
+ 
             if category_terms:
-                term_list = [t['term'].lower() for t in category_terms if len(t['term']) > 1]
-                
-                # Scan posts for these specific terms
-                for post in filtered_posts[:2000]:  # Limit for performance
-                    if post.original_text:
-                        text_lower = post.original_text.lower()
-                        matched_terms = [t for t in term_list if t in text_lower]
-                        
-                        if matched_terms:
-                            posts_with_terms.append({
-                                'id': post.id,
-                                'text': post.original_text[:300],
-                                'platform': post.platform,
-                                'timestamp': post.timestamp_share,
-                                'url': post.url,
-                                'matched_terms': list(set(matched_terms))[:5],  # Unique terms, limit 5
-                            })
-                            
-                            # Also add to all_matches for stats
-                            for term in matched_terms:
-                                # Find metadata for this term
-                                metadata = next(
-                                    (t for t in category_terms if t['term'].lower() == term),
-                                    {'severity': 'medium', 'target_entity': '', 'language': ''}
-                                )
-                                all_matches.append({
-                                    'term': term,
-                                    'category': selected_category,
-                                    'severity': metadata.get('severity', 'medium'),
-                                    'target_entity': metadata.get('target_entity', ''),
-                                    'language': metadata.get('language', ''),
-                                })
-                
-                posts_scanned = len(posts_with_terms)
-                logger.info(f"Found {len(posts_with_terms)} posts with {selected_category} terms")
-        
+                # Build a fast lookup: term_lower → metadata
+                term_meta = {
+                    td['term'].lower(): td for td in category_terms
+                    if len(td['term']) > 1
+                }
+ 
+                # Scan ALL posts (iterator = memory efficient)
+                for post in filtered_posts.iterator(chunk_size=500):
+                    if not post.original_text:
+                        continue
+ 
+                    text       = post.original_text
+                    text_lower = text.lower()
+                    is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
+ 
+                    matched_terms = []
+                    for term_lower, meta in term_meta.items():
+                        if not _is_genuine_match(
+                                term_lower, text_lower,
+                                meta.get('severity', 'medium'), is_inoc):
+                            continue
+                        matched_terms.append(term_lower)
+                        all_matches.append({
+                            'term':          meta['term'],
+                            'category':      selected_category,
+                            'severity':      meta.get('severity', 'medium'),
+                            'target_entity': meta.get('target_entity', ''),
+                            'language':      meta.get('language', ''),
+                        })
+ 
+                    if matched_terms:
+                        posts_scanned += 1
+                        posts_with_terms.append({
+                            'id':            post.id,
+                            'text':          text[:300],
+                            'platform':      post.platform,
+                            'timestamp':     post.timestamp_share,
+                            'url':           post.url,
+                            'matched_terms': list(set(matched_terms))[:5],
+                        })
+ 
+                logger.info(
+                    f"  Category scan complete: {posts_scanned} posts matched "
+                    f"out of {total_posts}"
+                )
+ 
+        # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
-            # MODE: Overview - scan all categories
             # Trigger background AI analysis if not already running
-            cache_key_ai = "lexicons_ai_insights_v1"
-            ai_insights = cache.get(cache_key_ai)
+            cache_key_ai  = "lexicons_ai_insights_v1"
+            ai_insights   = cache.get(cache_key_ai)
             ai_is_running = cache.get("lexicons_ai_running")
+ 
             if not ai_insights and not ai_is_running and total_posts > 10:
                 cache.set("lexicons_ai_running", True, 300)
-                post_ids = list(filtered_posts.values_list('id', flat=True)[:1000])
-                sample_ids = random.sample(post_ids, min(50, len(post_ids)))
-                thread = threading.Thread(
+                post_ids    = list(filtered_posts.values_list('id', flat=True)[:1000])
+                sample_ids  = random.sample(post_ids, min(50, len(post_ids)))
+                t = threading.Thread(
                     target=self._run_ai_analysis_background,
-                    args=(sample_ids, cache_key_ai)
+                    args=(sample_ids, cache_key_ai),
+                    daemon=True,
                 )
-                thread.daemon = True
-                thread.start()
-                logger.info("Started background analysis...")
-
-            logger.info("Running overview scan...")
-            posts_to_scan = filtered_posts[:5000]
-            
-            for post in posts_to_scan.iterator():
-                if post.original_text:
-                    try:
-                        matches = scan_text_for_lexicon_terms(post.original_text)
-                        if matches:
-                            # Filter out single-character terms
-                            all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
-                            posts_scanned += 1
-                    except Exception as e:
-                        logger.warning(f"Error scanning post {post.id}: {e}")
-                        continue
-
-        # 5. AGGREGATE ANALYTICS
+                t.start()
+                logger.info("LexiconsView: background AI analysis triggered")
+ 
+            logger.info(
+                f"LexiconsView: overview scan of {total_posts} posts …"
+            )
+ 
+            # Scan ALL posts — no arbitrary cap
+            for post in filtered_posts.iterator(chunk_size=1000):
+                if not post.original_text:
+                    continue
+                try:
+                    matches = self._scan_post(post.original_text)
+                    if matches:
+                        all_matches.extend(matches)
+                        posts_scanned += 1
+                except Exception as e:
+                    logger.warning(f"Scan error post {post.id}: {e}")
+                    continue
+ 
+            logger.info(
+                f"LexiconsView: overview scan done — "
+                f"{posts_scanned} posts with matches, "
+                f"{len(all_matches)} total matches"
+            )
+ 
+        # ── 5. Aggregate analytics ─────────────────────────────────────────
         try:
-            from collections import Counter
-            term_counts = Counter([m['term'] for m in all_matches])
+            term_counts     = Counter([m['term']     for m in all_matches])
             category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
-            
-            # For category view, show top terms from that category
+ 
             if selected_category and category_terms:
-                # Show terms from the category sorted by matches
-                top_terms_with_meta = []
-                for term_data in category_terms:
-                    term = term_data['term']
-                    count = term_counts.get(term, 0)
-                    top_terms_with_meta.append({
-                        'term': term,
-                        'count': count,
-                        'metadata': term_data
-                    })
-                # Sort by count (terms with matches first)
-                top_terms_with_meta.sort(key=lambda x: x['count'], reverse=True)
+                # Category view: show every term, sorted by hit count
+                top_terms_with_meta = sorted(
+                    [{'term': td['term'],
+                      'count': term_counts.get(td['term'], 0),
+                      'metadata': td}
+                     for td in category_terms],
+                    key=lambda x: x['count'],
+                    reverse=True,
+                )
             else:
-                # Overview mode - show top matched terms
-                top_terms = term_counts.most_common(15)
+                # Overview: top 15 matched terms with metadata
                 top_terms_with_meta = []
-                for term, count in top_terms:
+                for term, count in term_counts.most_common(15):
                     if len(term.strip()) <= 1:
                         continue
                     metadata = {}
-                    # Check CONFIG first
-                    for cat, terms in CONFIG['lexicon'].items():
+                    for cat, terms in CONFIG.get('lexicon', {}).items():
                         if term in terms:
                             metadata = terms[term]
                             break
-                    # If not in CONFIG, check DB (for LLM-discovered terms)
                     if not metadata:
-                        db_term = LexiconTerm.objects.filter(term=term).first()
-                        if db_term:
+                        db_t = LexiconTerm.objects.filter(term=term).first()
+                        if db_t:
                             metadata = {
-                                'severity': db_term.severity,
-                                'target_entity': db_term.target_entity,
-                                'language': db_term.language
+                                'severity':      db_t.severity,
+                                'target_entity': db_t.target_entity,
+                                'language':      db_t.language,
                             }
-                    
-                    top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
+                    top_terms_with_meta.append(
+                        {'term': term, 'count': count, 'metadata': metadata}
+                    )
         except Exception as e:
-            logger.error(f"Error aggregating analytics: {e}")
+            logger.error(f"LexiconsView: aggregation error: {e}")
             top_terms_with_meta = []
-            category_counts = Counter()
-            severity_counts = Counter()
-
-        # Word Cloud (only for overview, not category view)
+            category_counts     = Counter()
+            severity_counts     = Counter()
+ 
+        # ── 6. Word cloud (overview only) ──────────────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
-                valid_terms = [{'term': t, 'count': c} for t, c in term_counts.most_common(50) if len(t.strip()) > 1]
-                wordcloud = generate_trigger_wordcloud({'top_terms': valid_terms})
-                if wordcloud:
-                    wordcloud_base64 = wordcloud_to_base64(wordcloud)
+                valid_terms = [
+                    {'term': t, 'count': c}
+                    for t, c in term_counts.most_common(50)
+                    if len(t.strip()) > 1
+                ]
+                wc = generate_trigger_wordcloud({'top_terms': valid_terms})
+                if wc:
+                    wordcloud_base64 = wordcloud_to_base64(wc)
             except Exception as e:
-                logger.warning(f"Word cloud failed: {e}")
-
-        # Targeted Entities
+                logger.warning(f"Word cloud error: {e}")
+ 
+        # ── 7. Targeted entities (overview only) ───────────────────────────
         targeted_entities = []
         if not selected_category:
             try:
                 entity_patterns = [
-                    r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b',
+                    r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|'
+                    r'National\s+Election\s+Board)\b',
                     r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b',
                     r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',
                 ]
                 entities_found = Counter()
-                for post in filtered_posts[:1000]:
-                    if post.original_text:
-                        for pattern in entity_patterns:
-                            matches = re.findall(pattern, post.original_text, re.IGNORECASE)
-                            for match in matches:
-                                entity = match[0] if isinstance(match, tuple) else match
-                                if len(entity.strip()) >= 3:
-                                    entities_found[entity.strip()] += 1
-                targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
+                # Sample first 5 000 for entity extraction (fast heuristic)
+                for post in filtered_posts.iterator(chunk_size=500):
+                    if not post.original_text:
+                        continue
+                    for pattern in entity_patterns:
+                        for match in re.findall(
+                                pattern, post.original_text, re.IGNORECASE):
+                            entity = match[0] if isinstance(match, tuple) else match
+                            if len(entity.strip()) >= 3:
+                                entities_found[entity.strip()] += 1
+                    # Soft cap at 5 000 unique entities processed
+                    if sum(entities_found.values()) > 50000:
+                        break
+                targeted_entities = [
+                    {'entity': e, 'count': c}
+                    for e, c in entities_found.most_common(10)
+                ]
             except Exception as e:
-                logger.error(f"Error extracting entities: {e}")
-
-        # 6. PREPARE DATA TO CACHE (only for overview, not category view)
+                logger.error(f"Entity extraction error: {e}")
+ 
+        # ── 8. Build context ───────────────────────────────────────────────
+        shared = {
+            'active_tab':        'lexicons',
+            'top_terms':         top_terms_with_meta,
+            'category_counts':   dict(category_counts),
+            'severity_counts':   dict(severity_counts),
+            'total_matches':     len(all_matches),
+            'posts_scanned':     posts_scanned,
+            'total_posts':       total_posts,
+            'start_date':        start_str,
+            'end_date':          end_str,
+            'lexicon_term_count': self._get_lexicon_term_count(),
+        }
+ 
         if not selected_category:
-            results_to_cache = {
-                'active_tab': 'lexicons',
-                'top_terms': top_terms_with_meta,
-                'category_counts': dict(category_counts),
-                'severity_counts': dict(severity_counts),
-                'total_matches': len(all_matches),
-                'posts_scanned': posts_scanned,
-                'total_posts': total_posts,
-                'wordcloud_base64': wordcloud_base64,
-                'targeted_entities': targeted_entities,
-                'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-                'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
-                'lexicon_term_count': self._get_lexicon_term_count(),
-            }
-            cache.set(cache_key, results_to_cache, 3600)
-            context.update(results_to_cache)
+            shared['wordcloud_base64']  = wordcloud_base64
+            shared['targeted_entities'] = targeted_entities
+            # Cache overview results for 1 hour
+            cache.set(cache_key, shared, 3600)
         else:
-            # Category view - pass fresh data
-            context.update({
-                'active_tab': 'lexicons',
-                'top_terms': top_terms_with_meta,
-                'category_counts': dict(category_counts),
-                'severity_counts': dict(severity_counts),
-                'total_matches': len(all_matches),
-                'posts_scanned': posts_scanned,
-                'total_posts': total_posts,
-                'wordcloud_base64': None,
-                'targeted_entities': [],
-                'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-                'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
-                'lexicon_term_count': self._get_lexicon_term_count(),
-            })
-        
-        context['ai_insights'] = cache.get("lexicons_ai_insights_v1")
-        context['ai_is_running'] = cache.get("lexicons_ai_running") and not context.get('ai_insights')
-        
-        # Category-specific data
+            shared['wordcloud_base64']  = None
+            shared['targeted_entities'] = []
+ 
+        context.update(shared)
+        context['ai_insights']     = cache.get("lexicons_ai_insights_v1")
+        context['ai_is_running']   = (cache.get("lexicons_ai_running")
+                                      and not context.get('ai_insights'))
         context['selected_category'] = selected_category
-        context['category_terms'] = category_terms
-        context['posts_with_terms'] = posts_with_terms[:50]  # Limit to 50 posts for performance
-        
+        context['category_terms']    = category_terms
+        context['posts_with_terms']  = posts_with_terms[:100]  # up to 100
+ 
         return context
-
+ 
     @staticmethod
     def _run_ai_analysis_background(post_ids, cache_key):
-        """Runs the heavy AI model in the background and saves to cache."""
+        """Runs Gemma model in background thread and saves results to cache."""
         import traceback
         logger.info(f"Background AI analysis STARTED for {len(post_ids)} posts")
         try:
             from .utils.hate_speech_detector import get_hate_speech_detector
             from .models import ProcessedPost
-            from collections import Counter
-            logger.info("Loading Gemma model (this may take 15-20 minutes)...")
+ 
+            logger.info("Loading Gemma model …")
             detector = get_hate_speech_detector()
-            logger.info("Gemma model loaded successfully!")
+            logger.info("Gemma model loaded.")
+ 
             posts = ProcessedPost.objects.filter(id__in=post_ids)
             category_counts = Counter()
-            total_analyzed = 0
+            total_analyzed  = 0
+ 
             gemma_severity_map = {
-                'violence': 'critical', 'inciteful': 'critical', 'call for action': 'critical', 'dehumanization': 'critical',
-                'extremism': 'high', 'ethnic slur': 'high', 'slur': 'high', 'misogynistic': 'high',
-                'derogatory': 'medium', 'inflammatory': 'high', 'gender disinformation': 'high',
-                'stereotype': 'high', 'homophobic': 'high', 'ethnicity': 'high', 'xenophobia': 'high', 'religion': 'high',
-                'ancestry': 'low', 'class': 'low', 'structural': 'low'
+                'violence': 'critical', 'inciteful': 'critical',
+                'call for action': 'critical', 'dehumanization': 'critical',
+                'extremism': 'high', 'ethnic slur': 'high', 'slur': 'high',
+                'misogynistic': 'high', 'derogatory': 'medium',
+                'inflammatory': 'high', 'gender disinformation': 'high',
+                'stereotype': 'high', 'homophobic': 'high',
+                'ethnicity': 'high', 'xenophobia': 'high', 'religion': 'high',
+                'ancestry': 'low', 'class': 'low', 'structural': 'low',
             }
-            logger.info(f"Analyzing {posts.count()} posts...")
+ 
             for idx, post in enumerate(posts):
                 if post.original_text and len(post.original_text) > 20:
                     try:
@@ -5607,38 +5732,41 @@ class LexiconsView(TemplateView):
                             category_counts[cat] += 1
                             total_analyzed += 1
                         if (idx + 1) % 10 == 0:
-                            logger.info(f"Progress: {idx + 1}/{posts.count()} posts analyzed")
+                            logger.info(
+                                f"Progress: {idx + 1}/{posts.count()} posts")
                     except Exception as e:
-                        logger.warning(f"Scan failed for post {post.id}: {e}")
-                        continue
+                        logger.warning(f"Scan failed post {post.id}: {e}")
+ 
             total_hateful = sum(category_counts.values())
-            ai_results = []
-            for cat, count in category_counts.most_common(5):
-                pct = (count / total_analyzed * 100) if total_analyzed > 0 else 0
-                ai_results.append({
-                    'category': cat.replace('_', ' ').title(),
-                    'count': count,
-                    'percentage': round(pct, 1),
-                    'severity': gemma_severity_map.get(cat, 'medium')
-                })
+            ai_results = [
+                {
+                    'category':   cat.replace('_', ' ').title(),
+                    'count':      count,
+                    'percentage': round(count / total_analyzed * 100, 1)
+                                  if total_analyzed else 0,
+                    'severity':   gemma_severity_map.get(cat, 'medium'),
+                }
+                for cat, count in category_counts.most_common(5)
+            ]
             cache.set(cache_key, {
-                'results': ai_results,
+                'results':        ai_results,
                 'total_analyzed': total_analyzed,
-                'total_hateful': total_hateful,
+                'total_hateful':  total_hateful,
             }, 86400)
-            logger.info(f"Background analysis COMPLETE! Found {total_hateful} hateful posts out of {total_analyzed}.")
+            logger.info(
+                f"Background analysis COMPLETE: {total_hateful} hateful "
+                f"/ {total_analyzed} analysed."
+            )
         except Exception as e:
             logger.error(f"Background analysis FAILED: {e}")
             logger.error(traceback.format_exc())
             cache.set(cache_key, {
-                'results': [],
-                'total_analyzed': 0,
-                'total_hateful': 0,
-                'error': str(e)
+                'results': [], 'total_analyzed': 0,
+                'total_hateful': 0, 'error': str(e),
             }, 3600)
         finally:
             cache.delete("lexicons_ai_running")
-            logger.info("Background thread FINISHED and cleaned up")
+            logger.info("Background thread finished and cleaned up.")
            
 class PEPsHubView(TemplateView):
     template_name = 'dashboard/peps_hub.html'
@@ -5789,80 +5917,117 @@ class PEPsView(TemplateView):
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
-    
+ 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         request = self.request
-        
+ 
+        # ── Parameters ────────────────────────────────────────────────────
         try:
             min_connections = int(request.GET.get('min_connections') or 2)
-            top_n = int(request.GET.get('top_n') or 30)
+            top_n           = int(request.GET.get('top_n') or 30)
         except (ValueError, TypeError):
             min_connections, top_n = 2, 30
-            
+ 
         layout_style = request.GET.get('layout', 'spring') or 'spring'
-        view_all = request.GET.get('view_all') == 'true'
-        
+        view_all     = request.GET.get('view_all') == 'true'
+ 
+        # ── Fetch posts ────────────────────────────────────────────────────
         try:
-            posts_queryset, start_date, end_date = get_election_posts_queryset(request)
-            posts = posts_queryset.exclude(
-                platform__iexact='TikTok'
-            ).exclude(platform__iexact='Media').exclude(platform__iexact='News')
+            posts_queryset, start_date, end_date = get_election_posts_queryset(
+                request)
+            posts = (posts_queryset
+                     .exclude(platform__iexact='TikTok')
+                     .exclude(platform__iexact='Media')
+                     .exclude(platform__iexact='News'))
         except Exception as e:
-            logger.error(f"Error fetching posts: {e}")
-            posts = ProcessedPost.objects.none()
+            logger.error(f"NetworksView: error fetching posts: {e}")
+            posts      = ProcessedPost.objects.none()
             start_date = end_date = timezone.now()
-        
-        # Get coordination groups FIRST (using TF-IDF similarity)
-        coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
-        
-        # Build graph FROM the coordination groups (not exact text matches)
-        graph_data = generate_network_graph_from_groups(coordination_groups, top_n=top_n, layout=layout_style)
-        
-        # Analyze TTPs - IMPROVED to include example posts
+ 
+        total_posts = posts.count()
+        logger.info(
+            f"NetworksView: {total_posts} posts available "
+            f"(view_all={view_all})"
+        )
+ 
+        # ── Coordination groups ────────────────────────────────────────────
+        # Pass view_all so get_coordination_groups removes its internal cap
+        # when the user has selected "show all data".
+        coordination_groups = get_coordination_groups(
+            posts,
+            min_accounts=min_connections,
+            max_groups=50,
+            view_all=view_all,
+        )
+ 
+        # ── Network graph ──────────────────────────────────────────────────
+        graph_data = generate_network_graph_from_groups(
+            coordination_groups,
+            top_n=top_n,
+            layout=layout_style,
+        )
+ 
+        # ── TTP analysis ───────────────────────────────────────────────────
         ttps = analyze_ttps(coordination_groups, posts)
-        
+ 
+        # ── DISARM reference ───────────────────────────────────────────────
         try:
             disarm_ttp_reference = get_disarm_ttp_reference()
         except Exception:
             disarm_ttp_reference = []
-        
-        # 🔥 Prepare coordination groups for JavaScript (include sample posts)
-        groups_for_js = []
-        for g in coordination_groups:
-            groups_for_js.append({
-                'id': g.get('id'),
-                'accounts': g.get('accounts', []),
-                'account_count': g.get('account_count', 0),
-                'post_count': g.get('post_count', 0),
-                'coordination_type': g.get('coordination_type', ''),
-                'sub_narrative': g.get('sub_narrative', ''),
+ 
+        # ── Serialise groups for JavaScript ───────────────────────────────
+        groups_for_js = [
+            {
+                'id':                    g.get('id'),
+                'accounts':              g.get('accounts', []),
+                'account_count':         g.get('account_count', 0),
+                'post_count':            g.get('post_count', 0),
+                'coordination_type':     g.get('coordination_type', ''),
+                'sub_narrative':         g.get('sub_narrative', ''),
                 'sample_posts_with_urls': g.get('sample_posts_with_urls', []),
-                'platforms': g.get('platforms', []),
-                'text_sample': g.get('text_sample', ''),
-            })
-        
-        context_data = {
-            'active_tab': 'networks',
-            'network_graph_json': json.dumps(graph_data, default=str),
-            'coordination_groups': coordination_groups[:15],  # Show top 15 in the list
-            'coordination_groups_json': json.dumps(groups_for_js, default=str),
-            'total_coordinated_groups': len(coordination_groups),
-            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in coordination_groups),
-            'total_posts': posts.count(),
-            'max_group_size': max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0,
-            'min_connections': min_connections,
-            'top_n': top_n,
-            'layout_style': layout_style,
-            'ttps': ttps,  # TTPs now include example posts
-            'disarm_ttp_reference': disarm_ttp_reference,
-            'disarm_dataset_size': 80000,
-            'view_all': view_all,
-            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
-        }
-        
-        context.update(context_data)
+                'platforms':             g.get('platforms', []),
+                'text_sample':           g.get('text_sample', ''),
+            }
+            for g in coordination_groups
+        ]
+ 
+        # ── Date strings ───────────────────────────────────────────────────
+        start_str = (start_date.date().isoformat()
+                     if hasattr(start_date, 'date') else str(start_date))
+        end_str   = (end_date.date().isoformat()
+                     if hasattr(end_date, 'date') else str(end_date))
+ 
+        context.update({
+            'active_tab':                 'networks',
+            'network_graph_json':         json.dumps(graph_data, default=str),
+ 
+            # Show ALL groups (was sliced to [:15] before)
+            'coordination_groups':        coordination_groups,
+            'coordination_groups_json':   json.dumps(groups_for_js, default=str),
+ 
+            'total_coordinated_groups':   len(coordination_groups),
+            'total_coordinated_accounts': sum(
+                g.get('account_count', 0) for g in coordination_groups),
+            'total_posts':                total_posts,
+            'max_group_size':             max(
+                (g.get('account_count', 0) for g in coordination_groups),
+                default=0),
+ 
+            'min_connections':            min_connections,
+            'top_n':                      top_n,
+            'layout_style':               layout_style,
+            'view_all':                   view_all,
+ 
+            'ttps':                       ttps,
+            'disarm_ttp_reference':       disarm_ttp_reference,
+            'disarm_dataset_size':        80000,
+ 
+            'start_date':                 start_str,
+            'end_date':                   end_str,
+        })
+ 
         return context
         
 class LexiconManagementView(TemplateView):
