@@ -5523,7 +5523,6 @@ class LexiconsView(TemplateView):
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
-                            # UI indicator safeguard verification flag
                             'is_category_validated': True
                         })
  
@@ -5675,7 +5674,7 @@ class LexiconsView(TemplateView):
             'total_posts':       total_posts,
             'start_date':        start_str,
             'end_date':          end_str,
-            'lexicon_term_count': self._get_get_lexicon_term_count(),
+            'lexicon_term_count': self._get_lexicon_term_count(),  # <-- TYPO FIXED HERE
         }
  
         if not selected_category:
