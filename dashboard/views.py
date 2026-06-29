@@ -1842,466 +1842,516 @@ def _make_evidence_post(post, reason):
  
 def analyze_ttps(coordination_groups, posts):
     """
-    Detect TTPs – each one pulls its own independent evidence posts.
-    No more shared pool → no more every TTP showing the same post.
+    Analyze TTPs with PROPER evidence posts that match each TTP's claim.
+    Each TTP's example_posts are filtered to actually demonstrate that TTP.
     """
-    if not coordination_groups:
-        return []
- 
     ttps = []
- 
-    # Pre-compute per-group platform sets once
-    def _platforms(g):
-        return {p.get('platform') for p in g.get('sample_posts_with_urls', [])
-                if p.get('platform')}
- 
-    # ── TTP 1: Coordinated Inauthentic Behaviour ───────────────────────────
+    if not coordination_groups:
+        return ttps
+    
+    # === TTP 1: Coordinated Inauthentic Behavior (CIB) ===
     cib_groups = [g for g in coordination_groups if g.get('account_count', 0) >= 5]
     if cib_groups:
-        evidence, seen = [], set()
-        for g in cib_groups:
-            n = g.get('account_count', 0)
+        example_posts = []
+        seen_text_hashes = set()
+        for g in cib_groups[:3]:
             for p in g.get('sample_posts_with_urls', []):
-                if p.get('username') not in seen:
-                    seen.add(p['username'])
-                    evidence.append(_make_evidence_post(
-                        p,
-                        f"One of {n} accounts sharing near-identical content "
-                        f"(similarity ≥ 85 %) in group #{g['id']}"
-                    ))
-                if len(evidence) >= 4:
+                text_hash = hash(p.get('text_preview', '')[:100])
+                if text_hash not in seen_text_hashes:
+                    seen_text_hashes.add(text_hash)
+                    example_posts.append({
+                        'username': p.get('username', 'Unknown'),
+                        'text_preview': p.get('text_preview', ''),
+                        'platform': p.get('platform', ''),
+                        'timestamp': p.get('timestamp', ''),
+                        'url': p.get('url'),
+                        'ttp_reason': f'One of {g.get("account_count", 0)} accounts posting near-identical content (group #{g.get("id")})'
+                    })
+                if len(example_posts) >= 4:
                     break
-            if len(evidence) >= 4:
+            if len(example_posts) >= 4:
                 break
- 
-        if evidence:
+        
+        if example_posts:
             ttps.append({
                 'name': 'Coordinated Inauthentic Behaviour (CIB)',
-                'description': (
-                    f"{len(cib_groups)} group(s) with 5+ distinct accounts "
-                    f"posting near-identical content."
-                ),
+                'description': f'{len(cib_groups)} group(s) with 5+ distinct accounts posting near-identical content.',
                 'severity': 'High',
-                'evidence': (
-                    f"{sum(g.get('post_count', 0) for g in cib_groups)} posts "
-                    f"across {sum(g.get('account_count', 0) for g in cib_groups)} accounts."
-                ),
+                'evidence': f'{sum(g.get("post_count", 0) for g in cib_groups)} posts across {sum(g.get("account_count", 0) for g in cib_groups)} accounts.',
                 'source': 'Rule-Based',
-                'example_posts': evidence,
+                'example_posts': example_posts
             })
- 
-    # ── TTP 2: Cross-Platform Amplification ───────────────────────────────
-    cross_groups = [g for g in coordination_groups if len(_platforms(g)) >= 2]
-    if cross_groups:
-        all_plats = set()
-        for g in cross_groups:
-            all_plats |= _platforms(g)
- 
-        evidence, covered = [], set()
-        for g in cross_groups:
-            for p in g.get('sample_posts_with_urls', []):
-                plat = p.get('platform', '')
-                if plat and plat not in covered:
-                    covered.add(plat)
-                    evidence.append(_make_evidence_post(
-                        p,
-                        f"Same narrative on {plat} — also found on "
-                        f"{', '.join(all_plats - {plat})}"
-                    ))
-            if len(evidence) >= 4:
-                break
- 
-        if evidence:
+    
+    # === TTP 2: Cross-Platform Amplification ===
+    # FIX: Collect posts from DIFFERENT platforms across groups
+    cross_platform_groups = []
+    for g in coordination_groups:
+        platforms_in_group = set()
+        for p in g.get('sample_posts_with_urls', []):
+            if p.get('platform'):
+                platforms_in_group.add(p['platform'])
+        if len(platforms_in_group) >= 2:
+            cross_platform_groups.append({'group': g, 'platforms': platforms_in_group})
+    
+    if cross_platform_groups:
+        all_cross_platforms = set()
+        for item in cross_platform_groups:
+            all_cross_platforms.update(item['platforms'])
+        
+        # Evidence: one post per platform (from different groups if possible)
+        example_posts = []
+        platforms_covered = set()
+        
+        for platform in sorted(all_cross_platforms):
+            if platform in platforms_covered:
+                continue
+            for item in cross_platform_groups:
+                if platform not in item['platforms']:
+                    continue
+                for p in item['group'].get('sample_posts_with_urls', []):
+                    if p.get('platform') == platform:
+                        example_posts.append({
+                            'username': p.get('username', 'Unknown'),
+                            'text_preview': p.get('text_preview', ''),
+                            'platform': platform,
+                            'timestamp': p.get('timestamp', ''),
+                            'url': p.get('url'),
+                            'ttp_reason': f'Posted on {platform} — same narrative amplified across {len(all_cross_platforms)} platforms: {", ".join(sorted(all_cross_platforms))}'
+                        })
+                        platforms_covered.add(platform)
+                        break
+                if platform in platforms_covered:
+                    break
+        
+        if example_posts:
             ttps.append({
                 'name': 'Cross-Platform Amplification',
-                'description': (
-                    f"{len(cross_groups)} group(s) spreading identical content "
-                    f"across {len(all_plats)} platforms simultaneously."
-                ),
+                'description': f'{len(cross_platform_groups)} group(s) spreading identical content across {len(all_cross_platforms)} platforms simultaneously.',
                 'severity': 'Medium',
-                'evidence': f"Platforms: {', '.join(sorted(all_plats))}",
+                'evidence': f"Platforms: {', '.join(sorted(all_cross_platforms))}",
                 'source': 'Rule-Based',
-                'example_posts': evidence,
+                'example_posts': example_posts
             })
- 
-    # ── TTP 3: Burst / Rapid-Response Posting ─────────────────────────────
+    
+    # === TTP 3: Rapid Response / Burst Posting ===
     burst_groups = [g for g in coordination_groups if g.get('post_count', 0) > 10]
     if burst_groups:
+        max_posts = max(g.get('post_count', 0) for g in burst_groups)
         biggest = max(burst_groups, key=lambda g: g.get('post_count', 0))
-        sorted_posts = sorted(
-            biggest.get('sample_posts_with_urls', []),
-            key=lambda p: _parse_ts(p.get('timestamp', ''))
-        )
-        n = biggest.get('post_count', 0)
-        evidence = [
-            _make_evidence_post(p, f"Post at {p.get('timestamp', 'N/A')} in "
-                                   f"{n}-post burst by "
-                                   f"{biggest.get('account_count', 0)} accounts")
-            for p in sorted_posts[:3]
-        ]
-        if evidence:
+        sample = sorted(biggest.get('sample_posts_with_urls', []), key=lambda p: p.get('timestamp', ''))
+        example_posts = []
+        for p in sample[:4]:
+            example_posts.append({
+                'username': p.get('username', 'Unknown'),
+                'text_preview': p.get('text_preview', ''),
+                'platform': p.get('platform', ''),
+                'timestamp': p.get('timestamp', ''),
+                'url': p.get('url'),
+                'ttp_reason': f'Posted at {p.get("timestamp", "N/A")} — part of {biggest.get("post_count", 0)}-post burst by {biggest.get("account_count", 0)} accounts'
+            })
+        
+        if example_posts:
             ttps.append({
                 'name': 'Rapid Response / Burst Posting',
-                'description': (
-                    f"{len(burst_groups)} group(s) with > 10 posts. "
-                    f"Largest burst: {max(g.get('post_count',0) for g in burst_groups)} posts."
-                ),
+                'description': f'{len(burst_groups)} group(s) with > 10 posts. Largest burst: {max_posts} posts.',
                 'severity': 'Medium',
-                'evidence': (
-                    f"Content repeated across "
-                    f"{sum(g.get('account_count',0) for g in burst_groups)} accounts."
-                ),
+                'evidence': f'Content repeated across {sum(g.get("account_count", 0) for g in burst_groups)} accounts.',
                 'source': 'Rule-Based',
-                'example_posts': evidence,
+                'example_posts': example_posts
             })
- 
-    # ── TTP 4: Hashtag Manipulation ───────────────────────────────────────
-    # Use hashtags_in_post (pre-extracted from FULL text in get_coordination_groups)
-    hash_evidence, all_tags, tag_group_count = [], set(), 0
+    
+    # === TTP 4: Hashtag Manipulation ===
+    hashtag_groups = []
+    all_hashtags = set()
     for g in coordination_groups:
-        group_tags = set(g.get('hashtags', []))  # group-level hashtag list
-        if not group_tags:
-            continue
-        confirmed = []
+        tags = set()
         for p in g.get('sample_posts_with_urls', []):
-            post_tags = {t.lower().lstrip('#')
-                         for t in p.get('hashtags_in_post', [])}
-            matched = group_tags & post_tags
-            if matched:
-                confirmed.append((p, matched))
-        if confirmed:
-            tag_group_count += 1
-            all_tags |= group_tags
-            for p, matched in confirmed[:2]:
-                if len(hash_evidence) < 4:
-                    hash_evidence.append(_make_evidence_post(
-                        p,
-                        f"Post contains coordinated hashtag(s): "
-                        f"{', '.join('#' + t for t in sorted(matched)[:3])}"
-                    ))
- 
-    if hash_evidence:
-        ttps.append({
-            'name': 'Hashtag Manipulation',
-            'description': (
-                f"Coordinated use of {len(all_tags)} hashtag(s) confirmed "
-                f"in actual post content across {tag_group_count} group(s)."
-            ),
-            'severity': 'Low',
-            'evidence': f"Tags: {', '.join('#' + t for t in sorted(all_tags)[:6])}",
-            'source': 'Rule-Based',
-            'example_posts': hash_evidence,
-        })
- 
-    # ── TTP 5: URL Amplification ───────────────────────────────────────────
-    url_evidence, url_grp_count, all_urls = [], 0, set()
+            text = p.get('text_preview', '')
+            found = re.findall(r'#\w+', text, re.IGNORECASE)
+            tags.update(found)
+        if tags:
+            hashtag_groups.append({'group': g, 'tags': tags})
+            all_hashtags.update(tags)
+    
+    if hashtag_groups:
+        unique_hashtags = list(all_hashtags)[:10]
+        example_posts = []
+        for item in hashtag_groups[:5]:
+            for p in item['group'].get('sample_posts_with_urls', []):
+                text = p.get('text_preview', '')
+                post_tags = set(re.findall(r'#\w+', text, re.IGNORECASE))
+                matched = post_tags & item['tags']
+                if matched and len(example_posts) < 4:
+                    example_posts.append({
+                        'username': p.get('username', 'Unknown'),
+                        'text_preview': text,
+                        'platform': p.get('platform', ''),
+                        'timestamp': p.get('timestamp', ''),
+                        'url': p.get('url'),
+                        'ttp_reason': f'Contains coordinated hashtag(s): {", ".join(list(matched)[:3])}'
+                    })
+            if len(example_posts) >= 4:
+                break
+        
+        if example_posts:
+            ttps.append({
+                'name': 'Hashtag Manipulation',
+                'description': f'Coordinated use of {len(unique_hashtags)} hashtag(s) confirmed in actual post content across {len(hashtag_groups)} group(s).',
+                'severity': 'Low',
+                'evidence': f"Tags: {', '.join(unique_hashtags[:6])}",
+                'source': 'Rule-Based',
+                'example_posts': example_posts
+            })
+    
+    # === TTP 5: URL Amplification ===
+    url_groups = [g for g in coordination_groups if len(g.get('unique_urls', [])) > 1]
+    if url_groups:
+        all_urls = set()
+        for g in url_groups:
+            all_urls.update(g.get('unique_urls', []))
+        example_posts = []
+        for g in url_groups[:3]:
+            for p in g.get('sample_posts_with_urls', []):
+                if p.get('url') and len(example_posts) < 4:
+                    example_posts.append({
+                        'username': p.get('username', 'Unknown'),
+                        'text_preview': p.get('text_preview', ''),
+                        'platform': p.get('platform', ''),
+                        'timestamp': p.get('timestamp', ''),
+                        'url': p.get('url'),
+                        'ttp_reason': f'Amplifying URL: {str(p.get("url", ""))[:60]}'
+                    })
+            if len(example_posts) >= 4:
+                break
+        
+        if example_posts:
+            ttps.append({
+                'name': 'URL Amplification',
+                'description': f'{len(url_groups)} group(s) sharing external URLs — {len(all_urls)} unique URL(s) detected.',
+                'severity': 'Low',
+                'evidence': 'Multiple accounts sharing the same external links.',
+                'source': 'Rule-Based',
+                'example_posts': example_posts
+            })
+    
+    # === TTP 6: Narrative Weaponization ===
+    # CRITICAL FIX: Only show posts that ACTUALLY contain weaponized keywords
+    weaponized_keywords = ['genocide', 'kill', 'attack', 'war', 'slur', 'hate', 
+                          'ethnic cleansing', 'massacre', 'destroy', 'eliminate',
+                          'terrorist', 'extremist', 'traitor', 'criminal',
+                          'dictator', 'oppressor', 'failed state', 'invasion', 'exterminate']
+    
+    weaponized_groups_count = 0
+    example_posts = []
+    
     for g in coordination_groups:
-        group_url_posts = [
-            p for p in g.get('sample_posts_with_urls', [])
-            if p.get('url') and str(p['url']).startswith('http')
-        ]
-        if group_url_posts:
-            url_grp_count += 1
-            for p in group_url_posts[:2]:
-                all_urls.add(p['url'])
-                if len(url_evidence) < 3:
-                    url_evidence.append(_make_evidence_post(
-                        p, f"Amplifying URL: {str(p['url'])[:80]}"
-                    ))
- 
-    if url_evidence:
-        ttps.append({
-            'name': 'URL Amplification',
-            'description': (
-                f"{url_grp_count} group(s) sharing external URLs — "
-                f"{len(all_urls)} unique URL(s) detected."
-            ),
-            'severity': 'Low',
-            'evidence': 'Multiple accounts sharing the same external links.',
-            'source': 'Rule-Based',
-            'example_posts': url_evidence,
-        })
- 
-    # ── TTP 6: Narrative Weaponization ────────────────────────────────────
-    # Use the pre-computed has_weaponized flag (checked against FULL text)
-    weap_evidence, weap_grp_count = [], 0
-    for g in coordination_groups:
-        group_flagged = False
+        group_has_weaponized = False
         for p in g.get('sample_posts_with_urls', []):
-            if p.get('has_weaponized'):
-                group_flagged = True
-                if len(weap_evidence) < 4:
-                    # Find which keywords matched
-                    full = p.get('full_text', p.get('text_preview', ''))
-                    matched_kws = [
-                        kw for kw in WEAPONIZED_KEYWORDS
-                        if re.search(r'\b' + re.escape(kw) + r'\b',
-                                     full.lower())
-                    ][:3]
-                    weap_evidence.append(_make_evidence_post(
-                        p,
-                        f"Contains weaponized keyword(s): "
-                        f"{', '.join(matched_kws) if matched_kws else 'high-risk language'}"
-                    ))
-        if group_flagged:
-            weap_grp_count += 1
- 
-    if weap_evidence:
+            text_lower = (p.get('text_preview') or '').lower()
+            matched_kws = [kw for kw in weaponized_keywords if kw in text_lower]
+            if matched_kws and len(example_posts) < 4:
+                group_has_weaponized = True
+                example_posts.append({
+                    'username': p.get('username', 'Unknown'),
+                    'text_preview': p.get('text_preview', ''),
+                    'platform': p.get('platform', ''),
+                    'timestamp': p.get('timestamp', ''),
+                    'url': p.get('url'),
+                    'ttp_reason': f'Contains weaponized keyword(s): {", ".join(matched_kws[:3])}'
+                })
+        if group_has_weaponized:
+            weaponized_groups_count += 1
+        if len(example_posts) >= 4:
+            break
+    
+    if example_posts:
         ttps.append({
             'name': 'Narrative Weaponization',
-            'description': (
-                f"{weap_grp_count} group(s) use violence/hate language "
-                f"confirmed in post content."
-            ),
+            'description': f'{weaponized_groups_count} group(s) use violence/hate language confirmed in post content.',
             'severity': 'Critical',
             'evidence': 'Coordinated amplification of inflammatory language.',
             'source': 'Rule-Based',
-            'example_posts': weap_evidence,
+            'example_posts': example_posts
         })
- 
-    # ── TTP 7: Temporal Coordination ──────────────────────────────────────
-    sync_evidence, sync_count = [], 0
+    
+    # === TTP 7: Temporal Coordination ===
+    synchronized_groups = 0
+    example_posts = []
+    
     for g in coordination_groups:
         timed = []
         for p in g.get('sample_posts_with_urls', []):
             ts = p.get('timestamp', '')
             if ts and ts != 'N/A':
-                timed.append((p, _parse_ts(ts)))
-        timed.sort(key=lambda x: x[1])
- 
-        for i in range(len(timed) - 1):
-            p1, t1 = timed[i]
-            p2, t2 = timed[i + 1]
-            if p1.get('username') == p2.get('username'):
-                continue
-            diff_min = (t2 - t1).total_seconds() / 60
-            if 0 <= diff_min <= 60:
-                sync_count += 1
-                if len(sync_evidence) < 4:
-                    sync_evidence.append(_make_evidence_post(
-                        p1, f"Posted at {p1.get('timestamp')} — "
-                            f"{diff_min:.0f} min before next account"
-                    ))
-                    sync_evidence.append(_make_evidence_post(
-                        p2, f"Posted at {p2.get('timestamp')} — "
-                            f"within {diff_min:.0f} min of "
-                            f"{p1.get('username', 'previous account')}"
-                    ))
-                break
- 
-    if sync_evidence:
+                try:
+                    dt = datetime.strptime(ts, '%Y-%m-%d %H:%M')
+                    timed.append((p, dt))
+                except:
+                    pass
+        
+        if len(timed) >= 2:
+            timed.sort(key=lambda x: x[1])
+            for i in range(len(timed) - 1):
+                p1, t1 = timed[i]
+                p2, t2 = timed[i+1]
+                if p1.get('username') == p2.get('username'):
+                    continue
+                diff_min = (t2 - t1).total_seconds() / 60
+                if 0 <= diff_min <= 60:
+                    synchronized_groups += 1
+                    if len(example_posts) < 4:
+                        example_posts.append({
+                            'username': p1.get('username', 'Unknown'),
+                            'text_preview': p1.get('text_preview', ''),
+                            'platform': p1.get('platform', ''),
+                            'timestamp': p1.get('timestamp', ''),
+                            'url': p1.get('url'),
+                            'ttp_reason': f'Posted at {p1.get("timestamp")} — {diff_min:.0f} min before next account'
+                        })
+                        example_posts.append({
+                            'username': p2.get('username', 'Unknown'),
+                            'text_preview': p2.get('text_preview', ''),
+                            'platform': p2.get('platform', ''),
+                            'timestamp': p2.get('timestamp', ''),
+                            'url': p2.get('url'),
+                            'ttp_reason': f'Posted at {p2.get("timestamp")} — within {diff_min:.0f} min of {p1.get("username", "previous")}'
+                        })
+                    break
+    
+    if example_posts:
         ttps.append({
             'name': 'Temporal Coordination (Synchronized Posting)',
-            'description': (
-                f"{sync_count} group(s) had different accounts post "
-                f"near-identical content within 60 minutes."
-            ),
+            'description': f'{synchronized_groups} group(s) had different accounts post near-identical content within 60 minutes.',
             'severity': 'High',
             'evidence': 'Real-time coordination or scheduling tools suspected.',
             'source': 'Rule-Based',
-            'example_posts': sync_evidence[:4],
+            'example_posts': example_posts[:4]
         })
- 
-    # ── TTP 8: Multi-Platform Narrative Seeding ────────────────────────────
-    seed_groups = [
-        g for g in coordination_groups
-        if len(_platforms(g)) >= 2 and g.get('account_count', 0) >= 3
-    ]
-    if seed_groups:
-        evidence, plat_covered = [], set()
-        for g in seed_groups:
-            grp_plats = _platforms(g)
+    
+    # === TTP 8: Multi-Platform Narrative Seeding ===
+    seeding_groups = [g for g in coordination_groups if len(g.get('platforms', [])) >= 2 and g.get('account_count', 0) >= 3]
+    if seeding_groups:
+        example_posts = []
+        platforms_covered = set()
+        for g in seeding_groups[:3]:
+            group_platforms = set(g.get('platforms', []))
             for p in g.get('sample_posts_with_urls', []):
                 plat = p.get('platform', '')
-                if plat and plat not in plat_covered:
-                    plat_covered.add(plat)
-                    evidence.append(_make_evidence_post(
-                        p,
-                        f"Narrative seeded on {plat} by "
-                        f"{g.get('account_count',0)} accounts — "
-                        f"also found on: {', '.join(grp_plats - {plat})}"
-                    ))
-            if len(evidence) >= 4:
+                if plat and plat not in platforms_covered and len(example_posts) < 4:
+                    platforms_covered.add(plat)
+                    example_posts.append({
+                        'username': p.get('username', 'Unknown'),
+                        'text_preview': p.get('text_preview', ''),
+                        'platform': plat,
+                        'timestamp': p.get('timestamp', ''),
+                        'url': p.get('url'),
+                        'ttp_reason': f'Narrative seeded on {plat} by {g.get("account_count", 0)} accounts — also on {", ".join(sorted(group_platforms - {plat}))}'
+                    })
+            if len(example_posts) >= 4:
                 break
- 
-        if evidence:
+        
+        if example_posts:
             ttps.append({
                 'name': 'Multi-Platform Narrative Seeding',
-                'description': (
-                    f"{len(seed_groups)} group(s) seeding narratives across "
-                    f"≥ 2 platforms with ≥ 3 accounts."
-                ),
+                'description': f'{len(seeding_groups)} group(s) seeding narratives across ≥ 2 platforms with ≥ 3 accounts.',
                 'severity': 'High',
                 'evidence': 'Cross-platform push to maximise reach and legitimacy.',
                 'source': 'Rule-Based',
-                'example_posts': evidence,
+                'example_posts': example_posts
             })
- 
-    # ── TTP 9: Bot-like Account Behaviour ─────────────────────────────────
-    BOT_RE = re.compile(r'(bot|auto[_.]?|daily[_.]?|news_bot|update_bot)',
-                        re.IGNORECASE)
-    bot_name_evidence, density_evidence = [], []
-    bot_name_count, density_count = 0, 0
- 
+    
+    # === TTP 9: Bot-like Account Behaviour ===
+    bot_name_groups = []
+    high_density_groups = []
     for g in coordination_groups:
-        name_hits = [p for p in g.get('sample_posts_with_urls', [])
-                     if BOT_RE.search(p.get('username', ''))]
-        if name_hits:
-            bot_name_count += 1
-            for p in name_hits[:2]:
-                if len(bot_name_evidence) < 3:
-                    bot_name_evidence.append(_make_evidence_post(
-                        p, f"Account name '{p.get('username')}' "
-                           f"matches bot-name pattern"
-                    ))
+        bot_accounts_in_group = []
+        for acc in g.get('accounts', []):
+            if re.search(r'(bot|auto[_.]?|daily[_.]?|news_bot|update_bot)', acc, re.IGNORECASE):
+                bot_accounts_in_group.append(acc)
+        if bot_accounts_in_group:
+            bot_name_groups.append({'group': g, 'bot_accounts': bot_accounts_in_group})
         elif g.get('account_count', 0) >= 8:
-            density_count += 1
-            for p in g.get('sample_posts_with_urls', [])[:1]:
-                if len(density_evidence) < 2:
-                    density_evidence.append(_make_evidence_post(
-                        p, f"From {g.get('account_count',0)}-account "
-                           f"high-density coordination group"
-                    ))
- 
-    combined = bot_name_evidence or density_evidence
-    if combined:
-        ttps.append({
-            'name': 'Bot-like Account Behaviour',
-            'description': (
-                f"{bot_name_count} group(s) with bot-pattern account names; "
-                f"{density_count} additional high-density group(s)."
-            ),
-            'severity': 'Medium',
-            'evidence': 'Potential automated or inauthentic account activity.',
-            'source': 'Rule-Based',
-            'example_posts': combined[:3],
-        })
- 
-    # ── TTP 10: Sequential Account Clustering ─────────────────────────────
-    seq_evidence, seq_count = [], 0
+            high_density_groups.append(g)
+    
+    if bot_name_groups or high_density_groups:
+        example_posts = []
+        for item in bot_name_groups[:2]:
+            for p in item['group'].get('sample_posts_with_urls', []):
+                if p.get('username', '') in item['bot_accounts'] and len(example_posts) < 3:
+                    example_posts.append({
+                        'username': p.get('username', 'Unknown'),
+                        'text_preview': p.get('text_preview', ''),
+                        'platform': p.get('platform', ''),
+                        'timestamp': p.get('timestamp', ''),
+                        'url': p.get('url'),
+                        'ttp_reason': f'Account name "{p.get("username")}" matches bot-pattern'
+                    })
+        if not example_posts and high_density_groups:
+            g = high_density_groups[0]
+            for p in g.get('sample_posts_with_urls', [])[:3]:
+                example_posts.append({
+                    'username': p.get('username', 'Unknown'),
+                    'text_preview': p.get('text_preview', ''),
+                    'platform': p.get('platform', ''),
+                    'timestamp': p.get('timestamp', ''),
+                    'url': p.get('url'),
+                    'ttp_reason': f'From {g.get("account_count", 0)}-account high-density coordination group'
+                })
+        
+        if example_posts:
+            ttps.append({
+                'name': 'Bot-like Account Behaviour',
+                'description': f'{len(bot_name_groups)} group(s) with bot-pattern account names; {len(high_density_groups)} additional high-density group(s).',
+                'severity': 'Medium',
+                'evidence': 'Potential automated or inauthentic account activity.',
+                'source': 'Rule-Based',
+                'example_posts': example_posts
+            })
+    
+    # === TTP 10: Account Clustering ===
+    clustering_groups = 0
+    example_posts = []
     for g in coordination_groups:
-        numeric = {acc: int(re.findall(r'\d+', acc)[-1])
-                   for acc in g.get('accounts', [])
-                   if re.findall(r'\d+', acc)}
-        if len(numeric) < 3:
-            continue
-        sorted_accs = sorted(numeric.items(), key=lambda x: x[1])
-        run = [sorted_accs[0]]
-        for i in range(1, len(sorted_accs)):
-            if sorted_accs[i][1] - sorted_accs[i - 1][1] == 1:
-                run.append(sorted_accs[i])
-            else:
-                run = [sorted_accs[i]]
-            if len(run) >= 3:
-                seq_count += 1
-                seq_names = {a for a, _ in run}
-                for p in g.get('sample_posts_with_urls', []):
-                    if p.get('username') in seq_names and len(seq_evidence) < 3:
-                        seq_evidence.append(_make_evidence_post(
-                            p,
-                            f"Account '{p.get('username')}' is part of "
-                            f"sequential cluster "
-                            f"({' → '.join(str(n) for _, n in run[:4])}…)"
-                        ))
-                break
- 
-    if seq_evidence:
+        accounts = g.get('accounts', [])
+        if len(accounts) >= 3:
+            numeric = {}
+            for acc in accounts:
+                nums = re.findall(r'\d+', acc)
+                if nums:
+                    numeric[acc] = int(nums[-1])
+            if len(numeric) >= 3:
+                sorted_accs = sorted(numeric.items(), key=lambda x: x[1])
+                run = [sorted_accs[0]]
+                for i in range(1, len(sorted_accs)):
+                    if sorted_accs[i][1] - sorted_accs[i-1][1] == 1:
+                        run.append(sorted_accs[i])
+                    else:
+                        run = [sorted_accs[i]]
+                if len(run) >= 3:
+                    clustering_groups += 1
+                    if len(example_posts) < 3:
+                        for acc, num in run[:3]:
+                            for p in g.get('sample_posts_with_urls', []):
+                                if p.get('username', '') == acc or acc in p.get('username', ''):
+                                    example_posts.append({
+                                        'username': acc,
+                                        'text_preview': p.get('text_preview', ''),
+                                        'platform': p.get('platform', ''),
+                                        'timestamp': p.get('timestamp', ''),
+                                        'url': p.get('url'),
+                                        'ttp_reason': f'Account "{acc}" (#{num}) part of sequential cluster: {" → ".join(str(n) for _, n in run[:4])}'
+                                    })
+                                    break
+    
+    if example_posts:
         ttps.append({
             'name': 'Account Clustering (Sequential Patterns)',
-            'description': (
-                f"{seq_count} group(s) contain accounts with consecutive "
-                f"numeric suffixes — suggests batch creation."
-            ),
+            'description': f'{clustering_groups} group(s) contain accounts with sequential numbering patterns.',
             'severity': 'High',
-            'evidence': 'Sequential account names indicate automated account farms.',
+            'evidence': 'Accounts likely created in batches, suggesting automated account generation.',
             'source': 'Rule-Based',
-            'example_posts': seq_evidence,
+            'example_posts': example_posts
         })
- 
-    # ── TTP 11: Content Recycling ──────────────────────────────────────────
-    recycle_evidence, recycle_count = [], 0
+    
+    # === TTP 11: Content Recycling ===
+    recycling_groups = 0
+    example_posts = []
     for g in coordination_groups:
-        timed = sorted(
-            [(p, _parse_ts(p.get('timestamp', '')))
-             for p in g.get('sample_posts_with_urls', [])
-             if p.get('timestamp') and p['timestamp'] != 'N/A'],
-            key=lambda x: x[1]
-        )
-        if len(timed) < 2:
-            continue
-        earliest_p, earliest_t = timed[0]
-        latest_p, latest_t = timed[-1]
-        span_days = (latest_t - earliest_t).total_seconds() / 86400
-        if span_days > 7 and earliest_p.get('username') != latest_p.get('username'):
-            recycle_count += 1
-            if len(recycle_evidence) < 4:
-                recycle_evidence.append(_make_evidence_post(
-                    earliest_p,
-                    f"FIRST seen: {earliest_p.get('timestamp')} — "
-                    f"content recycled over {span_days:.0f} days"
-                ))
-                recycle_evidence.append(_make_evidence_post(
-                    latest_p,
-                    f"LATEST seen: {latest_p.get('timestamp')} — "
-                    f"{span_days:.0f} days after original"
-                ))
- 
-    if recycle_evidence:
+        timed = []
+        for p in g.get('sample_posts_with_urls', []):
+            ts = p.get('timestamp', '')
+            if ts and ts != 'N/A':
+                try:
+                    dt = datetime.strptime(ts, '%Y-%m-%d %H:%M')
+                    timed.append((p, dt))
+                except:
+                    pass
+        if len(timed) >= 2:
+            timed.sort(key=lambda x: x[1])
+            earliest_p, earliest_t = timed[0]
+            latest_p, latest_t = timed[-1]
+            span_days = (latest_t - earliest_t).total_seconds() / 86400
+            if span_days > 7 and earliest_p.get('username') != latest_p.get('username'):
+                recycling_groups += 1
+                if len(example_posts) < 4:
+                    example_posts.append({
+                        'username': earliest_p.get('username', 'Unknown'),
+                        'text_preview': earliest_p.get('text_preview', ''),
+                        'platform': earliest_p.get('platform', ''),
+                        'timestamp': earliest_p.get('timestamp', ''),
+                        'url': earliest_p.get('url'),
+                        'ttp_reason': f'FIRST seen: {earliest_p.get("timestamp")} — content recycled over {span_days:.0f} days'
+                    })
+                    example_posts.append({
+                        'username': latest_p.get('username', 'Unknown'),
+                        'text_preview': latest_p.get('text_preview', ''),
+                        'platform': latest_p.get('platform', ''),
+                        'timestamp': latest_p.get('timestamp', ''),
+                        'url': latest_p.get('url'),
+                        'ttp_reason': f'LATEST seen: {latest_p.get("timestamp")} — {span_days:.0f} days after original'
+                    })
+    
+    if example_posts:
         ttps.append({
             'name': 'Content Recycling',
-            'description': (
-                f"{recycle_count} group(s) re-posting identical content "
-                f"over > 7 days."
-            ),
+            'description': f'{recycling_groups} group(s) re-posting identical content over > 7 days.',
             'severity': 'Medium',
-            'evidence': 'Long-running recycling keeps a narrative artificially alive.',
+            'evidence': 'Same content being recycled to maintain narrative presence.',
             'source': 'Rule-Based',
-            'example_posts': recycle_evidence[:4],
+            'example_posts': example_posts[:4]
         })
- 
-    # ── TTP 12: Amplification Networks ────────────────────────────────────
-    amp_evidence, amp_count = [], 0
+    
+    # === TTP 12: Amplification Networks ===
+    amplification_networks = 0
+    example_posts = []
     for g in coordination_groups:
         sample = g.get('sample_posts_with_urls', [])
-        if len(sample) < 5:
-            continue
-        timed = sorted(
-            [(p, _parse_ts(p.get('timestamp', ''))) for p in sample],
-            key=lambda x: x[1]
-        )
-        source_p, _ = timed[0]
-        amplifiers = [p for p, _ in timed[1:]
-                      if p.get('username') != source_p.get('username')]
-        if not amplifiers:
-            continue
-        amp_count += 1
-        if len(amp_evidence) < 6:
-            amp_evidence.append(_make_evidence_post(
-                source_p,
-                f"SOURCE — earliest of {len(sample)} posts "
-                f"(by {source_p.get('username', 'Unknown')})"
-            ))
-            for amp_p in amplifiers[:2]:
-                amp_evidence.append(_make_evidence_post(
-                    amp_p,
-                    f"AMPLIFIER — re-posted source content "
-                    f"(by {amp_p.get('username', 'Unknown')} "
-                    f"on {amp_p.get('platform', '')})"
-                ))
- 
-    if amp_evidence:
+        if len(sample) >= 5:
+            timed = []
+            for p in sample:
+                ts = p.get('timestamp', '')
+                if ts and ts != 'N/A':
+                    try:
+                        dt = datetime.strptime(ts, '%Y-%m-%d %H:%M')
+                        timed.append((p, dt))
+                    except:
+                        pass
+            if len(timed) >= 3:
+                timed.sort(key=lambda x: x[1])
+                source_p, _ = timed[0]
+                amplifiers = [p for p, _ in timed[1:] if p.get('username') != source_p.get('username')]
+                if amplifiers:
+                    amplification_networks += 1
+                    if len(example_posts) < 6:
+                        example_posts.append({
+                            'username': source_p.get('username', 'Unknown'),
+                            'text_preview': source_p.get('text_preview', ''),
+                            'platform': source_p.get('platform', ''),
+                            'timestamp': source_p.get('timestamp', ''),
+                            'url': source_p.get('url'),
+                            'ttp_reason': f'SOURCE — earliest of {len(sample)} posts (by {source_p.get("username", "Unknown")})'
+                        })
+                        for amp in amplifiers[:2]:
+                            example_posts.append({
+                                'username': amp.get('username', 'Unknown'),
+                                'text_preview': amp.get('text_preview', ''),
+                                'platform': amp.get('platform', ''),
+                                'timestamp': amp.get('timestamp', ''),
+                                'url': amp.get('url'),
+                                'ttp_reason': f'AMPLIFIER — re-posted source content (by {amp.get("username", "Unknown")} on {amp.get("platform", "")})'
+                            })
+    
+    if example_posts:
         ttps.append({
             'name': 'Amplification Networks',
-            'description': (
-                f"{amp_count} group(s) show source → amplifier pattern."
-            ),
+            'description': f'{amplification_networks} group(s) show source → amplifier pattern.',
             'severity': 'Medium',
-            'evidence': 'Content originates from few accounts, amplified by many.',
+            'evidence': 'Content originates from few sources and is amplified by many accounts.',
             'source': 'Rule-Based',
-            'example_posts': amp_evidence[:6],
+            'example_posts': example_posts[:6]
         })
- 
-    logger.info(f"analyze_ttps: returning {len(ttps)} TTPs")
+    
+    logger.info(f"analyze_ttps: returning {len(ttps)} TTPs with filtered evidence")
     return ttps
     
 def get_top_pairs(coordination_groups):
