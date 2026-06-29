@@ -5539,272 +5539,301 @@ class NarrativesView(TemplateView):
 
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
-    
+ 
     def _get_lexicon_term_count(self):
-        """Count total terms in CONFIG lexicon + Database"""
         try:
-            total = 0
-            for category, terms in CONFIG.get('lexicon', {}).items():
-                total += len(terms)
-            # Add terms from database
+            total = sum(len(t) for t in CONFIG.get('lexicon', {}).values())
             total += LexiconTerm.objects.count()
             return total
         except Exception:
             return "1000+"
-    
+ 
+    def _scan_post(self, text: str, category_filter=None) -> list:
+        """
+        Scan one post and return genuine harmful matches only.
+        Applies is_genuine_lexicon_match to every raw match.
+        """
+        if not text or len(text.strip()) < 10:
+            return []
+        raw = scan_text_for_lexicon_terms(text, category_filter=category_filter)
+        return [
+            m for m in raw
+            if len(m['term'].strip()) > 1
+            and is_genuine_lexicon_match(
+                m['term'], text,
+                m.get('severity', 'medium'),
+                m.get('category', ''))
+        ]
+ 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # 1. GET SELECTED CATEGORY FROM URL PARAMS
+ 
         selected_category = self.request.GET.get('category', '').strip()
-        
-        # 2. TRY TO LOAD CACHED RESULTS FIRST (Instant load for main view)
-        cache_key = "lexicon_dashboard_data_v2"
+        view_all  = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end   = self.request.GET.get('end_date', '')
+ 
+        # Cache key includes date range so filter changes bust the cache
+        cache_key = f"lexicon_dashboard_v4_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
-        
-        # If we have a selected category, we bypass cache to get fresh filtered data
+ 
         if cached_data and not selected_category:
             context.update(cached_data)
-            context['ai_insights'] = cache.get("lexicons_ai_insights_v1")
-            context['ai_is_running'] = cache.get("lexicons_ai_running")
-            # Refresh term count even from cache (fast query)
+            context['ai_insights']       = cache.get("lexicons_ai_insights_v1")
+            context['ai_is_running']     = cache.get("lexicons_ai_running")
             context['lexicon_term_count'] = self._get_lexicon_term_count()
+            context['selected_category'] = ''
+            context['category_terms']    = []
+            context['posts_with_terms']  = []
             return context
-        
-        # 3. GET POSTS (NO LIMIT - scan all posts)
+ 
         try:
-            filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+            filtered_posts, start_date, end_date = \
+                get_election_posts_queryset(self.request)
             total_posts = filtered_posts.count()
         except Exception as e:
-            logger.error(f"Error getting posts: {e}")
+            logger.error(f"LexiconsView: error fetching posts: {e}")
             context.update({
-                'active_tab': 'lexicons',
-                'top_terms': [],
-                'category_counts': {},
-                'severity_counts': {},
-                'total_matches': 0,
-                'posts_scanned': 0,
-                'total_posts': 0,
-                'wordcloud_base64': None,
-                'targeted_entities': [],
-                'ai_insights': None,
-                'ai_is_running': False,
+                'active_tab': 'lexicons', 'top_terms': [],
+                'category_counts': {}, 'severity_counts': {},
+                'total_matches': 0, 'posts_scanned': 0, 'total_posts': 0,
+                'wordcloud_base64': None, 'targeted_entities': [],
+                'ai_insights': None, 'ai_is_running': False,
                 'lexicon_term_count': self._get_lexicon_term_count(),
                 'selected_category': selected_category,
-                'category_terms': [],
-                'posts_with_terms': [],
+                'category_terms': [], 'posts_with_terms': [],
             })
             return context
-        
-        # 4. HANDLE CATEGORY SELECTION
-        category_terms = []
+ 
+        start_str = (start_date.date().isoformat()
+                     if hasattr(start_date, 'date') else str(start_date))
+        end_str   = (end_date.date().isoformat()
+                     if hasattr(end_date, 'date') else str(end_date))
+ 
+        category_terms   = []
         posts_with_terms = []
-        all_matches = []
-        posts_scanned = 0
-        
+        all_matches      = []
+        posts_scanned    = 0
+ 
+        # ── CATEGORY VIEW ─────────────────────────────────────────────────
         if selected_category:
-            # MODE: Show all terms in selected category + matching posts
-            logger.info(f"Viewing category: {selected_category}")
-            
-            # Fetch terms from DB for this category
-            # EXCLUDE low-severity terms (like "amhara", "oromo" which are neutral mentions)
+            logger.info(f"LexiconsView: category view → {selected_category}")
+ 
             db_terms = LexiconTerm.objects.filter(
-                category=selected_category
-            ).exclude(
-                severity='low'  # Exclude low-severity terms
-            )
-            
-            # If DB is empty, fallback to CONFIG (also excluding low severity)
-            if not db_terms.exists() and selected_category in CONFIG['lexicon']:
+                category=selected_category).exclude(severity='low')
+ 
+            if db_terms.exists():
                 category_terms = [
-                    {'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')}
-                    for t, m in CONFIG['lexicon'][selected_category].items()
-                    if m.get('severity', 'medium') != 'low'  # Exclude low severity
-                ]
-            else:
-                category_terms = [
-                    {'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language}
+                    {'term': t.term, 'severity': t.severity,
+                     'target_entity': t.target_entity, 'language': t.language}
                     for t in db_terms
                 ]
-            
-            logger.info(f"Found {len(category_terms)} terms in {selected_category} (excluding low severity)")
-            
-            # Find posts containing these terms
-            if category_terms:
-                term_list = [t['term'].lower() for t in category_terms if len(t['term']) > 1]
-                
-                # Define negative/critical/hateful indicators to INCLUDE
-                negative_indicators = [
-                    'kill', 'attack', 'hate', 'enemy', 'genocide', 'massacre',
-                    'destroy', 'eliminate', 'terrorist', 'extremist', 'war',
-                    'corrupt', 'thief', 'traitor', 'criminal', 'dictator',
-                    'rigged', 'fraud', 'stolen', 'fake', 'incompetent',
-                    'failed', 'useless', 'worthless', 'disgrace', 'shame',
-                    'betrayal', 'conspiracy', 'plot', 'scheme', 'failed state',
-                    'violence', 'threat', 'dangerous', 'harmful', 'abuse',
-                    'oppression', 'persecution', 'discrimination', 'prejudice',
-                    'slaughter', 'massacre', 'atrocity', 'brutal', 'cruel'
+            elif selected_category in CONFIG.get('lexicon', {}):
+                category_terms = [
+                    {'term': t, 'severity': m.get('severity', 'medium'),
+                     'target_entity': m.get('target_entity', ''),
+                     'language': m.get('language', '')}
+                    for t, m in CONFIG['lexicon'][selected_category].items()
+                    if m.get('severity', 'medium') != 'low'
                 ]
-                
-                # Scan ALL posts (NO LIMIT)
-                for post in filtered_posts:  # REMOVED [:2000] LIMIT
+ 
+            logger.info(f"  {len(category_terms)} terms for {selected_category}")
+ 
+            if category_terms:
+                # term_lower → metadata lookup
+                term_meta = {
+                    td['term'].lower(): td
+                    for td in category_terms if len(td['term']) > 1
+                }
+ 
+                for post in filtered_posts.iterator(chunk_size=500):
                     if not post.original_text:
                         continue
-                    
-                    text_lower = post.original_text.lower()
-                    matched_terms = [t for t in term_list if t in text_lower]
-                    
+ 
+                    text = post.original_text
+                    matched_terms = []
+ 
+                    for term_lower, meta in term_meta.items():
+                        # ── Fix A applied here ────────────────────────────
+                        if not is_genuine_lexicon_match(
+                                term_lower, text,
+                                meta.get('severity', 'medium'),
+                                selected_category):
+                            continue
+                        matched_terms.append(term_lower)
+                        all_matches.append({
+                            'term':          meta['term'],
+                            'category':      selected_category,
+                            'severity':      meta.get('severity', 'medium'),
+                            'target_entity': meta.get('target_entity', ''),
+                            'language':      meta.get('language', ''),
+                        })
+ 
                     if matched_terms:
-                        # Check if post has negative/critical/hateful indicators
-                        has_negative = any(ind in text_lower for ind in negative_indicators)
-                        
-                        # ONLY INCLUDE posts with negative/critical/hateful content
-                        # EXCLUDE positive and neutral posts
-                        if has_negative:
-                            posts_with_terms.append({
-                                'id': post.id,
-                                'text': post.original_text[:300],
-                                'platform': post.platform,
-                                'timestamp': post.timestamp_share,
-                                'url': post.url,
-                                'matched_terms': list(set(matched_terms))[:5],
-                            })
-                
-                posts_scanned = len(posts_with_terms)
-                logger.info(f"Found {len(posts_with_terms)} posts with {selected_category} terms (only critical/negative/hateful)")
-        
-        # 5. AGGREGATE ANALYTICS
+                        posts_scanned += 1
+                        posts_with_terms.append({
+                            'id':            post.id,
+                            'text':          text[:300],
+                            'platform':      post.platform,
+                            'timestamp':     post.timestamp_share,
+                            'url':           post.url,
+                            'matched_terms': list(set(matched_terms))[:5],
+                        })
+ 
+                logger.info(
+                    f"  Category scan done: {posts_scanned}/{total_posts} matched"
+                )
+ 
+        # ── OVERVIEW SCAN ─────────────────────────────────────────────────
+        else:
+            cache_key_ai  = "lexicons_ai_insights_v1"
+            ai_insights   = cache.get(cache_key_ai)
+            ai_is_running = cache.get("lexicons_ai_running")
+ 
+            if not ai_insights and not ai_is_running and total_posts > 10:
+                cache.set("lexicons_ai_running", True, 300)
+                post_ids   = list(filtered_posts.values_list('id', flat=True)[:1000])
+                sample_ids = random.sample(post_ids, min(50, len(post_ids)))
+                threading.Thread(
+                    target=self._run_ai_analysis_background,
+                    args=(sample_ids, cache_key_ai),
+                    daemon=True,
+                ).start()
+                logger.info("LexiconsView: background AI triggered")
+ 
+            logger.info(f"LexiconsView: overview scan of {total_posts} posts …")
+            for post in filtered_posts.iterator(chunk_size=1000):
+                if not post.original_text:
+                    continue
+                try:
+                    # ── Fix A applied here (via _scan_post) ───────────────
+                    matches = self._scan_post(post.original_text)
+                    if matches:
+                        all_matches.extend(matches)
+                        posts_scanned += 1
+                except Exception as e:
+                    logger.warning(f"Scan error post {post.id}: {e}")
+ 
+            logger.info(
+                f"LexiconsView: overview done — {posts_scanned} posts matched, "
+                f"{len(all_matches)} total matches"
+            )
+ 
+        # ── AGGREGATE ─────────────────────────────────────────────────────
         try:
-            from collections import Counter
-            term_counts = Counter([m['term'] for m in all_matches])
+            term_counts     = Counter([m['term']     for m in all_matches])
             category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
-            
-            # For category view, show top terms from that category
+ 
             if selected_category and category_terms:
-                # Show terms from the category sorted by matches
-                top_terms_with_meta = []
-                for term_data in category_terms:
-                    term = term_data['term']
-                    count = term_counts.get(term, 0)
-                    top_terms_with_meta.append({
-                        'term': term,
-                        'count': count,
-                        'metadata': term_data
-                    })
-                
-                # Sort by count (terms with matches first)
-                top_terms_with_meta.sort(key=lambda x: x['count'], reverse=True)
+                top_terms_with_meta = sorted(
+                    [{'term': td['term'],
+                      'count': term_counts.get(td['term'], 0),
+                      'metadata': td}
+                     for td in category_terms],
+                    key=lambda x: x['count'], reverse=True,
+                )
             else:
-                # Overview mode - show top matched terms
-                top_terms = term_counts.most_common(15)
                 top_terms_with_meta = []
-                for term, count in top_terms:
+                for term, count in term_counts.most_common(15):
                     if len(term.strip()) <= 1:
                         continue
-                    
                     metadata = {}
-                    # Check CONFIG first
-                    for cat, terms in CONFIG['lexicon'].items():
+                    for cat, terms in CONFIG.get('lexicon', {}).items():
                         if term in terms:
                             metadata = terms[term]
                             break
-                    
-                    # If not in CONFIG, check DB (for LLM-discovered terms)
                     if not metadata:
-                        db_term = LexiconTerm.objects.filter(term=term).first()
-                        if db_term:
+                        db_t = LexiconTerm.objects.filter(term=term).first()
+                        if db_t:
                             metadata = {
-                                'severity': db_term.severity,
-                                'target_entity': db_term.target_entity,
-                                'language': db_term.language
+                                'severity':      db_t.severity,
+                                'target_entity': db_t.target_entity,
+                                'language':      db_t.language,
                             }
-                    
-                    top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
+                    top_terms_with_meta.append(
+                        {'term': term, 'count': count, 'metadata': metadata})
         except Exception as e:
-            logger.error(f"Error aggregating analytics: {e}")
+            logger.error(f"LexiconsView: aggregation error: {e}")
             top_terms_with_meta = []
-            category_counts = Counter()
-            severity_counts = Counter()
-        
-        # Word Cloud (only for overview, not category view)
+            category_counts     = Counter()
+            severity_counts     = Counter()
+ 
+        # ── WORD CLOUD ────────────────────────────────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
-                valid_terms = [{'term': t, 'count': c} for t, c in term_counts.most_common(50) if len(t.strip()) > 1]
-                wordcloud = generate_trigger_wordcloud({'top_terms': valid_terms})
-                if wordcloud:
-                    wordcloud_base64 = wordcloud_to_base64(wordcloud)
+                valid_terms = [
+                    {'term': t, 'count': c}
+                    for t, c in term_counts.most_common(50)
+                    if len(t.strip()) > 1
+                ]
+                wc = generate_trigger_wordcloud({'top_terms': valid_terms})
+                if wc:
+                    wordcloud_base64 = wordcloud_to_base64(wc)
             except Exception as e:
-                logger.warning(f"Word cloud failed: {e}")
-        
-        # Targeted Entities
+                logger.warning(f"Word cloud error: {e}")
+ 
+        # ── ENTITIES ──────────────────────────────────────────────────────
         targeted_entities = []
         if not selected_category:
             try:
                 entity_patterns = [
-                    r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b',
+                    r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|'
+                    r'National\s+Election\s+Board)\b',
                     r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b',
                     r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',
                 ]
                 entities_found = Counter()
-                for post in filtered_posts[:1000]:
-                    if post.original_text:
-                        for pattern in entity_patterns:
-                            matches = re.findall(pattern, post.original_text, re.IGNORECASE)
-                            for match in matches:
-                                entity = match[0] if isinstance(match, tuple) else match
-                                if len(entity.strip()) >= 3:
-                                    entities_found[entity.strip()] += 1
-                targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
+                for post in filtered_posts.iterator(chunk_size=500):
+                    if not post.original_text:
+                        continue
+                    for pat in entity_patterns:
+                        for m in re.findall(pat, post.original_text,
+                                            re.IGNORECASE):
+                            entity = m[0] if isinstance(m, tuple) else m
+                            if len(entity.strip()) >= 3:
+                                entities_found[entity.strip()] += 1
+                    if sum(entities_found.values()) > 50000:
+                        break
+                targeted_entities = [
+                    {'entity': e, 'count': c}
+                    for e, c in entities_found.most_common(10)
+                ]
             except Exception as e:
-                logger.error(f"Error extracting entities: {e}")
-        
-        # 6. PREPARE DATA TO CACHE (only for overview, not category view)
+                logger.error(f"Entity extraction error: {e}")
+ 
+        # ── BUILD CONTEXT ─────────────────────────────────────────────────
+        shared = {
+            'active_tab':         'lexicons',
+            'top_terms':          top_terms_with_meta,
+            'category_counts':    dict(category_counts),
+            'severity_counts':    dict(severity_counts),
+            'total_matches':      len(all_matches),
+            'posts_scanned':      posts_scanned,
+            'total_posts':        total_posts,
+            'start_date':         start_str,
+            'end_date':           end_str,
+            'lexicon_term_count': self._get_lexicon_term_count(),
+        }
+ 
         if not selected_category:
-            results_to_cache = {
-                'active_tab': 'lexicons',
-                'top_terms': top_terms_with_meta,
-                'category_counts': dict(category_counts),
-                'severity_counts': dict(severity_counts),
-                'total_matches': len(all_matches),
-                'posts_scanned': posts_scanned,
-                'total_posts': total_posts,
-                'wordcloud_base64': wordcloud_base64,
-                'targeted_entities': targeted_entities,
-                'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-                'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
-                'lexicon_term_count': self._get_lexicon_term_count(),
-            }
-            cache.set(cache_key, results_to_cache, 3600)
-            context.update(results_to_cache)
+            shared['wordcloud_base64']  = wordcloud_base64
+            shared['targeted_entities'] = targeted_entities
+            cache.set(cache_key, shared, 3600)
         else:
-            # Category view - pass fresh data
-            context.update({
-                'active_tab': 'lexicons',
-                'top_terms': top_terms_with_meta,
-                'category_counts': dict(category_counts),
-                'severity_counts': dict(severity_counts),
-                'total_matches': len(all_matches),
-                'posts_scanned': posts_scanned,
-                'total_posts': total_posts,
-                'wordcloud_base64': None,
-                'targeted_entities': [],
-                'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-                'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
-                'lexicon_term_count': self._get_lexicon_term_count(),
-            })
-        
-        context['ai_insights'] = cache.get("lexicons_ai_insights_v1")
-        context['ai_is_running'] = cache.get("lexicons_ai_running") and not context.get('ai_insights')
-        
-        # Category-specific data
+            shared['wordcloud_base64']  = None
+            shared['targeted_entities'] = []
+ 
+        context.update(shared)
+        context['ai_insights']       = cache.get("lexicons_ai_insights_v1")
+        context['ai_is_running']     = (cache.get("lexicons_ai_running")
+                                        and not context.get('ai_insights'))
         context['selected_category'] = selected_category
-        context['category_terms'] = category_terms
-        context['posts_with_terms'] = posts_with_terms  #  show all
-        
+        context['category_terms']    = category_terms
+        context['posts_with_terms']  = posts_with_terms[:100]
         return context
-       
+ 
     @staticmethod
     def _run_ai_analysis_background(post_ids, cache_key):
         import traceback
