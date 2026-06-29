@@ -5650,8 +5650,15 @@ class LexiconsView(TemplateView):
                     if not post.original_text:
                         continue
  
+                    # ── EXCLUDE NEUTRAL/POSITIVE POSTS ────────────────────
+                    # Skip posts with low risk level (likely neutral/positive)
+                    post_risk = getattr(post, 'risk_level', 'medium')
+                    if post_risk == 'low':
+                        continue
+ 
                     text = post.original_text
                     matched_terms = []
+                    has_high_severity = False
  
                     for term_lower, meta in term_meta.items():
                         # ── Fix A applied here ────────────────────────────
@@ -5668,8 +5675,13 @@ class LexiconsView(TemplateView):
                             'target_entity': meta.get('target_entity', ''),
                             'language':      meta.get('language', ''),
                         })
+                        # Track if we have high/critical severity matches
+                        if meta.get('severity') in ['high', 'critical']:
+                            has_high_severity = True
  
-                    if matched_terms:
+                    # Only include posts with actual harmful content
+                    # (must have high/critical severity matches OR medium+ risk level)
+                    if matched_terms and (has_high_severity or post_risk in ['medium', 'high', 'critical']):
                         posts_scanned += 1
                         posts_with_terms.append({
                             'id':            post.id,
@@ -5678,6 +5690,7 @@ class LexiconsView(TemplateView):
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
+                            'risk_level':    post_risk,
                         })
  
                 logger.info(
