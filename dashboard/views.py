@@ -2298,9 +2298,9 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=50,
  
     # ── 1. Fetch data ──────────────────────────────────────────────────────
     qs = (posts_queryset
-          .exclude(platform__iexact='TikTok')
-          .exclude(platform__iexact='Media')
-          .exclude(platform__iexact='News')
+          .exclude(platform__icontains='tiktok')
+          .exclude(platform__icontains='media')
+          .exclude(platform__icontains='news')
           .values('id', 'account_id', 'original_text', 'platform',
                   'url', 'timestamp_share', 'risk_level')
           .order_by('-timestamp_share'))
@@ -3516,7 +3516,16 @@ CONFIG = {
             "ኤምሬትስ": {"severity": "low", "target_entity": "UAE", "language": "Amharic"},
             "uae": {"severity": "low", "target_entity": "UAE", "language": "English"},
             
-            "foreign": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign interference": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign agent": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign backed": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign funded": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign meddling": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign hand": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign plot": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign puppet": {"severity": "medium", "target_entity": "", "language": "English"},
+            "foreign conspiracy": {"severity": "medium", "target_entity": "", "language": "English"},
+            "western puppet": {"severity": "medium", "target_entity": "", "language": "English"},
             "የውጭ ጣልቃ ገብነት": {"severity": "medium", "target_entity": "", "language": "Amharic"},
             "የውጭ እጅ": {"severity": "medium", "target_entity": "", "language": "Amharic"},
             "Proxy war": {"severity": "medium", "target_entity": "", "language": "English"},
@@ -5506,9 +5515,10 @@ class LexiconsView(TemplateView):
                 self.request)
             # Mapped Lexicons should reflect social media activity only —
             # exclude Media/News wire content (not actual social posts).
+            # icontains (not iexact) so variants like 'News/Media' are caught too.
             filtered_posts = (filtered_posts
-                               .exclude(platform__iexact='Media')
-                               .exclude(platform__iexact='News'))
+                               .exclude(platform__icontains='media')
+                               .exclude(platform__icontains='news'))
             total_posts = filtered_posts.count()
         except Exception as e:
             logger.error(f"LexiconsView: error fetching posts: {e}")
@@ -6015,9 +6025,9 @@ class NetworksView(TemplateView):
             posts_queryset, start_date, end_date = get_election_posts_queryset(
                 request)
             posts = (posts_queryset
-                     .exclude(platform__iexact='TikTok')
-                     .exclude(platform__iexact='Media')
-                     .exclude(platform__iexact='News'))
+                     .exclude(platform__icontains='tiktok')
+                     .exclude(platform__icontains='media')
+                     .exclude(platform__icontains='news'))
         except Exception as e:
             logger.error(f"NetworksView: error fetching posts: {e}")
             posts      = ProcessedPost.objects.none()
