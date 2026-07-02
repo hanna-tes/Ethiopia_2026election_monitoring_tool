@@ -2371,6 +2371,14 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=50,
                     similarity_groups.append(similar_indices)
  
     logger.info(f"Found {len(similarity_groups)} raw coordination groups")
+
+    # Rank by cluster size (descending) BEFORE truncating to max_groups.
+    # Previously this just took similarity_groups[:max_groups] — i.e. whichever
+    # clusters were discovered first while scanning posts in timestamp order —
+    # which silently discarded larger/more-significant clusters found later in
+    # the scan, making the surviving groups (and TTP evidence diversity)
+    # depend on scan order rather than actual significance.
+    similarity_groups.sort(key=len, reverse=True)
  
     # ── 4. Build result dicts ──────────────────────────────────────────────
     for group_indices in similarity_groups[:max_groups]:
@@ -5479,7 +5487,7 @@ class LexiconsView(TemplateView):
         req_end   = self.request.GET.get('end_date', '')
  
         # ── 2. Cache (overview only, keyed to date range) ─────────────────
-        cache_key = f"lexicon_dashboard_v3_{req_start}_{req_end}_{view_all}"
+        cache_key = f"lexicon_dashboard_v4_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
  
         if cached_data and not selected_category:
@@ -5496,6 +5504,11 @@ class LexiconsView(TemplateView):
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(
                 self.request)
+            # Mapped Lexicons should reflect social media activity only —
+            # exclude Media/News wire content (not actual social posts).
+            filtered_posts = (filtered_posts
+                               .exclude(platform__iexact='Media')
+                               .exclude(platform__iexact='News'))
             total_posts = filtered_posts.count()
         except Exception as e:
             logger.error(f"LexiconsView: error fetching posts: {e}")
@@ -6833,4 +6846,4 @@ def trigger_llm_scan_api(request):
         return JsonResponse({
             'success': False,
             'message': 'Scan already in progress. Please wait.'
-        }, status=429)  
+        }, status=429)
