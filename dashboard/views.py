@@ -6446,104 +6446,99 @@ def export_posts_api(request):
 
 
 def generate_network_graph(request):
-    """API endpoint to generate coordination network graph"""
+    """API endpoint to generate coordination network graph smoothly for 14k+ records"""
     import re
-    
-    # Get parameters
+    from collections import defaultdict
+
+    # Get configuration parameters
     min_connections = int(request.GET.get('min_connections', 2))
     top_n = int(request.GET.get('top_n', 50))
     
-    # Check if the UI is filtering by a specific cluster/group
-    cluster_filter = request.GET.get('cluster') or request.GET.get('group_id')
+    # Check parameters for specific selected cluster rows
+    cluster_filter = request.GET.get('cluster') or request.GET.get('group_id') or request.GET.get('coordination_group')
     
-    # Build coordination graph base query
+    # Base query for election dataset
     query_kwargs = {'is_election_related': True}
+    
     if cluster_filter and cluster_filter.strip():
-        try:
-            query_kwargs['cluster'] = int(cluster_filter)
-        except ValueError:
-            pass
+        min_connections = 1  # Relax constraint for deep-dive group views
+        if hasattr(ProcessedPost, 'coordination_group_id'):
+            query_kwargs['coordination_group_id'] = cluster_filter
+        elif hasattr(ProcessedPost, 'coordination_group'):
+            query_kwargs['coordination_group'] = cluster_filter
+        else:
+            try:
+                query_kwargs['cluster'] = int(cluster_filter)
+            except ValueError:
+                pass
     else:
-        # Fallback to standard global threshold if no specific group is clicked
-        query_kwargs['cluster__gte'] = 0
+        if hasattr(ProcessedPost, 'cluster'):
+            query_kwargs['cluster__gte'] = 0
 
-    queryset = ProcessedPost.objects.filter(**query_kwargs)
+    # Pull only necessary fields into memory in one quick query
+    posts_data = ProcessedPost.objects.filter(**query_kwargs).values('account_id', 'original_text')
     
     G = nx.Graph()
+    rt_pattern = re.compile(r'RT\s+@([a-zA-Z0-9_]+)', re.IGNORECASE)
     
-    # --- FIX: Grouping and stripping RT syntax wrappers dynamically ---
-    # We load texts and map matching accounts to reveal retweeting clusters
-    text_groups = queryset.values('original_text').annotate(
-        accounts=Count('account_id', distinct=True)
-    )
+    # Map identical text fields to accounts in a single pass
+    text_to_accounts = defaultdict(set)
     
-    for text_group in text_groups:
-        text = text_group['original_text'] or ''
-        if not text:
+    for post in posts_data:
+        acc = post['account_id']
+        text = post['original_text'] or ''
+        
+        if not acc or acc == 'unknown':
             continue
             
-        # Get accounts posting this variant
-        accounts = list(queryset.filter(original_text=text).values_list('account_id', flat=True).distinct())
-        
-        # Parse retweet syntax: "RT @target_user: core message body"
-        rt_match = re.search(r'^RT\s+@([a-zA-Z0-9_]+):\s*(.*)$', text, re.IGNORECASE)
+        # 1. Immediate Retweet Edge connection logic
+        rt_match = rt_pattern.search(text)
         if rt_match:
             target_user = rt_match.group(1)
-            
-            # Connect the amplifier accounts to the original account being amplified
-            for acc in accounts:
-                if acc and acc != 'unknown' and acc != target_user:
-                    if G.has_edge(acc, target_user):
-                        G[acc][target_user]['weight'] += 1
+            if acc != target_user:
+                if G.has_edge(acc, target_user):
+                    G[acc][target_user]['weight'] += 1
+                else:
+                    G.add_edge(acc, target_user, weight=1)
+                    
+        # 2. Collect for identical text grouping analysis
+        text_to_accounts[text].add(acc)
+
+    # 3. Process identical text groups to track multi-account co-sharing patterns
+    for acc_set in text_to_accounts.values():
+        if len(acc_set) >= 2:
+            acc_list = list(acc_set)
+            for i in range(len(acc_list)):
+                for j in range(i + 1, len(acc_list)):
+                    if G.has_edge(acc_list[i], acc_list[j]):
+                        G[acc_list[i]][acc_list[j]]['weight'] += 1
                     else:
-                        G.add_edge(acc, target_user, weight=1)
-        
-        # Traditional matching fallback if multiple distinct accounts use this exact string variant
-        if len(accounts) >= 2:
-            for i in range(len(accounts)):
-                for j in range(i+1, len(accounts)):
-                    if accounts[i] == 'unknown' or accounts[j] == 'unknown' or accounts[i] == accounts[j]:
-                        continue
-                    if G.has_edge(accounts[i], accounts[j]):
-                        G[accounts[i]][accounts[j]]['weight'] += 1
-                    else:
-                        G.add_edge(accounts[i], accounts[j], weight=1)
-    # -------------------------------------------------------------------------
-    
-    # Filter to nodes with minimum connections
+                        G.add_edge(acc_list[i], acc_list[j], weight=1)
+
+    # Filter out nodes based on minimum degree connection limits
     nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
-    
-    # Dynamic guardrail: if filtering down to a specific single group/retweet ring, 
-    # relax the connection constraint down to 1 so the network structure displays fully
-    if cluster_filter and len(nodes_to_keep) == 0:
-        nodes_to_keep = [n for n, d in G.degree() if d >= 1]
-        
     G = G.subgraph(nodes_to_keep).copy()
     
     if G.number_of_edges() == 0:
         return JsonResponse({'nodes': [], 'edges': [], 'message': 'No coordination links found for this selection'})
     
-    # Get top N nodes by degree
+    # Isolate top N nodes
     top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
     top_node_names = [n for n, _ in top_nodes]
     G_top = G.subgraph(top_node_names).copy()
     
-    # Prepare node data
-    node_data = []
-    for node in G_top.nodes():
-        node_data.append({
-            'id': node,
-            'degree': G_top.degree(node),
-        })
+    # Format structural node list response data payload
+    node_data = [{'id': node, 'degree': G_top.degree(node)} for node in G_top.nodes()]
     
-    # Prepare edge data
-    edge_data = []
-    for u, v, data in G_top.edges(data=True):
-        edge_data.append({
+    # Format structural edge list response data payload
+    edge_data = [
+        {
             'source': u,
             'target': v,
             'weight': data.get('weight', 1)
-        })
+        }
+        for u, v, data in G_top.edges(data=True)
+    ]
     
     return JsonResponse({
         'nodes': node_data,
