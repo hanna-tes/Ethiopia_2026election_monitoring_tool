@@ -5769,7 +5769,7 @@ class NetworksView(TemplateView):
             posts,
             min_accounts=min_connections,
             max_groups=50,
-            view_all=view_all,
+            #view_all=view_all,
         )
  
         # ── Network graph ──────────────────────────────────────────────────
