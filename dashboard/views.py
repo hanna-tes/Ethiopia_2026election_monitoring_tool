@@ -2493,13 +2493,18 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
     }
 def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='spring'):
     """
-    Build network graph from coordination groups.
-    FIX: Ensures nodes from coordination groups are included in the graph,
-    so clicking a group doesn't result in an empty view.
+    Build network graph from coordination groups (TF-IDF similarity)
+    instead of exact text matches.
+    
+    FIXED: Now tracks post counts and platforms per account so the 
+    frontend tooltips show accurate data instead of 0/Unknown.
     """
     import networkx as nx
+    
     G = nx.Graph()
     account_roles = {}
+    
+    # NEW: Track post counts and platforms per account across all groups
     account_post_counts = {}
     account_platforms = {}
     
@@ -2508,24 +2513,32 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
         accounts = group.get('accounts', [])
         if len(accounts) < 2:
             continue
-        
+            
+        # Get sample posts to determine source vs amplifier
         sample_posts = group.get('sample_posts_with_urls', [])
+        
+        # Track which accounts posted what and when
         account_timestamps = {}
         
-        # Track post counts, platforms, and timestamps
         for post in sample_posts:
             username = post.get('username', '')
             timestamp = post.get('timestamp', '')
             platform = post.get('platform', '')
             
             if username:
+                # Track post count
                 account_post_counts[username] = account_post_counts.get(username, 0) + 1
+                
+                # Track platform (prefer non-empty)
                 if platform and platform != 'Unknown':
                     account_platforms[username] = platform
-                if timestamp and timestamp != 'N/A':
+                elif username not in account_platforms:
+                    account_platforms[username] = platform or 'Unknown'
+                    
+                if username and timestamp and timestamp != 'N/A':
                     account_timestamps[username] = timestamp
         
-        # Determine source (earliest) vs amplifier (later)
+        # Determine source (earliest poster) and amplifiers
         if account_timestamps:
             sorted_accounts = sorted(account_timestamps.items(), key=lambda x: x[1])
             if sorted_accounts:
@@ -2547,45 +2560,27 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     if G.number_of_edges() == 0:
         return {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
     
-    # === FIX: Combine Top N nodes with representative nodes from each group ===
-    # 1. Get top nodes by degree (global importance)
-    top_nodes_by_degree = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
-    top_node_names = set(n for n, _ in top_nodes_by_degree)
-    
-    # 2. Add representative nodes from each coordination group
-    # This ensures that when you click a group, you see at least some of its nodes
-    nodes_from_groups = set()
-    for group in coordination_groups:
-        if group.get('account_count', 0) >= 3:  # Only significant groups
-            group_accounts = group.get('accounts', [])
-            count_added = 0
-            for acc in group_accounts:
-                # Add up to 5 accounts per group if not already in top nodes
-                if acc not in top_node_names and count_added < 5:
-                    nodes_from_groups.add(acc)
-                    count_added += 1
-    
-    # Union of both sets ensures coverage
-    final_node_names = top_node_names.union(nodes_from_groups)
-    
-    # Create subgraph with selected nodes
-    G_final = G.subgraph(final_node_names).copy()
+    # Filter top nodes by degree (connections)
+    top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
+    top_node_names = [n for n, _ in top_nodes]
+    G_top = G.subgraph(top_node_names).copy()
     
     # Layout computation
     if layout == 'circular':
-        pos = nx.circular_layout(G_final)
+        pos = nx.circular_layout(G_top)
     elif layout == 'kamada_kawai':
-        pos = nx.kamada_kawai_layout(G_final)
+        pos = nx.kamada_kawai_layout(G_top)
     else:
-        pos = nx.spring_layout(G_final, k=0.6, iterations=50, seed=42)
+        pos = nx.spring_layout(G_top, k=0.6, iterations=50, seed=42)
     
-    # Build JSON for frontend
+    # Build JSON for frontend WITH post_count and platform
     nodes = []
-    for node in G_final.nodes():
-        degree = G_final.degree(node)
+    for node in G_top.nodes():
+        degree = G_top.degree(node)
         node_type = account_roles.get(node, 'source')
         node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'
         
+        # NEW: Get post count and platform
         post_count = account_post_counts.get(node, 0)
         platform = account_platforms.get(node, 'Unknown')
         
@@ -2593,8 +2588,8 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             'id': node,
             'label': node,
             'degree': degree,
-            'post_count': post_count,
-            'platform': platform,
+            'post_count': post_count,  # NEW
+            'platform': platform,      # NEW
             'x': float(pos[node][0]),
             'y': float(pos[node][1]),
             'size': max(15, degree * 3),
@@ -2603,7 +2598,7 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
         })
     
     edges = []
-    for u, v, data in G_final.edges(data=True):
+    for u, v, data in G_top.edges(data=True):
         if u in pos and v in pos:
             edges.append({
                 'source': u,
@@ -2621,7 +2616,7 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
         'stats': {
             'nodes': len(nodes),
             'edges': len(edges),
-            'density': G_final.number_of_edges() / (G_final.number_of_nodes() * (G_final.number_of_nodes() - 1) / 2) if G_final.number_of_nodes() > 1 else 0
+            'density': G_top.number_of_edges() / (G_top.number_of_nodes() * (G_top.number_of_nodes() - 1) / 2) if G_top.number_of_nodes() > 1 else 0
         }
     }
    
