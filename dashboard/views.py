@@ -6453,45 +6453,56 @@ def generate_network_graph(request):
     min_connections = int(request.GET.get('min_connections', 2))
     top_n = int(request.GET.get('top_n', 50))
     
-    # Build coordination graph
-    queryset = ProcessedPost.objects.filter(
-        is_election_related=True,
-        cluster__gte=0
-    )
+    # Check if the UI is filtering by a specific cluster/group
+    cluster_filter = request.GET.get('cluster') or request.GET.get('group_id')
+    
+    # Build coordination graph base query
+    query_kwargs = {'is_election_related': True}
+    if cluster_filter and cluster_filter.strip():
+        try:
+            query_kwargs['cluster'] = int(cluster_filter)
+        except ValueError:
+            pass
+    else:
+        # Fallback to standard global threshold if no specific group is clicked
+        query_kwargs['cluster__gte'] = 0
+
+    queryset = ProcessedPost.objects.filter(**query_kwargs)
     
     G = nx.Graph()
     
-    # Clean up RT tags before grouping to accurately capture amplifiers ---
-    # We find duplicate texts by looking at the core post text, ignoring the 'RT @username:' wrapper.
-    for text_group in queryset.values('original_text').annotate(
+    # --- FIX: Grouping and stripping RT syntax wrappers dynamically ---
+    # We load texts and map matching accounts to reveal retweeting clusters
+    text_groups = queryset.values('original_text').annotate(
         accounts=Count('account_id', distinct=True)
-    ):
+    )
+    
+    for text_group in text_groups:
         text = text_group['original_text'] or ''
         if not text:
             continue
             
-        # Extract accounts posting this exact text
+        # Get accounts posting this variant
         accounts = list(queryset.filter(original_text=text).values_list('account_id', flat=True).distinct())
         
-        # Check if the text is a retweet/amplifier pattern: "RT @username: core text"
+        # Parse retweet syntax: "RT @target_user: core message body"
         rt_match = re.search(r'^RT\s+@([a-zA-Z0-9_]+):\s*(.*)$', text, re.IGNORECASE)
         if rt_match:
             target_user = rt_match.group(1)
-            core_text = rt_match.group(2)
             
-            # Link all amplifiers who posted this retweet directly to the target account being amplified
+            # Connect the amplifier accounts to the original account being amplified
             for acc in accounts:
-                if acc and acc != 'unknown':
+                if acc and acc != 'unknown' and acc != target_user:
                     if G.has_edge(acc, target_user):
                         G[acc][target_user]['weight'] += 1
                     else:
                         G.add_edge(acc, target_user, weight=1)
         
-        # Fallback to standard exact matches for traditional coordinated posts
+        # Traditional matching fallback if multiple distinct accounts use this exact string variant
         if len(accounts) >= 2:
             for i in range(len(accounts)):
                 for j in range(i+1, len(accounts)):
-                    if accounts[i] == 'unknown' or accounts[j] == 'unknown':
+                    if accounts[i] == 'unknown' or accounts[j] == 'unknown' or accounts[i] == accounts[j]:
                         continue
                     if G.has_edge(accounts[i], accounts[j]):
                         G[accounts[i]][accounts[j]]['weight'] += 1
@@ -6501,10 +6512,16 @@ def generate_network_graph(request):
     
     # Filter to nodes with minimum connections
     nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
+    
+    # Dynamic guardrail: if filtering down to a specific single group/retweet ring, 
+    # relax the connection constraint down to 1 so the network structure displays fully
+    if cluster_filter and len(nodes_to_keep) == 0:
+        nodes_to_keep = [n for n, d in G.degree() if d >= 1]
+        
     G = G.subgraph(nodes_to_keep).copy()
     
     if G.number_of_edges() == 0:
-        return JsonResponse({'nodes': [], 'edges': [], 'message': 'No coordination links found'})
+        return JsonResponse({'nodes': [], 'edges': [], 'message': 'No coordination links found for this selection'})
     
     # Get top N nodes by degree
     top_nodes = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
