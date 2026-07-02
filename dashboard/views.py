@@ -6447,6 +6447,8 @@ def export_posts_api(request):
 
 def generate_network_graph(request):
     """API endpoint to generate coordination network graph"""
+    import re
+    
     # Get parameters
     min_connections = int(request.GET.get('min_connections', 2))
     top_n = int(request.GET.get('top_n', 50))
@@ -6459,19 +6461,43 @@ def generate_network_graph(request):
     
     G = nx.Graph()
     
-    # Group by exact text to find coordination
+    # Clean up RT tags before grouping to accurately capture amplifiers ---
+    # We find duplicate texts by looking at the core post text, ignoring the 'RT @username:' wrapper.
     for text_group in queryset.values('original_text').annotate(
         accounts=Count('account_id', distinct=True)
-    ).filter(accounts__gte=2):
-        accounts = queryset.filter(original_text=text_group['original_text']).values_list('account_id', flat=True).distinct()
+    ):
+        text = text_group['original_text'] or ''
+        if not text:
+            continue
+            
+        # Extract accounts posting this exact text
+        accounts = list(queryset.filter(original_text=text).values_list('account_id', flat=True).distinct())
         
+        # Check if the text is a retweet/amplifier pattern: "RT @username: core text"
+        rt_match = re.search(r'^RT\s+@([a-zA-Z0-9_]+):\s*(.*)$', text, re.IGNORECASE)
+        if rt_match:
+            target_user = rt_match.group(1)
+            core_text = rt_match.group(2)
+            
+            # Link all amplifiers who posted this retweet directly to the target account being amplified
+            for acc in accounts:
+                if acc and acc != 'unknown':
+                    if G.has_edge(acc, target_user):
+                        G[acc][target_user]['weight'] += 1
+                    else:
+                        G.add_edge(acc, target_user, weight=1)
+        
+        # Fallback to standard exact matches for traditional coordinated posts
         if len(accounts) >= 2:
             for i in range(len(accounts)):
                 for j in range(i+1, len(accounts)):
+                    if accounts[i] == 'unknown' or accounts[j] == 'unknown':
+                        continue
                     if G.has_edge(accounts[i], accounts[j]):
                         G[accounts[i]][accounts[j]]['weight'] += 1
                     else:
                         G.add_edge(accounts[i], accounts[j], weight=1)
+    # -------------------------------------------------------------------------
     
     # Filter to nodes with minimum connections
     nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
