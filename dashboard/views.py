@@ -5823,23 +5823,23 @@ class NetworksView(TemplateView):
         layout_style = request.GET.get('layout', 'spring')
 
         # 2. Extract coordination data frames via graph engines
+        #  Pass posts_qs as first positional argument & update kwarg to min_accounts
         posts_qs = ProcessedPost.objects.filter(is_election_related=True)
         coordination_groups = get_coordination_groups(posts_qs, min_accounts=min_connections)
         
-        # Dynamically calculate graph stats directly from the active group sets
+        #  Safeguard against non-dict structures safely without losing stats variables
+        graph_stats = {'nodes': 0, 'edges': 0}
         unique_nodes = set()
         for group in coordination_groups:
             unique_nodes.update(group.get('accounts', []))
-            
-        graph_stats = {
-            'nodes': len(unique_nodes),
-            'edges': sum(len(group.get('accounts', [])) * (len(group.get('accounts', [])) - 1) // 2 for group in coordination_groups)
-        }
+        graph_stats['nodes'] = len(unique_nodes)
+        # Structural edge projection count
+        graph_stats['edges'] = sum(len(group.get('accounts', [])) * (len(group.get('accounts', [])) - 1) // 2 for group in coordination_groups)
         
         total_coordinated_groups = len(coordination_groups)
         total_coordinated_accounts = graph_stats.get('nodes', 0)
         max_group_size = max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0
-        total_posts_analyzed = ProcessedPost.objects.filter(is_election_related=True).count()
+        total_posts_analyzed = posts_qs.count()
 
         # 3. Generate spatial layouts for Plotly Network graphs
         network_graph_json = "{}"
@@ -5902,36 +5902,32 @@ class NetworksView(TemplateView):
         # 4. Fetch reference DISARM TTP Framework metadata metrics
         ttps = get_disarm_ttp_reference()
 
-        # 5. DYNAMIC EVIDENCE FIXED LOOP:
-        # Fetch actual election posts to match against incoming categories
+        # 5. DYNAMIC EVIDENCE LOOP:
+        # Pull evidence using valid database schema fields (original_text & account_id)
         flagged_posts = ProcessedPost.objects.filter(is_election_related=True)[:100]
 
-        # Map actual evidence records to their respective TTP IDs dynamically using text/lexicon matching
+        # Map actual evidence records to their respective TTP IDs dynamically via text scanning
         ttp_evidence_map = defaultdict(list)
         for p in flagged_posts:
-            # Safely grab string content pool from the correct fields (original_text & lexicon_matches)
             text_content = (p.original_text or '').lower()
             lexicon_str = str(p.lexicon_matches or '').lower()
             
-            # Check which structural metadata items intersect with this post
             for ttp in ttps:
                 ttp_name = str(ttp.get('name') or '').strip().lower()
                 ttp_id = str(ttp.get('id') or '').strip().lower()
                 
-                # If the post contains references or falls within the identified lexicon taxonomy match
                 if (ttp_id and ttp_id in lexicon_str) or (ttp_name and ttp_name in text_content):
                     ttp_evidence_map[ttp_id].append({
                         'username': p.account_id or 'anonymous',
-                        'platform': p.platform or 'X',
+                        'platform': p.platform or 'Social Web',
                         'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'Recent',
                         'text_preview': p.original_text or '',
                         'ttp_reason': f"Matches classification signature for tracking index {ttp_id.upper()}."
                     })
 
-        # Inject only verified matches directly into the active template array context
+        # Inject matched evidence into the original parsed reference items array
         for ttp in ttps:
             ttp_id = str(ttp.get('id') or ttp.get('name') or '').strip().lower()
-            # Assign the real database posts matching this tag; leave empty if no verified data exists
             ttp['evidence_posts'] = ttp_evidence_map.get(ttp_id, [])[:3]
 
         context = {
