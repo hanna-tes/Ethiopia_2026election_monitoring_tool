@@ -250,8 +250,8 @@
                     </div>
                     <span class="px-2 py-1 rounded text-[10px] font-bold text-white shrink-0 ml-2
                         {% if ttp.severity == 'Critical' %}bg-red-600
-                        {% if ttp.severity == 'High' %}bg-orange-600
-                        {% if ttp.severity == 'Medium' %}bg-yellow-600
+                        {% elif ttp.severity == 'High' %}bg-orange-600
+                        {% elif ttp.severity == 'Medium' %}bg-yellow-600
                         {% else %}bg-blue-600{% endif %}">
                         {{ ttp.severity }}
                     </span>
@@ -289,7 +289,6 @@
     const graphData = {{ network_graph_json|safe|default:"{}" }};
     const coordinationGroups = {{ coordination_groups_json|safe|default:"[]" }};
     
-    // Strict Domestic Content Filter Rule
     function checkDirectEthiopiaContext(text, narrative) {
         const fullText = ((text || '') + ' ' + (narrative || '')).toLowerCase();
         
@@ -310,7 +309,6 @@
         return containsDomestic;
     }
 
-    // Dynamic Sizing Rule
     function scaleNodeSize(rawVal, groupVal) {
         const value = Math.max(parseFloat(rawVal) || 0, parseFloat(groupVal) || 0, 1);
         return 12 + (Math.log10(value + 1) * 14);
@@ -409,7 +407,6 @@
         });
     }
 
-    // Displays logs containing the dynamic verification arguments
     function displaySpecificAccountLogs(nodeId, screenLabel) {
         document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
         
@@ -450,7 +447,6 @@
         container.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // Displays sidebar group logs with full evidence
     function selectGroup(groupId) {
         const group = coordinationGroups.find(g => g.id == groupId);
         if (!group) return;
@@ -500,7 +496,6 @@
         container.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // Modal overlay selection logic mapping explicitly compiled logs
     function selectTTP(ttpName, ttpDescription, cardIndex) {
         document.querySelectorAll('.ttp-card').forEach(el => el.classList.remove('active'));
         const card = document.getElementById(`ttp-card-${cardIndex}`);
