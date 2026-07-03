@@ -289,6 +289,30 @@
     const graphData = {{ network_graph_json|safe|default:"{}" }};
     const coordinationGroups = {{ coordination_groups_json|safe|default:"[]" }};
     
+    // ✅ FIX: Expose TTP data directly from Django context so selectTTP uses evidence_posts
+    // instead of trying to re-derive evidence from coordinationGroups
+    const ttpsData = [
+        {% for ttp in ttps %}
+        {
+            name: "{{ ttp.name|escapejs }}",
+            description: "{{ ttp.description|escapejs }}",
+            evidence: "{{ ttp.evidence|escapejs }}",
+            severity: "{{ ttp.severity|escapejs }}",
+            evidence_posts: [
+                {% for post in ttp.evidence_posts %}
+                {
+                    username: "{{ post.username|escapejs }}",
+                    platform: "{{ post.platform|escapejs }}",
+                    timestamp: "{{ post.timestamp|escapejs }}",
+                    text_preview: "{{ post.text_preview|escapejs }}",
+                    ttp_reason: "{{ post.ttp_reason|escapejs }}"
+                }{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ]
+        }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+    
     function checkDirectEthiopiaContext(text, narrative) {
         const fullText = ((text || '') + ' ' + (narrative || '')).toLowerCase();
         
@@ -496,59 +520,36 @@
         container.scrollIntoView({ behavior: 'smooth' });
     }
 
+    // ✅ FIXED: selectTTP now uses the pre-computed evidence_posts from ttpsData
+    // instead of trying to re-derive evidence from coordinationGroups
     function selectTTP(ttpName, ttpDescription, cardIndex) {
         document.querySelectorAll('.ttp-card').forEach(el => el.classList.remove('active'));
         const card = document.getElementById(`ttp-card-${cardIndex}`);
         if (card) card.classList.add('active');
 
+        // Find the TTP in ttpsData by name
+        const ttp = ttpsData.find(t => t.name === ttpName);
+        
         let rowsHtml = '';
         let matchCount = 0;
-        const seenTexts = new Set();
         
-        const normName = ttpName.toLowerCase();
-        const normDesc = ttpDescription.toLowerCase();
-
-        coordinationGroups.forEach(group => {
-            let isMatch = false;
-            const subNarrative = (group.sub_narrative || '').toLowerCase();
-            const sampleText = (group.text_sample || '').toLowerCase();
-            const primaryType = (group.primary_type || '').toLowerCase();
-
-            if (subNarrative.length > 2 && (normName.includes(subNarrative) || normDesc.includes(subNarrative) || subNarrative.includes(normName))) {
-                isMatch = true;
-            }
-            else if (normName.includes('amplification') || normName.includes('bot') || normName.includes('coordinated')) {
-                if (primaryType.includes('amp') || group.post_count > 4) isMatch = true;
-            }
-            else if (normDesc.includes('ethnic') || normName.includes('ethnic') || normDesc.includes('incitement')) {
-                if (sampleText.includes('fano') || sampleText.includes('junta') || sampleText.includes('neftegna') || sampleText.includes('ola')) {
-                    isMatch = true;
-                }
-            }
-
-            if (isMatch && group.sample_posts_with_urls) {
-                group.sample_posts_with_urls.forEach(post => {
-                    const uniqueKey = (group.text_sample || '').trim();
-                    if (seenTexts.has(uniqueKey)) return;
-
-                    seenTexts.add(uniqueKey);
-                    matchCount++;
-                    
-                    rowsHtml += `
-                        <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500 shadow-sm space-y-2">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
-                                <span class="text-slate-400">${post.platform || 'Social Web'} • Timestamp: ${post.timestamp || 'Recent'}</span>
-                            </div>
-                            <p class="text-slate-200 text-sm italic">"${group.text_sample}"</p>
-                            <div class="text-[11px] text-amber-400 font-mono bg-slate-950 p-2 rounded border border-slate-800">
-                                <strong>↳ Empirical Proof Argument:</strong> ${group.time_justification || 'Matched behavioral cluster metadata.'}
-                            </div>
-                            ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline block mt-1">🔗 View Live URL Source</a>` : ''}
-                        </div>`;
-                });
-            }
-        });
+        if (ttp && ttp.evidence_posts && ttp.evidence_posts.length > 0) {
+            // ✅ Use the evidence_posts directly from the TTP object
+            ttp.evidence_posts.forEach(post => {
+                matchCount++;
+                rowsHtml += `
+                    <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500 shadow-sm space-y-2">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
+                            <span class="text-slate-400">${post.platform || 'Social Web'} • Timestamp: ${post.timestamp || 'Recent'}</span>
+                        </div>
+                        <p class="text-slate-200 text-sm italic">"${post.text_preview || ''}"</p>
+                        <div class="text-[11px] text-amber-400 font-mono bg-slate-950 p-2 rounded border border-slate-800">
+                            <strong>↳ Empirical Proof Argument:</strong> ${post.ttp_reason || 'Matched behavioral cluster metadata.'}
+                        </div>
+                    </div>`;
+            });
+        }
 
         if (matchCount === 0) {
             rowsHtml = `
