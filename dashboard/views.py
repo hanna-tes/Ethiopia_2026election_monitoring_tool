@@ -5901,8 +5901,7 @@ class NetworksView(TemplateView):
                 
                 network_graph_json = json.dumps({'nodes': nodes_list, 'edges': edges_list})
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
+                
                 logger.error(f"Error drawing network framework structure: {e}")
         
         # 4. Use analyze_ttps() to get TTPs from ACTUAL DATA ANALYSIS
