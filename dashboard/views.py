@@ -5825,7 +5825,16 @@ class NetworksView(TemplateView):
         # 2. Extract coordination data frames via graph engines
         posts_qs = ProcessedPost.objects.filter(is_election_related=True)
         coordination_groups = get_coordination_groups(posts_qs, min_accounts=min_connections)
-        graph_stats = coordination_result.get('stats', {'nodes': 0, 'edges': 0})
+        
+        # Dynamically calculate graph stats directly from the active group sets
+        unique_nodes = set()
+        for group in coordination_groups:
+            unique_nodes.update(group.get('accounts', []))
+            
+        graph_stats = {
+            'nodes': len(unique_nodes),
+            'edges': sum(len(group.get('accounts', [])) * (len(group.get('accounts', [])) - 1) // 2 for group in coordination_groups)
+        }
         
         total_coordinated_groups = len(coordination_groups)
         total_coordinated_accounts = graph_stats.get('nodes', 0)
