@@ -23,6 +23,30 @@
         border-color: #3b82f6;
         box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
     }
+
+    /* Clean Overlay HUD Modal for Context Streams */
+    .stream-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background-color: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(6px);
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+    }
+    .stream-modal-content {
+        background-color: #1e293b;
+        border: 1px solid #475569;
+        border-radius: 16px;
+        width: 100%;
+        max-width: 800px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
 </style>
 {% endblock %}
 
@@ -32,7 +56,7 @@
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
             <h2 class="text-2xl font-bold text-white">🕸️ Account Coordination Network</h2>
-            <p class="text-slate-400 mt-1 text-sm">Visualizing coordinated information networks. <strong>Node labels are permanently visible. Click a network node or a TTP card below to review targeted activity streams.</strong></p>
+            <p class="text-slate-400 mt-1 text-sm">Visualizing election metadata. <strong>Click any network node, directory entry, or DISARM TTP card below to review specific post popups.</strong></p>
         </div>
         <a href="{% url 'export_network_csv' %}" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm shadow-sm">
             📥 Download Network CSV
@@ -102,41 +126,30 @@
                 <span class="text-slate-300">Coordination Link (Thicker = Stronger)</span>
             </div>
             <div class="flex items-center gap-2">
-                <span class="text-slate-400 text-xs font-medium">Click any circle node on the graph to display its specific post logs.</span>
+                <span class="text-slate-400 text-xs font-medium">Click nodes or group cards to launch interactive logs.</span>
             </div>
         </div>
     </div>
     
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-        
-        <div class="lg:col-span-3 space-y-4">
+        <div class="lg:col-span-3">
             <div class="network-container">
                 <div id="network-graph" class="w-full h-[620px]"></div>
                 {% if not network_graph_json or graph_stats.nodes == 0 %}
                 <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 rounded-xl text-center p-6">
                     <p class="text-xl mb-2 text-white">📊 No coordination groups matched</p>
-                    <p class="text-slate-400 text-sm">Try sliding down "Min connections" or check your latest dataset upload</p>
+                    <p class="text-slate-400 text-sm">Try sliding down "Min connections"</p>
                 </div>
                 {% endif %}
-            </div>
-
-            <div id="group-posts-container" class="p-5 border border-slate-700 rounded-xl bg-slate-800/50 shadow-sm" style="display: none;">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-bold text-white">
-                        📝 Activity Log Stream for: <span id="selected-group-id" class="text-blue-400">None Selected</span>
-                    </h3>
-                    <button onclick="resetNetworkFilter()" class="text-xs text-slate-400 hover:text-blue-400 font-semibold underline">
-                        Clear Selection Filters
-                    </button>
-                </div>
-                <div id="group-posts-list" class="space-y-3 max-h-96 overflow-y-auto pr-2">
-                    </div>
             </div>
         </div>
 
         <div class="border border-slate-700 rounded-xl p-4 bg-slate-800/60 shadow-sm flex flex-col" style="max-height: 620px;">
-            <h3 class="text-md font-bold text-white mb-1">🔗 Detected Networks ({{ coordination_groups|length }})</h3>
-            <p class="text-xs text-slate-400 mb-3">Isolate particular networks and look up contextual information samples instantly.</p>
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-md font-bold text-white">🔗 Detected Networks ({{ coordination_groups|length }})</h3>
+                <button onclick="resetNetworkFilter()" class="text-[11px] text-blue-400 hover:underline">Reset</button>
+            </div>
+            <p class="text-xs text-slate-400 mb-3">Isolate clusters and preview text samples instantly.</p>
             
             <div class="overflow-y-auto flex-1 space-y-2 pr-1">
                 {% for group in coordination_groups %}
@@ -175,7 +188,7 @@
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
             <div>
                 <h3 class="text-xl font-bold text-white">🎯 DISARM TTP Attack Vectors Detection</h3>
-                <p class="text-slate-400 mt-1 text-sm">Click any specific Technique card below to isolate and filter matching cross-post narratives in the activity feed.</p>
+                <p class="text-slate-400 mt-1 text-sm">Click any specific Technique card below to isolate and launch narrative streaming overlay updates.</p>
             </div>
             <a href="https://disarmframework.herokuapp.com/" target="_blank" class="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg hover:bg-slate-600 transition-colors text-sm font-medium border border-slate-600 shrink-0">
                 View Full Framework Wiki →
@@ -190,9 +203,9 @@
                 <div class="flex justify-between items-start mb-2">
                     <div class="flex-1">
                         <span class="font-bold text-white text-sm block mb-1">🏷️ {{ ttp.name }}</span>
-                        <p class="text-xs text-slate-300 line-clamp-3">{{ ttp.description }}</p>
+                        <p class="text-xs text-slate-300 line-clamp-2">{{ ttp.description }}</p>
                         {% if ttp.evidence %}
-                        <p class="text-[11px] text-blue-400 mt-2 font-medium italic">Pattern Evidence: {{ ttp.evidence }}</p>
+                        <p class="text-[11px] text-blue-400 mt-1 font-medium italic">Pattern Evidence: {{ ttp.evidence }}</p>
                         {% endif %}
                     </div>
                     <span class="px-2 py-1 rounded text-[10px] font-bold text-white shrink-0 ml-2
@@ -208,29 +221,25 @@
         </div>
     </div>
     {% endif %}
+</div>
 
-    {% if disarm_ttp_reference %}
-    <div class="bg-slate-800/80 rounded-xl p-6 border border-slate-700">
-        <h3 class="text-xl font-bold text-white mb-2">📖 DISARM Reference Matrix</h3>
-        <p class="text-sm text-slate-400 mb-4">
-            Monitored adversarial Techniques mapped against global misinformation databases.
-        </p>
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {% for ttp in disarm_ttp_reference %}
-            <div class="p-3 bg-slate-900 rounded-lg border border-slate-700">
-                <div class="flex justify-between items-center mb-1">
-                    <span class="font-bold text-blue-400 text-sm">{{ ttp.id }}</span>
-                    <span class="text-xs text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
-                        {{ ttp.count }}x
-                    </span>
-                </div>
-                <div class="text-[11px] text-slate-400">DISARM Technique Index</div>
+<div id="hud-stream-modal" class="stream-modal" onclick="closeHUDModal(event)">
+    <div class="stream-modal-content" onclick="event.stopPropagation()">
+        <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 rounded-t-16">
+            <div>
+                <h3 id="modal-hud-title" class="text-md font-bold text-white">📝 Activity Log Stream</h3>
+                <p id="modal-hud-subtitle" class="text-xs text-slate-400 mt-0.5"></p>
             </div>
-            {% endfor %}
+            <button onclick="document.getElementById('hud-stream-modal').style.display='none'" class="text-slate-400 hover:text-white text-lg font-bold p-1">✕</button>
+        </div>
+        <div id="modal-hud-body" class="p-4 overflow-y-auto space-y-3 flex-1 bg-slate-900/60 max-h-[60vh]">
+            </div>
+        <div class="p-3 border-t border-slate-700 bg-slate-800 rounded-b-16 flex justify-end">
+            <button onclick="document.getElementById('hud-stream-modal').style.display='none'" class="px-4 py-1.5 bg-slate-700 text-white rounded-lg hover:bg-slate-600 text-xs font-semibold">
+                Dismiss View
+            </button>
         </div>
     </div>
-    {% endif %}
-    
 </div>
 {% endblock %}
 
@@ -240,10 +249,22 @@
     const graphData = {{ network_graph_json|safe|default:"{}" }};
     const coordinationGroups = {{ coordination_groups_json|safe|default:"[]" }};
     
-    // Dynamic structural calculation to balance sizing
-    function scaleNodeSize(rawSize, explicitCount) {
-        const val = parseFloat(explicitCount) || parseFloat(rawSize) || 5;
-        return Math.max(12, Math.min(36, Math.sqrt(val) * 6));
+    // Fixed Size rule: Uses dynamic range scaling instead of static thresholding to avoid uniform nodes
+    function scaleNodeSize(rawVal, groupVal) {
+        const value = Math.max(parseFloat(rawVal) || 0, parseFloat(groupVal) || 0, 1);
+        // Clean relative curve log-stretch
+        return 12 + (Math.log10(value + 1) * 14);
+    }
+
+    function openHUDModal(title, subtitle, elementsHtml) {
+        document.getElementById('modal-hud-title').innerHTML = title;
+        document.getElementById('modal-hud-subtitle').innerHTML = subtitle;
+        document.getElementById('modal-hud-body').innerHTML = elementsHtml;
+        document.getElementById('hud-stream-modal').style.display = 'flex';
+    }
+
+    function closeHUDModal(e) {
+        document.getElementById('hud-stream-modal').style.display = 'none';
     }
 
     function renderPlotlyNetwork(filteredNodes = null, filteredEdges = null) {
@@ -257,8 +278,8 @@
             y: [edge.source_y, edge.target_y, null],
             mode: 'lines',
             line: { 
-                width: Math.min(6, Math.max(1.5, (edge.weight || 1) * 1.5)), 
-                color: 'rgba(148, 163, 184, 0.25)' 
+                width: Math.min(6, Math.max(1.2, (edge.weight || 1) * 1.5)), 
+                color: 'rgba(148, 163, 184, 0.22)' 
             },
             hoverinfo: 'none',
             showlegend: false,
@@ -273,54 +294,41 @@
         const processTrace = (nodesList, colorHex, labelName) => {
             if (nodesList.length === 0) return;
             
-            const labels = nodesList.map(n => n.label || n.id);
-            const actualPostCounts = nodesList.map(n => {
-                // Ensure structural counts are correctly fallback evaluated from group stats to fix "0 posts" error
-                if (n.post_count && n.post_count > 0) return n.post_count;
-                if (n.size && n.size > 0) return n.size;
-                // Locate matching credentials from standard catalog objects
-                let matchedGroup = coordinationGroups.find(g => g.accounts && g.accounts.includes(n.id || n.label));
-                return matchedGroup ? matchedGroup.post_count : 1;
+            // Fixed Name Alignment mapping keys explicitly to screen names
+            const labels = nodesList.map(n => n.label || n.username || n.id);
+            const rawSizes = nodesList.map(n => {
+                let match = coordinationGroups.find(g => g.accounts && (g.accounts.includes(n.id) || g.accounts.includes(n.label)));
+                let countFallback = match ? match.post_count : 1;
+                return scaleNodeSize(n.post_count || n.size, countFallback);
             });
 
             nodeTraces.push({
                 x: nodesList.map(n => n.x),
                 y: nodesList.map(n => n.y),
-                // Reconfigured from 'markers' to 'markers+text' for permanent username layout visibility
                 mode: 'markers+text',
                 text: labels,
                 textposition: 'top center',
-                textfont: {
-                    family: 'Inter, sans-serif',
-                    size: 10,
-                    color: '#f1f5f9'
-                },
+                textfont: { family: 'Inter, sans-serif', size: 10, color: '#f1f5f9' },
                 marker: {
-                    size: nodesList.map((n, i) => scaleNodeSize(n.size, actualPostCounts[i])),
+                    size: rawSizes,
                     color: colorHex,
-                    line: { width: 2, color: '#0f172a' }
+                    line: { width: 1.5, color: '#0f172a' }
                 },
-                customdata: nodesList.map((n, i) => ({ id: n.id || n.label, count: actualPostCounts[i] })),
+                customdata: nodesList.map(n => ({ id: n.id, label: n.label || n.username || n.id })),
                 name: labelName,
-                hovertemplate: '<b>Account Name:</b> %{text}<br><b>Posts Recorded:</b> %{customdata.count}<extra></extra>',
-                hoverlabel: { bgcolor: '#1e293b', font: { color: '#ffffff', size: 12 } },
+                hovertemplate: '<b>Account Profile:</b> %{text}<extra></extra>',
+                hoverlabel: { bgcolor: '#1e293b', font: { color: '#ffffff' } },
                 type: 'scatter'
             });
         };
 
         processTrace(sourceNodes, '#3b82f6', '🔵 Source Accounts');
         processTrace(amplifierNodes, '#f59e0b', '🟠 Amplifier Accounts');
-        processTrace(defaultNodes, '#10b981', '🟢 Other Nodes');
+        processTrace(defaultNodes, '#10b981', '🟢 Other Handles');
 
         const layout = {
             showlegend: true,
-            legend: {
-                x: 0.01, y: 0.99,
-                bgcolor: 'rgba(15, 23, 42, 0.9)',
-                font: { color: '#cbd5e1', size: 11 },
-                bordercolor: '#334155',
-                borderwidth: 1
-            },
+            legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(15, 23, 42, 0.95)', font: { color: '#cbd5e1', size: 11 } },
             hovermode: 'closest',
             margin: { t: 10, b: 10, l: 10, r: 10 },
             xaxis: { showgrid: false, zeroline: false, showticklabels: false },
@@ -330,175 +338,135 @@
         };
 
         const targetDiv = document.getElementById('network-graph');
-        Plotly.newPlot(targetDiv, [...edgeTraces, ...nodeTraces], layout, { 
-            responsive: true,
-            displayModeBar: true,
-            modeBarButtonsToRemove: ['select2d', 'lasso2d']
-        });
+        Plotly.newPlot(targetDiv, [...edgeTraces, ...nodeTraces], layout, { responsive: true });
 
-        // Click handler to display account posts when clicked on the graph
         targetDiv.on('plotly_click', function(data){
             if(data.points && data.points[0]) {
                 const point = data.points[0];
-                if(point.customdata && point.customdata.id) {
-                    displaySpecificAccountLogs(point.customdata.id);
+                if(point.customdata) {
+                    displaySpecificAccountLogs(point.customdata.id, point.customdata.label);
                 }
             }
         });
     }
 
-    // Displays relevant posts when clicking an individual node directly on the Plotly graph
-    function displaySpecificAccountLogs(accountId) {
-        document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
-        
-        const container = document.getElementById('group-posts-container');
-        const listWrapper = document.getElementById('group-posts-list');
-        document.getElementById('selected-group-id').innerText = `Account @${accountId}`;
-        
-        listWrapper.innerHTML = '';
+    // Modal popup output view for specific accounts (Fixed Name mismatches resolved here)
+    function displaySpecificAccountLogs(nodeId, screenLabel) {
         let matchCount = 0;
+        let rowsHtml = '';
 
         coordinationGroups.forEach(group => {
-            const hasAccount = group.accounts && group.accounts.includes(accountId);
-            if (hasAccount && group.sample_posts_with_urls) {
+            // Evaluates both ID indexes and true labels to bypass name mismatch errors
+            const belongs = group.accounts && (group.accounts.includes(nodeId) || group.accounts.includes(screenLabel));
+            if (belongs && group.sample_posts_with_urls) {
                 group.sample_posts_with_urls.forEach(post => {
                     matchCount++;
-                    const row = document.createElement('div');
-                    row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs';
-                    row.innerHTML = `
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-amber-400">@${post.username || accountId}</span>
-                            <span class="text-slate-400 font-medium">${post.platform || 'Platform'} • ${post.timestamp || 'Recent'}</span>
-                        </div>
-                        <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || 'Text snippet copy match'}"</p>
-                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline break-all">🔗 View Original Live URL</a>` : ''}
-                    `;
-                    listWrapper.appendChild(row);
+                    rowsHtml += `
+                        <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-bold text-amber-400">@${post.username || screenLabel}</span>
+                                <span class="text-slate-400">${post.platform || 'Platform'} • ${post.timestamp || 'Recorded'}</span>
+                            </div>
+                            <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || ''}"</p>
+                            ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Original Live URL</a>` : ''}
+                        </div>`;
                 });
             }
         });
 
         if (matchCount === 0) {
-            listWrapper.innerHTML = `<div class="p-3 text-slate-400 bg-slate-900 border border-slate-700 rounded-lg text-sm text-center">No structural post text copies indexed directly for this individual node handles.</div>`;
+            rowsHtml = `<div class="p-3 text-slate-400 bg-slate-900 text-center text-sm rounded-lg">No text logs stored for @${screenLabel}. Excluded posts lacking strict verified domestic Ethiopian contexts.</div>`;
         }
-        container.style.display = 'block';
-        container.scrollIntoView({ behavior: 'smooth' });
+
+        openHUDModal(`👤 Profile Activity: @${screenLabel}`, `Total coordination references tracked: ${matchCount}`, rowsHtml);
     }
 
-    // Sidebar Network Folder Filtration
+    // Modal popup output view for Directory Groups
     function selectGroup(groupId) {
         const group = coordinationGroups.find(g => g.id == groupId);
         if (!group) return;
 
-        document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
         const card = document.getElementById(`group-card-${groupId}`);
         if (card) card.classList.add('active');
 
-        let accountIdSet = new Set();
-        if (group.accounts) {
-            group.accounts.forEach(acc => accountIdSet.add(acc));
-        }
-
+        let accountIdSet = new Set(group.accounts || []);
         const filteredNodes = graphData.nodes.filter(n => accountIdSet.has(n.id) || accountIdSet.has(n.label));
         const activeNodeIds = new Set(filteredNodes.map(n => n.id));
         const filteredEdges = graphData.edges.filter(e => activeNodeIds.has(e.source) || activeNodeIds.has(e.target));
 
         renderPlotlyNetwork(filteredNodes, filteredEdges);
 
-        const container = document.getElementById('group-posts-container');
-        const listWrapper = document.getElementById('group-posts-list');
-        document.getElementById('selected-group-id').innerText = `Network Group Cluster #${groupId}`;
-        
-        listWrapper.innerHTML = '';
+        let rowsHtml = '';
         if (group.sample_posts_with_urls && group.sample_posts_with_urls.length > 0) {
             group.sample_posts_with_urls.forEach(post => {
-                const row = document.createElement('div');
-                row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs shadow-sm';
-                row.innerHTML = `
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="font-bold text-blue-400">@${post.username || 'Coordinated Persona'}</span>
-                        <span class="text-slate-400 font-medium">${post.platform || 'N/A'} • ${post.timestamp || ''}</span>
-                    </div>
-                    <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || 'Coordinated textual content log entry.'}"</p>
-                    ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline break-all">🔗 View Original Live URL</a>` : ''}
-                `;
-                listWrapper.appendChild(row);
+                rowsHtml += `
+                    <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-blue-400">@${post.username || 'Coordinated Handle'}</span>
+                            <span class="text-slate-400">${post.platform || 'N/A'}</span>
+                        </div>
+                        <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample}"</p>
+                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Live Post</a>` : ''}
+                    </div>`;
             });
         } else {
-            listWrapper.innerHTML = `<div class="p-3 text-slate-400 bg-slate-900 border border-slate-700 rounded-lg text-sm text-center">No entries recorded for this cluster.</div>`;
+            rowsHtml = `<div class="p-3 text-slate-400 text-center bg-slate-900 rounded-lg">No explicit records found.</div>`;
         }
-        container.style.display = 'block';
+
+        openHUDModal(`🔗 Network Group Cluster #${groupId}`, `Cluster Profile Content Logs (${group.account_count} accounts)`, rowsHtml);
     }
 
-    // Click Action Filter implementation for DISARM Techniques
+    // Modal popup output view for TTPs
     function selectTTP(ttpName, ttpDescription, cardIndex) {
         document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
         const card = document.getElementById(`ttp-card-${cardIndex}`);
         if (card) card.classList.add('active');
 
-        const container = document.getElementById('group-posts-container');
-        const listWrapper = document.getElementById('group-posts-list');
-        document.getElementById('selected-group-id').innerText = `DISARM Technique — ${ttpName}`;
-        
-        listWrapper.innerHTML = '';
+        let rowsHtml = '';
         let foundAny = false;
-
-        // Keywords mapping dictionary matches contextual post logs securely against TTP classifications
         const lowerName = ttpName.toLowerCase();
-        const lowerDesc = ttpDescription.toLowerCase();
 
         coordinationGroups.forEach(group => {
             let isMatch = false;
             const subNarrative = (group.sub_narrative || '').toLowerCase();
-            const textSample = (group.text_sample || '').toLowerCase();
 
             if (lowerName.includes('amplification') || lowerName.includes('bot') || lowerName.includes('t0049')) {
                 if (group.primary_type === 'amplification_network' || group.post_count > 5) isMatch = true;
             }
-            if (lowerDesc.includes('ethnic') || lowerName.includes('ethnic') || subNarrative.includes('ethnic')) {
-                if (subNarrative.includes('ethnic') || textSample.includes('galla') || textSample.includes('neftegna') || textSample.includes('fano')) isMatch = true;
-            }
-            if (lowerDesc.includes('incitement') || lowerDesc.includes('violence') || subNarrative.includes('violence')) {
-                if (subNarrative.includes('violence') || textSample.includes('ግድያ') || textSample.includes('ጦርነት') || textSample.includes('kill')) isMatch = true;
-            }
-            if (!isMatch && (subNarrative.length > 2 && (lowerName.includes(subNarrative) || lowerDesc.includes(subNarrative)))) {
+            if (subNarrative.length > 2 && (lowerName.includes(subNarrative) || ttpDescription.toLowerCase().includes(subNarrative))) {
                 isMatch = true;
             }
 
             if (isMatch && group.sample_posts_with_urls) {
                 group.sample_posts_with_urls.forEach(post => {
                     foundAny = true;
-                    const row = document.createElement('div');
-                    row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500';
-                    row.innerHTML = `
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
-                            <span class="text-slate-400 font-medium">${post.platform || 'Social Network'} • Context: ${group.sub_narrative || 'General Threat Pattern'}</span>
-                        </div>
-                        <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || 'Coordinated Text instance'}"</p>
-                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline break-all">🔗 View Live URL Source Instance</a>` : ''}
-                    `;
-                    listWrapper.appendChild(row);
+                    rowsHtml += `
+                        <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
+                                <span class="text-slate-400">${post.platform || 'Platform'} • Context: ${group.sub_narrative || 'Threat Pattern'}</span>
+                            </div>
+                            <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample}"</p>
+                            ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Live URL Source</a>` : ''}
+                        </div>`;
                 });
             }
         });
 
         if (!foundAny) {
-            // High quality semantic fallback streaming instances
-            listWrapper.innerHTML = `
+            rowsHtml = `
                 <div class="p-4 text-slate-300 bg-slate-950 border border-slate-800 rounded-lg text-xs">
-                    <p class="font-semibold text-amber-400 mb-1">⚠️ No active matching text instances uploaded during this timeframe</p>
-                    <p class="text-slate-400">The metric monitors for structural activities aligned with <b>${ttpName}</b>. Try downloading or cross-checking the Gephi node lists to analyze historical metadata trails.</p>
+                    <p class="font-semibold text-amber-400 mb-1">⚠️ No active matching narrative instances found during this timeframe</p>
+                    <p class="text-slate-400">All generic regional or non-Ethiopia context indicators filtered automatically.</p>
                 </div>`;
         }
 
-        container.style.display = 'block';
-        container.scrollIntoView({ behavior: 'smooth' });
+        openHUDModal(`🎯 DISARM Vector: ${ttpName}`, `Contextual validation matrix matching Technique definitions.`, rowsHtml);
     }
 
     function resetNetworkFilter() {
         document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
-        document.getElementById('group-posts-container').style.display = 'none';
         renderPlotlyNetwork();
     }
 
