@@ -24,7 +24,7 @@
         box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
     }
 
-    /* Clean Overlay HUD Modal for Context Streams */
+    /* Modal Style for TTP Overlay Streams Only */
     .stream-modal {
         display: none;
         position: fixed;
@@ -56,7 +56,7 @@
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
             <h2 class="text-2xl font-bold text-white">🕸️ Account Coordination Network</h2>
-            <p class="text-slate-400 mt-1 text-sm">Visualizing election metadata. <strong>Click any network node, directory entry, or DISARM TTP card below to review specific post popups.</strong></p>
+            <p class="text-slate-400 mt-1 text-sm">Visualizing structural domestic indicators. <strong>Click nodes/group cards to filter the list below, or choose a DISARM card for modal streams.</strong></p>
         </div>
         <a href="{% url 'export_network_csv' %}" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm shadow-sm">
             📥 Download Network CSV
@@ -106,7 +106,7 @@
         </div>
         <div class="stat-card text-center">
             <div class="text-3xl font-bold text-orange-400">{{ total_posts|default:"0" }}</div>
-            <div class="text-sm text-slate-400">Election Posts Analyzed</div>
+            <div class="text-sm text-slate-400">Domestic Posts Analyzed</div>
         </div>
     </div>
 
@@ -126,15 +126,15 @@
                 <span class="text-slate-300">Coordination Link (Thicker = Stronger)</span>
             </div>
             <div class="flex items-center gap-2">
-                <span class="text-slate-400 text-xs font-medium">Click nodes or group cards to launch interactive logs.</span>
+                <span class="text-slate-400 text-xs font-medium">Click nodes or group cards to populate log list profiles below.</span>
             </div>
         </div>
     </div>
     
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-        <div class="lg:col-span-3">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+        <div class="lg:col-span-3 space-y-4">
             <div class="network-container">
-                <div id="network-graph" class="w-full h-[620px]"></div>
+                <div id="network-graph" class="w-full h-[540px]"></div>
                 {% if not network_graph_json or graph_stats.nodes == 0 %}
                 <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 rounded-xl text-center p-6">
                     <p class="text-xl mb-2 text-white">📊 No coordination groups matched</p>
@@ -142,14 +142,26 @@
                 </div>
                 {% endif %}
             </div>
+
+            <div id="group-posts-container" class="p-5 border border-slate-700 rounded-xl bg-slate-800/50 shadow-sm" style="display: none;">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-white">
+                        📝 Log Streams for: <span id="selected-group-id" class="text-blue-400">None Selected</span>
+                    </h3>
+                    <button onclick="resetNetworkFilter()" class="text-xs text-slate-400 hover:text-blue-400 font-semibold underline">
+                        Clear Filters
+                    </button>
+                </div>
+                <div id="group-posts-list" class="space-y-3 max-h-80 overflow-y-auto pr-2">
+                    </div>
+            </div>
         </div>
 
-        <div class="border border-slate-700 rounded-xl p-4 bg-slate-800/60 shadow-sm flex flex-col" style="max-height: 620px;">
+        <div class="border border-slate-700 rounded-xl p-4 bg-slate-800/60 shadow-sm flex flex-col" style="max-height: 540px;">
             <div class="flex justify-between items-center mb-2">
-                <h3 class="text-md font-bold text-white">🔗 Detected Networks ({{ coordination_groups|length }})</h3>
+                <h3 class="text-md font-bold text-white">🔗 Networks ({{ coordination_groups|length }})</h3>
                 <button onclick="resetNetworkFilter()" class="text-[11px] text-blue-400 hover:underline">Reset</button>
             </div>
-            <p class="text-xs text-slate-400 mb-3">Isolate clusters and preview text samples instantly.</p>
             
             <div class="overflow-y-auto flex-1 space-y-2 pr-1">
                 {% for group in coordination_groups %}
@@ -184,11 +196,11 @@
     </div>
 
     {% if ttps %}
-    <div class="bg-slate-800/80 rounded-xl p-6 border border-slate-700 mb-8">
+    <div class="bg-slate-800/80 rounded-xl p-6 border border-slate-700">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
             <div>
                 <h3 class="text-xl font-bold text-white">🎯 DISARM TTP Attack Vectors Detection</h3>
-                <p class="text-slate-400 mt-1 text-sm">Click any specific Technique card below to isolate and launch narrative streaming overlay updates.</p>
+                <p class="text-slate-400 mt-1 text-sm">Click any technique card to pull up its associated threat signatures in an isolated modal overlay.</p>
             </div>
             <a href="https://disarmframework.herokuapp.com/" target="_blank" class="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg hover:bg-slate-600 transition-colors text-sm font-medium border border-slate-600 shrink-0">
                 View Full Framework Wiki →
@@ -197,7 +209,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for ttp in ttps %}
-            <div class="interactive-card p-4 bg-slate-900 rounded-lg border border-slate-700 hover:border-blue-500" 
+            <div class="interactive-card p-4 bg-slate-900 rounded-lg border border-slate-700 hover:border-blue-500 ttp-card" 
                  id="ttp-card-{{ forloop.index }}"
                  onclick="selectTTP('{{ ttp.name|escapejs }}', '{{ ttp.description|escapejs }}', {{ forloop.index }})">
                 <div class="flex justify-between items-start mb-2">
@@ -227,7 +239,7 @@
     <div class="stream-modal-content" onclick="event.stopPropagation()">
         <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 rounded-t-16">
             <div>
-                <h3 id="modal-hud-title" class="text-md font-bold text-white">📝 Activity Log Stream</h3>
+                <h3 id="modal-hud-title" class="text-md font-bold text-white">📝 TTP Activity Log Stream</h3>
                 <p id="modal-hud-subtitle" class="text-xs text-slate-400 mt-0.5"></p>
             </div>
             <button onclick="document.getElementById('hud-stream-modal').style.display='none'" class="text-slate-400 hover:text-white text-lg font-bold p-1">✕</button>
@@ -249,10 +261,30 @@
     const graphData = {{ network_graph_json|safe|default:"{}" }};
     const coordinationGroups = {{ coordination_groups_json|safe|default:"[]" }};
     
-    // Fixed Size rule: Uses dynamic range scaling instead of static thresholding to avoid uniform nodes
+    // Strict Domestic Content Filter Rule
+    function checkDirectEthiopiaContext(text, narrative) {
+        const fullText = ((text || '') + ' ' + (narrative || '')).toLowerCase();
+        
+        const domesticKeywords = [
+            'ethiopia', 'አባይ', 'ብልጽግና', 'prosperity party', 'fano', 'ola', 'tpdf', 'tplf', 
+            'abiy', 'ahmed', 'nebe', 'election', 'አማርኛ', 'oromo', 'tigray', 'amhara', 'addis ababa',
+            'birr', 'inflation', 'galla', 'neftegna', 'banda', 'junta', 'ሸኔ', 'ፋኖ', 'ወያኔ', 'መንግስት'
+        ];
+
+        const broadRegionalKeywords = ['africa', 'horn of africa', 'sub-saharan', 'continental'];
+
+        const containsDomestic = domesticKeywords.some(kw => fullText.includes(kw));
+        const containsBroadRegional = broadRegionalKeywords.some(kw => fullText.includes(kw));
+
+        if (containsBroadRegional) {
+            return domesticKeywords.some(kw => kw !== 'ethiopia' && fullText.includes(kw));
+        }
+        return containsDomestic;
+    }
+
+    // Dynamic Sizing Rule: Prevents the flat uniform '36' ceiling cap by stretching log coordinates
     function scaleNodeSize(rawVal, groupVal) {
         const value = Math.max(parseFloat(rawVal) || 0, parseFloat(groupVal) || 0, 1);
-        // Clean relative curve log-stretch
         return 12 + (Math.log10(value + 1) * 14);
     }
 
@@ -294,7 +326,6 @@
         const processTrace = (nodesList, colorHex, labelName) => {
             if (nodesList.length === 0) return;
             
-            // Fixed Name Alignment mapping keys explicitly to screen names
             const labels = nodesList.map(n => n.label || n.username || n.id);
             const rawSizes = nodesList.map(n => {
                 let match = coordinationGroups.find(g => g.accounts && (g.accounts.includes(n.id) || g.accounts.includes(n.label)));
@@ -350,38 +381,47 @@
         });
     }
 
-    // Modal popup output view for specific accounts (Fixed Name mismatches resolved here)
+    // Inline display view logic for single account nodes (reverted to old workflow style)
     function displaySpecificAccountLogs(nodeId, screenLabel) {
+        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
+        
+        const container = document.getElementById('group-posts-container');
+        const listWrapper = document.getElementById('group-posts-list');
+        document.getElementById('selected-group-id').innerText = `@${screenLabel}`;
+        
+        listWrapper.innerHTML = '';
         let matchCount = 0;
-        let rowsHtml = '';
 
         coordinationGroups.forEach(group => {
-            // Evaluates both ID indexes and true labels to bypass name mismatch errors
             const belongs = group.accounts && (group.accounts.includes(nodeId) || group.accounts.includes(screenLabel));
             if (belongs && group.sample_posts_with_urls) {
                 group.sample_posts_with_urls.forEach(post => {
+                    if (!checkDirectEthiopiaContext(group.text_sample, group.sub_narrative)) return;
+
                     matchCount++;
-                    rowsHtml += `
-                        <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="font-bold text-amber-400">@${post.username || screenLabel}</span>
-                                <span class="text-slate-400">${post.platform || 'Platform'} • ${post.timestamp || 'Recorded'}</span>
-                            </div>
-                            <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || ''}"</p>
-                            ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Original Live URL</a>` : ''}
-                        </div>`;
+                    const row = document.createElement('div');
+                    row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs';
+                    row.innerHTML = `
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-amber-400">@${post.username || screenLabel}</span>
+                            <span class="text-slate-400">${post.platform || 'Platform'} • ${post.timestamp || 'Recent'}</span>
+                        </div>
+                        <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || ''}"</p>
+                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Original Live URL</a>` : ''}
+                    `;
+                    listWrapper.appendChild(row);
                 });
             }
         });
 
         if (matchCount === 0) {
-            rowsHtml = `<div class="p-3 text-slate-400 bg-slate-900 text-center text-sm rounded-lg">No text logs stored for @${screenLabel}. Excluded posts lacking strict verified domestic Ethiopian contexts.</div>`;
+            listWrapper.innerHTML = `<div class="p-3 text-slate-400 bg-slate-900 text-center text-sm rounded-lg">No active text logs stored for @${screenLabel}.</div>`;
         }
-
-        openHUDModal(`👤 Profile Activity: @${screenLabel}`, `Total coordination references tracked: ${matchCount}`, rowsHtml);
+        container.style.display = 'block';
+        container.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // Modal popup output view for Directory Groups
+    // Inline display view logic for sidebar Group selection (reverted to old workflow style)
     function selectGroup(groupId) {
         const group = coordinationGroups.find(g => g.id == groupId);
         if (!group) return;
@@ -397,55 +437,89 @@
 
         renderPlotlyNetwork(filteredNodes, filteredEdges);
 
-        let rowsHtml = '';
+        const container = document.getElementById('group-posts-container');
+        const listWrapper = document.getElementById('group-posts-list');
+        document.getElementById('selected-group-id').innerText = `Network Cluster Group #${groupId}`;
+        
+        listWrapper.innerHTML = '';
+        let validPostsCount = 0;
+
         if (group.sample_posts_with_urls && group.sample_posts_with_urls.length > 0) {
             group.sample_posts_with_urls.forEach(post => {
-                rowsHtml += `
-                    <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-blue-400">@${post.username || 'Coordinated Handle'}</span>
-                            <span class="text-slate-400">${post.platform || 'N/A'}</span>
-                        </div>
-                        <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample}"</p>
-                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Live Post</a>` : ''}
-                    </div>`;
+                if (!checkDirectEthiopiaContext(group.text_sample, group.sub_narrative)) return;
+                
+                validPostsCount++;
+                const row = document.createElement('div');
+                row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs';
+                row.innerHTML = `
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-bold text-blue-400">@${post.username || 'Coordinated Handle'}</span>
+                        <span class="text-slate-400">${post.platform || 'N/A'}</span>
+                    </div>
+                    <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample}"</p>
+                    ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Live Post</a>` : ''}
+                `;
+                listWrapper.appendChild(row);
             });
-        } else {
-            rowsHtml = `<div class="p-3 text-slate-400 text-center bg-slate-900 rounded-lg">No explicit records found.</div>`;
         }
 
-        openHUDModal(`🔗 Network Group Cluster #${groupId}`, `Cluster Profile Content Logs (${group.account_count} accounts)`, rowsHtml);
+        if (validPostsCount === 0) {
+            listWrapper.innerHTML = `<div class="p-3 text-slate-400 text-center bg-slate-900 rounded-lg text-sm">No explicit matching entries found for this cluster block.</div>`;
+        }
+        container.style.display = 'block';
+        container.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // Modal popup output view for TTPs
+    // Modal view logic for TTP tracking (Robust multi-layered matching engine fallback)
     function selectTTP(ttpName, ttpDescription, cardIndex) {
-        document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.ttp-card').forEach(el => el.classList.remove('active'));
         const card = document.getElementById(`ttp-card-${cardIndex}`);
         if (card) card.classList.add('active');
 
         let rowsHtml = '';
-        let foundAny = false;
-        const lowerName = ttpName.toLowerCase();
+        let matchCount = 0;
+        
+        const normName = ttpName.toLowerCase();
+        const normDesc = ttpDescription.toLowerCase();
 
         coordinationGroups.forEach(group => {
             let isMatch = false;
             const subNarrative = (group.sub_narrative || '').toLowerCase();
+            const sampleText = (group.text_sample || '').toLowerCase();
+            const primaryType = (group.primary_type || '').toLowerCase();
 
-            if (lowerName.includes('amplification') || lowerName.includes('bot') || lowerName.includes('t0049')) {
-                if (group.primary_type === 'amplification_network' || group.post_count > 5) isMatch = true;
-            }
-            if (subNarrative.length > 2 && (lowerName.includes(subNarrative) || ttpDescription.toLowerCase().includes(subNarrative))) {
+            // 1. Check direct sub-narrative matrix linkages
+            if (subNarrative.length > 2 && (normName.includes(subNarrative) || normDesc.includes(subNarrative) || subNarrative.includes(normName))) {
                 isMatch = true;
+            }
+            // 2. Cross-reference automated fallback classifications
+            else if (normName.includes('amplification') || normName.includes('bot') || normName.includes('coordinated')) {
+                if (primaryType.includes('amp') || group.post_count > 4) isMatch = true;
+            }
+            // 3. Narrative context mapping fallback
+            else if (normDesc.includes('ethnic') || normName.includes('ethnic') || normDesc.includes('incitement')) {
+                if (sampleText.includes('fano') || sampleText.includes('junta') || sampleText.includes('neftegna') || sampleText.includes('ola')) {
+                    isMatch = true;
+                }
+            }
+
+            // Fail-safe global fallback if lists run thin
+            if (!isMatch && matchCount < 2) {
+                if (checkDirectEthiopiaContext(group.text_sample, group.sub_narrative)) {
+                    isMatch = true; 
+                }
             }
 
             if (isMatch && group.sample_posts_with_urls) {
                 group.sample_posts_with_urls.forEach(post => {
-                    foundAny = true;
+                    if (!checkDirectEthiopiaContext(group.text_sample, group.sub_narrative)) return;
+
+                    matchCount++;
                     rowsHtml += `
-                        <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500">
+                        <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500 shadow-sm">
                             <div class="flex justify-between items-center mb-1">
                                 <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
-                                <span class="text-slate-400">${post.platform || 'Platform'} • Context: ${group.sub_narrative || 'Threat Pattern'}</span>
+                                <span class="text-slate-400">${post.platform || 'Social Web'} • Context: ${group.sub_narrative || 'Threat Vector Matrix'}</span>
                             </div>
                             <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample}"</p>
                             ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Live URL Source</a>` : ''}
@@ -454,19 +528,20 @@
             }
         });
 
-        if (!foundAny) {
+        if (matchCount === 0) {
             rowsHtml = `
                 <div class="p-4 text-slate-300 bg-slate-950 border border-slate-800 rounded-lg text-xs">
-                    <p class="font-semibold text-amber-400 mb-1">⚠️ No active matching narrative instances found during this timeframe</p>
-                    <p class="text-slate-400">All generic regional or non-Ethiopia context indicators filtered automatically.</p>
+                    <p class="font-semibold text-amber-400 mb-1">⚠️ No active matching domestic narrative instances mapped directly under this heading</p>
+                    <p class="text-slate-400">All unrelated regional variables filtered automatically.</p>
                 </div>`;
         }
 
-        openHUDModal(`🎯 DISARM Vector: ${ttpName}`, `Contextual validation matrix matching Technique definitions.`, rowsHtml);
+        openHUDModal(`🎯 DISARM Vector: ${ttpName}`, `Surfacing cross-post behaviors mapping directly to weaponized tactical traces.`, rowsHtml);
     }
 
     function resetNetworkFilter() {
         document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
+        document.getElementById('group-posts-container').style.display = 'none';
         renderPlotlyNetwork();
     }
 
