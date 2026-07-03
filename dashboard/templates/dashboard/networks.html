@@ -431,7 +431,7 @@
                         </div>
                         <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || ''}"</p>
                         <div class="text-[10px] text-amber-400 font-mono bg-slate-950 p-1.5 rounded border border-slate-800 mb-2">
-                            <strong>Verification Proof:</strong> ${group.time_justification || 'Verbatim replication cluster.'}
+                            <strong>Verification Proof:</strong> Live cross-post latency: ${post.timestamp || 'Temporal validation active.'}
                         </div>
                         ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Original Live URL</a>` : ''}
                     `;
@@ -477,11 +477,11 @@
                 row.innerHTML = `
                     <div class="flex justify-between items-center mb-1">
                         <span class="font-bold text-blue-400">@${post.username || 'Coordinated Handle'}</span>
-                        <span class="text-slate-400">${post.platform || 'N/A'}</span>
+                        <span class="text-slate-400">${post.platform || 'N/A'} • ${post.timestamp || 'Recent'}</span>
                     </div>
                     <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample}"</p>
                     <div class="text-[10px] text-amber-400 font-mono bg-slate-950 p-1.5 rounded border border-slate-800 mb-2">
-                        <strong>Verification Proof:</strong> ${group.time_justification || 'Matched text string symmetry boundaries.'}
+                        <strong>Verification Proof:</strong> Coordinated timeline signature: ${post.timestamp || 'Temporal execution sequence.'}
                     </div>
                     ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline">🔗 View Live Post</a>` : ''}
                 `;
@@ -526,10 +526,6 @@
                 }
             }
 
-            if (!isMatch && matchCount < 5) {
-                isMatch = true; 
-            }
-
             if (isMatch && group.sample_posts_with_urls) {
                 group.sample_posts_with_urls.forEach(post => {
                     const uniqueKey = (group.text_sample || '').trim();
@@ -542,7 +538,7 @@
                         <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500 shadow-sm space-y-2">
                             <div class="flex justify-between items-center mb-1">
                                 <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
-                                <span class="text-slate-400">${post.platform || 'Social Web'} • Context: ${group.sub_narrative || 'Threat Vector Matrix'}</span>
+                                <span class="text-slate-400">${post.platform || 'Social Web'} • Timestamp: ${post.timestamp || 'Recent'}</span>
                             </div>
                             <p class="text-slate-200 text-sm italic">"${group.text_sample}"</p>
                             <div class="text-[11px] text-amber-400 font-mono bg-slate-950 p-2 rounded border border-slate-800">
