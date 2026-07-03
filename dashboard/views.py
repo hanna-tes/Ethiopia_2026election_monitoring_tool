@@ -5903,21 +5903,30 @@ class NetworksView(TemplateView):
         ttps = get_disarm_ttp_reference()
 
         # 5. DYNAMIC EVIDENCE FIXED LOOP:
-        # Fetch actual posts tagged with DISARM IDs or matching relevant tactical categories
-        flagged_posts = ProcessedPost.objects.filter(
-            is_election_related=True
-        ).exclude(disarm_ttp_id__isnull=True).exclude(disarm_ttp_id='')[:50]
+        # Fetch actual election posts to match against incoming categories
+        flagged_posts = ProcessedPost.objects.filter(is_election_related=True)[:100]
 
-        # Map actual evidence records to their respective TTP IDs
+        # Map actual evidence records to their respective TTP IDs dynamically using text/lexicon matching
         ttp_evidence_map = defaultdict(list)
         for p in flagged_posts:
-            ttp_evidence_map[str(p.disarm_ttp_id).strip().lower()].append({
-                'username': p.username or 'anonymous',
-                'platform': p.platform or 'X',
-                'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'Recent',
-                'text_preview': p.clean_text or p.raw_text or '',
-                'ttp_reason': p.narrative_sub_category or f"Matches signature criteria for tracking index {p.disarm_ttp_id}."
-            })
+            # Safely grab string content pool from the correct fields (original_text & lexicon_matches)
+            text_content = (p.original_text or '').lower()
+            lexicon_str = str(p.lexicon_matches or '').lower()
+            
+            # Check which structural metadata items intersect with this post
+            for ttp in ttps:
+                ttp_name = str(ttp.get('name') or '').strip().lower()
+                ttp_id = str(ttp.get('id') or '').strip().lower()
+                
+                # If the post contains references or falls within the identified lexicon taxonomy match
+                if (ttp_id and ttp_id in lexicon_str) or (ttp_name and ttp_name in text_content):
+                    ttp_evidence_map[ttp_id].append({
+                        'username': p.account_id or 'anonymous',
+                        'platform': p.platform or 'X',
+                        'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'Recent',
+                        'text_preview': p.original_text or '',
+                        'ttp_reason': f"Matches classification signature for tracking index {ttp_id.upper()}."
+                    })
 
         # Inject only verified matches directly into the active template array context
         for ttp in ttps:
