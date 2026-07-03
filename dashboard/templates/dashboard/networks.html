@@ -2,7 +2,6 @@
 {% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
 
 {% block extra_head %}
-<!-- vis.js for interactive network graph -->
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <style>
     #network-graph {
@@ -76,6 +75,74 @@
     .ttp-close:hover {
         color: #f1f5f9;
     }
+    
+    /* Controls styling */
+    .controls-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+    }
+    .stat-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        text-align: center;
+    }
+    .stat-card .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #60a5fa;
+    }
+    .stat-card .stat-label {
+        font-size: 0.875rem;
+        color: #94a3b8;
+        margin-top: 0.5rem;
+    }
+    .legend-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+    }
+    input[type="range"] {
+        width: 100%;
+        accent-color: #3b82f6;
+    }
+    select {
+        background: #0f172a;
+        color: #f1f5f9;
+        border: 1px solid #334155;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+    }
+    .btn-update {
+        background: #3b82f6;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.5rem;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .btn-update:hover {
+        background: #2563eb;
+    }
+    .btn-download {
+        background: #8b5cf6;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.5rem;
+        text-decoration: none;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .btn-download:hover {
+        background: #7c3aed;
+    }
 </style>
 {% endblock %}
 
@@ -84,16 +151,95 @@
     <!-- Header -->
     <div class="flex justify-between items-center">
         <div>
-            <h1 class="text-2xl font-bold text-white">🕸️ Networks & TTPs</h1>
-            <p class="text-sm text-slate-400 mt-1">Coordination detection and tactical analysis</p>
+            <h1 class="text-2xl font-bold text-white">🕸️ Account Coordination Network</h1>
+            <p class="text-sm text-slate-400 mt-1">
+                Visualizing accounts sharing similar election messages. 
+                <strong>Node size = connections</strong>, <strong>edge thickness = coordination strength</strong>.
+            </p>
         </div>
-        <div class="flex gap-3">
-            <span class="px-4 py-2 bg-blue-900/50 text-blue-200 rounded-lg text-sm font-medium border border-blue-700">
-                👥 {{ total_coordinated_accounts }} accounts
-            </span>
-            <span class="px-4 py-2 bg-purple-900/50 text-purple-200 rounded-lg text-sm font-medium border border-purple-700">
-                📝 {{ total_posts }} posts
-            </span>
+        <a href="{% url 'export_merged_gephi_csv' %}?min_connections={{ min_connections }}" 
+           class="btn-download">
+            📥 Download Merged Gephi CSV
+        </a>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-card">
+        <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">Min connections</label>
+                <input type="range" name="min_connections" id="min_connections" 
+                       min="3" max="10" value="{{ min_connections }}" 
+                       oninput="document.getElementById('min_val').textContent = this.value">
+                <div class="text-sm text-blue-400 mt-1" id="min_val">{{ min_connections }}</div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">Top N accounts</label>
+                <input type="range" name="top_n" id="top_n" 
+                       min="10" max="100" value="{{ top_n }}"
+                       oninput="document.getElementById('top_val').textContent = this.value">
+                <div class="text-sm text-blue-400 mt-1" id="top_val">{{ top_n }}</div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">Layout</label>
+                <select name="layout" class="w-full">
+                    <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
+                    <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
+                    <option value="kamada_kawai" {% if layout_style == 'kamada_kawai' %}selected{% endif %}>Kamada-Kawai</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-update">
+                🔄 Update View
+            </button>
+        </form>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="stat-card">
+            <div class="stat-value text-blue-400">{{ total_coordinated_groups }}</div>
+            <div class="stat-label">Coordination Groups</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-green-400">{{ total_coordinated_accounts }}</div>
+            <div class="stat-label">Coordinated Accounts</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-purple-400">{{ max_group_size }}</div>
+            <div class="stat-label">Largest Group</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-orange-400">{{ total_posts }}</div>
+            <div class="stat-label">Election Posts</div>
+        </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend-card">
+        <h3 class="text-sm font-bold text-white mb-3">📊 How to Read This Network Graph</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <div class="text-xs text-slate-400 mb-2 font-semibold">Node Colors:</div>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-4 h-4 rounded-full bg-blue-500"></div>
+                    <span class="text-xs text-slate-300"><strong>Source Accounts</strong> - Original posters who first shared the content</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-4 h-4 rounded-full bg-orange-500"></div>
+                    <span class="text-xs text-slate-300"><strong>Amplifier Accounts</strong> - Accounts that reposted/shared the content</span>
+                </div>
+            </div>
+            <div>
+                <div class="text-xs text-slate-400 mb-2 font-semibold">Visual Elements:</div>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-6 h-6 rounded-full bg-slate-600"></div>
+                    <span class="text-xs text-slate-300">Larger nodes = more connections (higher coordination activity)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-0.5 bg-slate-400"></div>
+                    <span class="text-xs text-slate-300">Thicker edges = stronger coordination (more shared posts)</span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -103,16 +249,12 @@
         <div class="lg:col-span-3 space-y-4">
             <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-lg font-bold text-white">Coordination Network Graph</h3>
-                    <button onclick="resetGraph()" class="px-3 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-600 transition">
-                        🔄 Show All Groups
-                    </button>
+                    <h3 class="text-lg font-bold text-white">
+                        Coordination Network Graph 
+                        <span class="text-sm font-normal text-slate-400" id="graph-stats"></span>
+                    </h3>
                 </div>
                 <div id="network-graph"></div>
-                <div class="mt-3 flex gap-4 text-xs text-slate-400">
-                    <span class="flex items-center gap-1"><div class="w-3 h-3 rounded-full bg-blue-500"></div> Source Account</span>
-                    <span class="flex items-center gap-1"><div class="w-3 h-3 rounded-full bg-orange-500"></div> Amplifier Account</span>
-                </div>
             </div>
 
             <!-- Posts Container (Hidden initially, shown when a group is clicked) -->
@@ -234,11 +376,15 @@
             return;
         }
 
+        // Update graph stats
+        document.getElementById('graph-stats').textContent = 
+            `(${graphData.nodes.length} nodes, ${graphData.edges.length} edges)`;
+
         // Map nodes for vis.js
         const nodes = new vis.DataSet(graphData.nodes.map(n => ({
             id: n.id,
             label: n.label,
-            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}`,
+            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}<br>Connections: ${n.degree}`,
             color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
             size: n.size || 15,
             font: { color: '#ffffff', size: 12 }
@@ -249,30 +395,49 @@
             from: e.source,
             to: e.target,
             title: `Weight: ${e.weight || 1}`,
-            color: { color: '#475569', highlight: '#3b82f6' }
+            color: { color: '#475569', highlight: '#3b82f6' },
+            width: Math.min(3, (e.weight || 1) * 0.5)
         })));
 
         const data = { nodes: nodes, edges: edges };
         const options = {
             physics: {
-                stabilization: true,
+                enabled: true,
+                stabilization: {
+                    iterations: 200,
+                    fit: true
+                },
                 barnesHut: { 
-                    gravitationalConstant: -2000,
-                    springLength: 150
+                    gravitationalConstant: -3000,
+                    springLength: 200,
+                    springConstant: 0.04,
+                    damping: 0.09
                 }
             },
             nodes: {
                 borderWidth: 2,
-                shadow: true
+                shadow: true,
+                font: { 
+                    color: '#ffffff', 
+                    size: 14,
+                    face: 'Arial'
+                }
             },
             edges: {
-                smooth: false,
+                smooth: true,
                 shadow: true,
-                width: 1
+                width: 2,
+                color: { 
+                    color: '#64748b', 
+                    highlight: '#3b82f6',
+                    opacity: 0.6
+                }
             },
             interaction: {
                 hover: true,
-                tooltipDelay: 200
+                tooltipDelay: 200,
+                navigationButtons: true,
+                keyboard: true
             }
         };
 
@@ -302,7 +467,7 @@
         allNodes.add(filteredNodes.map(n => ({
             id: n.id,
             label: n.label,
-            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}`,
+            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}<br>Connections: ${n.degree}`,
             color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
             size: n.size || 15,
             font: { color: '#ffffff', size: 12 }
@@ -313,8 +478,13 @@
             from: e.source,
             to: e.target,
             title: `Weight: ${e.weight || 1}`,
-            color: { color: '#475569', highlight: '#3b82f6' }
+            color: { color: '#475569', highlight: '#3b82f6' },
+            width: Math.min(3, (e.weight || 1) * 0.5)
         })));
+
+        // Update stats
+        document.getElementById('graph-stats').textContent = 
+            `(${filteredNodes.length} nodes, ${filteredEdges.length} edges)`;
 
         // Show the posts for this group
         const postsContainer = document.getElementById('group-posts-container');
@@ -344,35 +514,6 @@
         
         // Smooth scroll to the posts container
         postsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    function resetGraph() {
-        if (!allNodes || !allEdges) return;
-        
-        // Restore all nodes and edges
-        allNodes.clear();
-        allNodes.add(graphData.nodes.map(n => ({
-            id: n.id,
-            label: n.label,
-            title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}`,
-            color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size || 15,
-            font: { color: '#ffffff', size: 12 }
-        })));
-        
-        allEdges.clear();
-        allEdges.add(graphData.edges.map(e => ({
-            from: e.source,
-            to: e.target,
-            title: `Weight: ${e.weight || 1}`,
-            color: { color: '#475569', highlight: '#3b82f6' }
-        })));
-
-        // Hide posts container
-        document.getElementById('group-posts-container').style.display = 'none';
-        
-        // Remove active class from all cards
-        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
     }
 
     // TTP Modal Functions
@@ -458,7 +599,7 @@
         
         // CIB: Multiple accounts posting same content
         if (ttpLower.includes('coordinated inauthentic')) {
-            return true; // All posts from coordination groups match
+            return true;
         }
         
         // Cross-platform: Posts on multiple platforms
@@ -468,7 +609,7 @@
         
         // Rapid response: High volume posting
         if (ttpLower.includes('rapid response') || ttpLower.includes('burst')) {
-            return true; // Posts from groups with high post counts
+            return true;
         }
         
         // Hashtag manipulation
@@ -494,7 +635,7 @@
         
         // Bot-like behavior
         if (ttpLower.includes('bot')) {
-            return post.is_bot || post.username.toLowerCase().includes('bot');
+            return post.is_bot || (post.username || '').toLowerCase().includes('bot');
         }
         
         // Default: show some posts
