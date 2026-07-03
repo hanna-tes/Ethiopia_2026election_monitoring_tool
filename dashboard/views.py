@@ -5815,152 +5815,122 @@ class PEPsView(TemplateView):
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
- 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        request = self.request
- 
-        # ── Parameters ────────────────────────────────────────────────────
-        try:
-            min_connections = int(request.GET.get('min_connections') or 2)
-            top_n           = int(request.GET.get('top_n') or 30)
-        except (ValueError, TypeError):
-            min_connections, top_n = 2, 30
- 
-        layout_style = request.GET.get('layout', 'spring') or 'spring'
-        view_all     = request.GET.get('view_all') == 'true'
- 
-        # ── Fetch posts ────────────────────────────────────────────────────
-        try:
-            posts_queryset, start_date, end_date = get_election_posts_queryset(request)
-            posts = (posts_queryset
-                     .exclude(platform__icontains='tiktok')
-                     .exclude(platform__icontains='media')
-                     .exclude(platform__icontains='news'))
-        except Exception as e:
-            logger.error(f"NetworksView: error fetching posts: {e}")
-            posts      = ProcessedPost.objects.none()
-            start_date = end_date = timezone.now()
- 
-        total_posts = posts.count()
-        logger.info(f"NetworksView: {total_posts} posts available (view_all={view_all})")
- 
-        # ── Coordination groups ────────────────────────────────────────────
-        coordination_groups = get_coordination_groups(
-            posts,
-            min_accounts=min_connections,
-            max_groups=50,
-        )
- 
-        # ── Contextualizing & Validating TTP Reasoning ──────────────────────
-        enhanced_groups = []
-        for g in coordination_groups:
-            text_sample = g.get('text_sample', '')
-            accounts = g.get('accounts', [])
-            
-            # Fetch actual database timestamps for posts matching this exact cluster text
-            matched_posts = list(posts.filter(original_text=text_sample).order_by('timestamp_share'))
-            timestamps = [p.timestamp_share for p in matched_posts if p.timestamp_share]
-            
-            time_justification = "Manual text duplication; high-resolution timestamps unavailable for latency logging."
-            behavior_class = "👥 Organized Manual Distribution"
-            first_seen_str = "N/A"
-            last_seen_str = "N/A"
-            
-            if len(timestamps) >= 2:
-                t_first = min(timestamps)
-                t_last = max(timestamps)
-                first_seen_str = t_first.strftime('%Y-%m-%d %H:%M:%S')
-                last_seen_str = t_last.strftime('%Y-%m-%d %H:%M:%S')
-                
-                total_delta = int((t_last - t_first).total_seconds())
-                avg_gap = total_delta / len(timestamps)
-                
-                # Apply structural boundaries to create defensible evidence justifications
-                if total_delta <= 60:
-                    behavior_class = "🚨 Critical Synchronicity (Automated Burst)"
-                    time_justification = f"Identified as automated behavior because {len(accounts)} accounts shared this text within a tiny window of {total_delta}s (First: {t_first.strftime('%H:%M:%S')}, Last: {t_last.strftime('%H:%M:%S')})."
-                elif avg_gap <= 300:
-                    behavior_class = "⏱️ Coordinated Temporal Burst"
-                    time_justification = f"Flagged as a coordinated network sequence; accounts systematically amplified this payload with an average latency gap of {int(avg_gap)}s."
-                else:
-                    behavior_class = "👥 Organized Distribution"
-                    time_justification = f"Verbatim narrative duplication observed across {len(accounts)} distinct handle nodes over a manual distribution window spanning {total_delta // 60} minutes."
-            
-            # Embed the proof properties into the group object directly
-            g['behavior_class'] = behavior_class
-            g['time_justification'] = time_justification
-            g['first_seen'] = first_seen_str
-            g['last_seen'] = last_seen_str
-            
-            # Inject explicit reason values for the assigned DISARM TTP markers
-            g_type = g.get('coordination_type', 'Coordinated Amplification')
-            g['ttp_reasoning_map'] = {
-                'T0012': f"Triggered Technique: Bot-like Account Behavior. {time_justification}",
-                'T0085': f"Triggered Technique: Mass Canonical Amplification. Verbatim payload content replicated exactly {g.get('post_count', 0)} times by {len(accounts)} separate nodes.",
-                'T0082': f"Triggered Technique: Multi-Account Management. Multi-node coordination pushing identical contextual tokens across platform feeds."
-            }
-            
-            enhanced_groups.append(g)
 
-        # ── Network graph ──────────────────────────────────────────────────
-        graph_data = generate_network_graph_from_groups(
-            enhanced_groups,
-            top_n=top_n,
-            layout=layout_style,
-        )
- 
-        # ── TTP analysis ───────────────────────────────────────────────────
-        ttps = analyze_ttps(enhanced_groups, posts)
- 
-        # ── DISARM reference ───────────────────────────────────────────────
-        try:
-            disarm_ttp_reference = get_disarm_ttp_reference()
-        except Exception:
-            disarm_ttp_reference = []
- 
-        # ── Serialise groups for JavaScript ───────────────────────────────
-        groups_for_js = [
-            {
-                'id':                      g.get('id'),
-                'accounts':               g.get('accounts', []),
-                'account_count':          g.get('account_count', 0),
-                'post_count':             g.get('post_count', 0),
-                'coordination_type':      g.get('behavior_class', ''), # Passes verified class instead of raw type
-                'sub_narrative':          g.get('sub_narrative', ''),
-                'sample_posts_with_urls': g.get('sample_posts_with_urls', []),
-                'platforms':              g.get('platforms', []),
-                'text_sample':            g.get('text_sample', ''),
-                'time_justification':     g.get('time_justification', ''),
-            }
-            for g in enhanced_groups
-        ]
- 
-        # ── Date strings ───────────────────────────────────────────────────
-        start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
-        end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
- 
-        context.update({
-            'active_tab':                 'networks',
-            'network_graph_json':         json.dumps(graph_data, default=str),
-            'coordination_groups':        enhanced_groups,
-            'coordination_groups_json':   json.dumps(groups_for_js, default=str),
-            'total_coordinated_groups':   len(enhanced_groups),
-            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in enhanced_groups),
-            'total_posts':                total_posts,
-            'max_group_size':             max((g.get('account_count', 0) for g in enhanced_groups), default=0),
-            'min_connections':            min_connections,
-            'top_n':                      top_n,
-            'layout_style':               layout_style,
-            'view_all':                   view_all,
-            'ttps':                       ttps,
-            'disarm_ttp_reference':       disarm_ttp_reference,
-            'disarm_dataset_size':        80000,
-            'start_date':                 start_str,
-            'end_date':                   end_str,
-        })
- 
-        return context
+    def get(self, request, *args, **kwargs):
+        # 1. Parse connection limits and parameters from the frontend filters
+        min_connections = int(request.GET.get('min_connections', 3))
+        top_n = int(request.GET.get('top_n', 40))
+        layout_style = request.GET.get('layout', 'spring')
+
+        # 2. Extract coordination data frames via graph engines
+        coordination_result = get_coordination_groups(min_connections=min_connections)
+        coordination_groups = coordination_result.get('groups', [])
+        graph_stats = coordination_result.get('stats', {'nodes': 0, 'edges': 0})
+        
+        total_coordinated_groups = len(coordination_groups)
+        total_coordinated_accounts = graph_stats.get('nodes', 0)
+        max_group_size = max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0
+        total_posts_analyzed = ProcessedPost.objects.filter(is_election_related=True).count()
+
+        # 3. Generate spatial layouts for Plotly Network graphs
+        network_graph_json = "{}"
+        if total_coordinated_groups > 0:
+            try:
+                G = nx.Graph()
+                for group in coordination_groups[:top_n]:
+                    accounts = group.get('accounts', [])
+                    weight = group.get('post_count', 1)
+                    behavior = group.get('behavior_class', 'Coordination')
+                    
+                    for i in range(len(accounts)):
+                        for j in range(i + 1, len(accounts)):
+                            node_a = accounts[i]
+                            node_b = accounts[j]
+                            
+                            if G.has_edge(node_a, node_b):
+                                G[node_a][node_b]['weight'] += weight
+                            else:
+                                G.add_edge(node_a, node_b, weight=weight, behavior=behavior)
+
+                if layout_style == 'circular':
+                    pos = nx.circular_layout(G)
+                elif layout_style == 'kamada_kawai':
+                    pos = nx.kamada_kawai_layout(G)
+                else:
+                    pos = nx.spring_layout(G, k=0.4, iterations=30)
+
+                nodes_list = []
+                for node in G.nodes():
+                    is_source = any(g.get('accounts', []) and g.get('accounts', [])[0] == node for g in coordination_groups)
+                    nodes_list.append({
+                        'id': node,
+                        'label': str(node)[:15],
+                        'x': float(pos[node][0]),
+                        'y': float(pos[node][1]),
+                        'type': 'source' if is_source else 'amplifier',
+                        'size': int(G.degree(node))
+                    })
+
+                edges_list = []
+                for u, v, data in G.edges(data=True):
+                    edges_list.append({
+                        'source': u,
+                        'target': v,
+                        'source_x': float(pos[u][0]),
+                        'source_y': float(pos[u][1]),
+                        'target_x': float(pos[v][0]),
+                        'target_y': float(pos[v][1]),
+                        'weight': int(data.get('weight', 1)),
+                        'behavior': data.get('behavior', 'Generic')
+                    })
+
+                network_graph_json = json.dumps({'nodes': nodes_list, 'edges': edges_list})
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error drawing network framework structure: {e}")
+
+        # 4. Fetch reference DISARM TTP Framework metadata metrics
+        ttps = get_disarm_ttp_reference()
+
+        # 5. DYNAMIC EVIDENCE FIXED LOOP:
+        # Fetch actual posts tagged with DISARM IDs or matching relevant tactical categories
+        flagged_posts = ProcessedPost.objects.filter(
+            is_election_related=True
+        ).exclude(disarm_ttp_id__isnull=True).exclude(disarm_ttp_id='')[:50]
+
+        # Map actual evidence records to their respective TTP IDs
+        ttp_evidence_map = defaultdict(list)
+        for p in flagged_posts:
+            ttp_evidence_map[str(p.disarm_ttp_id).strip().lower()].append({
+                'username': p.username or 'anonymous',
+                'platform': p.platform or 'X',
+                'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'Recent',
+                'text_preview': p.clean_text or p.raw_text or '',
+                'ttp_reason': p.narrative_sub_category or f"Matches signature criteria for tracking index {p.disarm_ttp_id}."
+            })
+
+        # Inject only verified matches directly into the active template array context
+        for ttp in ttps:
+            ttp_id = str(ttp.get('id') or ttp.get('name') or '').strip().lower()
+            # Assign the real database posts matching this tag; leave empty if no verified data exists
+            ttp['evidence_posts'] = ttp_evidence_map.get(ttp_id, [])[:3]
+
+        context = {
+            'min_connections': min_connections,
+            'top_n': top_n,
+            'layout_style': layout_style,
+            'coordination_groups': coordination_groups,
+            'coordination_groups_json': json.dumps(coordination_groups),
+            'network_graph_json': network_graph_json,
+            'graph_stats': graph_stats,
+            'total_coordinated_groups': total_coordinated_groups,
+            'total_coordinated_accounts': total_coordinated_accounts,
+            'max_group_size': max_group_size,
+            'total_posts': total_posts_analyzed,
+            'ttps': ttps,
+        }
+        return render(request, self.template_name, context)
         
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
