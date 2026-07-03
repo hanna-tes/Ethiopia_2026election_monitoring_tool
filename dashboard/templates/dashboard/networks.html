@@ -520,47 +520,45 @@
         container.scrollIntoView({ behavior: 'smooth' });
     }
 
-    // ✅ FIXED: selectTTP now uses the pre-computed evidence_posts from ttpsData
+    // selectTTP now uses the pre-computed evidence_posts from ttpsData
     // instead of trying to re-derive evidence from coordinationGroups
     function selectTTP(ttpName, ttpDescription, cardIndex) {
-        document.querySelectorAll('.ttp-card').forEach(el => el.classList.remove('active'));
-        const card = document.getElementById(`ttp-card-${cardIndex}`);
-        if (card) card.classList.add('active');
+    document.querySelectorAll('.ttp-card').forEach(el => el.classList.remove('active'));
+    const card = document.getElementById(`ttp-card-${cardIndex}`);
+    if (card) card.classList.add('active');
 
-        // Find the TTP in ttpsData by name
-        const ttp = ttpsData.find(t => t.name === ttpName);
-        
-        let rowsHtml = '';
-        let matchCount = 0;
-        
-        if (ttp && ttp.evidence_posts && ttp.evidence_posts.length > 0) {
-            // ✅ Use the evidence_posts directly from the TTP object
-            ttp.evidence_posts.forEach(post => {
-                matchCount++;
-                rowsHtml += `
-                    <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500 shadow-sm space-y-2">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
-                            <span class="text-slate-400">${post.platform || 'Social Web'} • Timestamp: ${post.timestamp || 'Recent'}</span>
-                        </div>
-                        <p class="text-slate-200 text-sm italic">"${post.text_preview || ''}"</p>
-                        <div class="text-[11px] text-amber-400 font-mono bg-slate-950 p-2 rounded border border-slate-800">
-                            <strong>↳ Empirical Proof Argument:</strong> ${post.ttp_reason || 'Matched behavioral cluster metadata.'}
-                        </div>
-                    </div>`;
-            });
-        }
-
-        if (matchCount === 0) {
-            rowsHtml = `
-                <div class="p-4 text-slate-300 bg-slate-950 border border-slate-800 rounded-lg text-xs">
-                    <p class="font-semibold text-amber-400 mb-1">⚠️ No active matching narrative instances mapped under this heading</p>
-                    <p class="text-slate-400">All unrelated regional variables filtered automatically.</p>
+    // Find the TTP in the pre-computed data
+    const ttp = ttpsData.find(t => t.name === ttpName);
+    
+    let rowsHtml = '';
+    
+    if (ttp && ttp.example_posts && ttp.example_posts.length > 0) {
+        // Display the pre-computed example posts with their reasons
+        ttp.example_posts.forEach(post => {
+            rowsHtml += `
+                <div class="p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500 shadow-sm space-y-2">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
+                        <span class="text-slate-400">${post.platform || 'Social Web'} • ${post.timestamp || 'Recent'}</span>
+                    </div>
+                    <p class="text-slate-200 text-sm italic">"${post.text_preview || ''}"</p>
+                    <div class="text-[11px] text-amber-400 font-mono bg-slate-950 p-2 rounded border border-slate-800">
+                        <strong>↳ Why this was flagged:</strong> ${post.ttp_reason || 'Content matches this TTP pattern.'}
+                    </div>
+                    ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline block mt-1">🔗 View Original Post</a>` : ''}
                 </div>`;
-        }
-
-        openHUDModal(`🎯 DISARM Vector: ${ttpName}`, `Surfacing distinct unique post variants mapping directly to weaponized tactical traces.`, rowsHtml);
+        });
+    } else {
+        // This should never happen if the backend is working correctly
+        rowsHtml = `
+            <div class="p-4 text-slate-300 bg-slate-950 border border-slate-800 rounded-lg text-xs">
+                <p class="font-semibold text-amber-400 mb-1">⚠️ No example posts available</p>
+                <p class="text-slate-400">This TTP was detected but no sample posts were attached. Check the backend TTP detection logic.</p>
+            </div>`;
     }
+
+    openHUDModal(` ${ttpName}`, ttpDescription, rowsHtml);
+}
 
     function resetNetworkFilter() {
         document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
