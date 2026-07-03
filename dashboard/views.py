@@ -398,9 +398,18 @@ def export_gephi_nodes_csv(request):
 
 
 def export_gephi_edges_csv(request):
-    """Export Edges CSV for Gephi with tweet content"""
+    """Export Edges CSV for Gephi with tweet content filtered explicitly for Ethiopian context"""
     min_connections = int(request.GET.get('min_connections', 2))
-    posts = ProcessedPost.objects.filter(is_election_related=True)
+    
+    # Apply strict Ethiopia domestic filtering rule on the query
+    posts = ProcessedPost.objects.filter(
+        is_election_related=True
+    ).filter(
+        Q(original_text__icontains='Ethiopia') | 
+        Q(original_text__icontains='ኢትዮጵያ') |
+        Q(target_country__iexact='Ethiopia')
+    )
+    
     coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
     
     response = HttpResponse(content_type='text/csv')
@@ -425,21 +434,20 @@ def export_gephi_edges_csv(request):
         # Create edges between all pairs
         for i in range(len(accounts)):
             for j in range(i+1, len(accounts)):
-                # Clean tweet text for CSV
-                tweet_clean = text_sample[:200].replace('\n', ' ').replace('\r', '').replace('"', '""')
+                # Clean tweet text for seamless CSV importing
+                tweet_clean = text_sample.replace('\n', ' ').replace('\r', '').replace('"', '""').strip()
                 
                 writer.writerow([
                     accounts[i],
                     accounts[j],
                     post_count,
                     'Undirected',
-                    f'"{tweet_clean}"',  # Quote the tweet
+                    tweet_clean,  
                     sub_narrative,
                     timestamp
                 ])
     
     return response
-
 
 def export_gephi_edges_with_roles_csv(request):
     """Export Edges CSV showing Source -> Amplifier relationships"""
