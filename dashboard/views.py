@@ -319,7 +319,7 @@ def _get_coordination_edges():
                 'source': source_account,
                 'target': target_account,
                 'tweet': text,
-                'date': first_date.strftime('%Y-%m-%d %H:%M') if first_date else '',
+                'date': first_date.isoformat() if hasattr(first_date, 'isoformat') else (first_date.strftime('%Y-%m-%d %H:%M:%S') if first_date else ''),
                 'platform': platform,
                 'url': url or ''
             })
@@ -481,7 +481,7 @@ def export_gephi_edges_with_roles_csv(request):
             if idx == 0:
                 # This is the source
                 source_account = username
-                first_time = post.timestamp_share.strftime('%Y-%m-%d %H:%M') if post.timestamp_share else ''
+                first_time = post.timestamp_share.isoformat() if post.timestamp_share else ''
             else:
                 # This is an amplifier
                 tweet_clean = text[:200].replace('\n', ' ').replace('\r', '').replace('"', '""')
