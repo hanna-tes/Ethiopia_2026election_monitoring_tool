@@ -148,7 +148,6 @@
 
 {% block content %}
 <div class="space-y-6">
-    <!-- Header -->
     <div class="flex justify-between items-center">
         <div>
             <h1 class="text-2xl font-bold text-white">🕸️ Account Coordination Network</h1>
@@ -157,13 +156,12 @@
                 <strong>Node size = connections</strong>, <strong>edge thickness = coordination strength</strong>.
             </p>
         </div>
-        <a href="{% url 'export_merged_gephi_csv' %}?min_connections={{ min_connections }}" 
+        <a href="{% url 'export_merged_gephi' %}?min_connections={{ min_connections }}" 
            class="btn-download">
             📥 Download Merged Gephi CSV
         </a>
     </div>
 
-    <!-- Controls -->
     <div class="controls-card">
         <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div>
@@ -194,7 +192,6 @@
         </form>
     </div>
 
-    <!-- Stats Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div class="stat-card">
             <div class="stat-value text-blue-400">{{ total_coordinated_groups }}</div>
@@ -214,7 +211,6 @@
         </div>
     </div>
 
-    <!-- Legend -->
     <div class="legend-card">
         <h3 class="text-sm font-bold text-white mb-3">📊 How to Read This Network Graph</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -243,9 +239,7 @@
         </div>
     </div>
 
-    <!-- Main Grid: Graph + Group List -->
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- Graph Area (3/4 width) -->
         <div class="lg:col-span-3 space-y-4">
             <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
                 <div class="flex justify-between items-center mb-3">
@@ -257,18 +251,15 @@
                 <div id="network-graph"></div>
             </div>
 
-            <!-- Posts Container (Hidden initially, shown when a group is clicked) -->
             <div id="group-posts-container" class="bg-slate-800 rounded-xl p-4 border border-slate-700" style="display: none;">
                 <h3 class="text-lg font-bold text-white mb-4">
                     📝 Posts for Group <span id="selected-group-id" class="text-blue-400"></span>
                 </h3>
                 <div id="group-posts-list" class="space-y-3 max-h-96 overflow-y-auto pr-2">
-                    <!-- Posts will be injected here by JavaScript -->
-                </div>
+                    </div>
             </div>
         </div>
 
-        <!-- Group List (1/4 width) -->
         <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 flex flex-col" style="max-height: 700px;">
             <h3 class="text-lg font-bold text-white mb-3">
                 🔗 Detected Groups ({{ coordination_groups|length }})
@@ -300,7 +291,6 @@
         </div>
     </div>
 
-    <!-- TTPs Section -->
     {% if ttps %}
     <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
         <h3 class="text-lg font-bold text-white mb-4">⚠️ Tactics, Techniques & Procedures (TTPs)</h3>
@@ -337,7 +327,6 @@
     {% endif %}
 </div>
 
-<!-- TTP Posts Modal -->
 <div id="ttp-modal" class="ttp-modal">
     <div class="ttp-modal-content">
         <div class="ttp-modal-header">
@@ -354,8 +343,7 @@
             </div>
             <h4 class="text-sm font-semibold text-slate-300 mb-3">Example Posts Demonstrating This Activity:</h4>
             <div id="ttp-modal-posts" class="space-y-3">
-                <!-- Posts will be injected here -->
-            </div>
+                </div>
         </div>
     </div>
 </div>
@@ -400,50 +388,66 @@
         })));
 
         const data = { nodes: nodes, edges: edges };
+        
+        // Optimized settings for clean layout communities and to eliminate overlapping tangles
         const options = {
             physics: {
                 enabled: true,
-                stabilization: {
-                    iterations: 200,
-                    fit: true
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -180, 
+                    centralGravity: 0.015,
+                    springLength: 45,             
+                    springConstant: 0.09,
+                    damping: 0.4,
+                    avoidOverlap: 1               
                 },
-                barnesHut: { 
-                    gravitationalConstant: -3000,
-                    springLength: 200,
-                    springConstant: 0.04,
-                    damping: 0.09
+                stabilization: {
+                    enabled: true,
+                    iterations: 180,             
+                    updateInterval: 25,
+                    fit: true
                 }
             },
             nodes: {
-                borderWidth: 2,
+                shape: 'dot',
+                borderWidth: 1.5,
                 shadow: true,
                 font: { 
-                    color: '#ffffff', 
-                    size: 14,
-                    face: 'Arial'
+                    color: '#cbd5e1',           
+                    size: 11,
+                    face: 'Arial, Helvetica, sans-serif'
                 }
             },
             edges: {
-                smooth: true,
-                shadow: true,
-                width: 2,
+                smooth: {
+                    type: 'continuous',          
+                    roundness: 0
+                },
+                shadow: false,
+                width: 1,
                 color: { 
-                    color: '#64748b', 
+                    color: '#334155',           
                     highlight: '#3b82f6',
-                    opacity: 0.6
+                    opacity: 0.4
                 }
             },
             interaction: {
                 hover: true,
-                tooltipDelay: 200,
+                tooltipDelay: 150,
                 navigationButtons: true,
-                keyboard: true
+                hideEdgesOnDrag: true           
             }
         };
 
         network = new vis.Network(container, data, options);
         allNodes = nodes;
         allEdges = edges;
+
+        // Disables the live loop engine once fully assembled, locking tree positions
+        network.once("stabilizationIterationsDone", function() {
+            network.setOptions({ physics: { enabled: false } });
+        });
     }
 
     function selectGroup(groupId) {
@@ -518,15 +522,12 @@
 
     // TTP Modal Functions
     function showTTPPosts(ttpName, ttpDescription, ttpEvidence) {
-        // Update modal header
         document.getElementById('ttp-modal-title').innerText = ttpName;
         document.getElementById('ttp-modal-description').innerText = ttpDescription;
         document.getElementById('ttp-modal-evidence').innerText = ttpEvidence;
 
-        // Find relevant posts for this TTP
         const relevantPosts = findPostsForTTP(ttpName);
         
-        // Display posts
         const postsContainer = document.getElementById('ttp-modal-posts');
         postsContainer.innerHTML = '';
         
@@ -555,7 +556,6 @@
             });
         }
 
-        // Show modal
         document.getElementById('ttp-modal').style.display = 'block';
     }
 
@@ -567,11 +567,9 @@
         const posts = [];
         const ttpLower = ttpName.toLowerCase();
         
-        // Collect all posts from all groups
         coordinationGroups.forEach(group => {
             if (group.sample_posts_with_urls) {
                 group.sample_posts_with_urls.forEach(post => {
-                    // Check if post matches TTP criteria
                     if (matchesTTPCriteria(post, ttpLower)) {
                         posts.push(post);
                     }
@@ -579,7 +577,6 @@
             }
         });
 
-        // Remove duplicates and limit to 5 posts
         const uniquePosts = [];
         const seen = new Set();
         for (const post of posts) {
@@ -597,52 +594,34 @@
     function matchesTTPCriteria(post, ttpLower) {
         const text = (post.text_preview || '').toLowerCase();
         
-        // CIB: Multiple accounts posting same content
         if (ttpLower.includes('coordinated inauthentic')) {
             return true;
         }
-        
-        // Cross-platform: Posts on multiple platforms
         if (ttpLower.includes('cross-platform')) {
             return post.platform && post.platform !== 'Unknown';
         }
-        
-        // Rapid response: High volume posting
         if (ttpLower.includes('rapid response') || ttpLower.includes('burst')) {
             return true;
         }
-        
-        // Hashtag manipulation
         if (ttpLower.includes('hashtag')) {
             return text.includes('#');
         }
-        
-        // URL amplification
         if (ttpLower.includes('url')) {
             return post.url && post.url.length > 0;
         }
-        
-        // Narrative weaponization: Violent/hateful keywords
         if (ttpLower.includes('weaponization') || ttpLower.includes('narrative')) {
             const violentKeywords = ['kill', 'attack', 'war', 'hate', 'genocide', 'massacre', 'violence'];
             return violentKeywords.some(kw => text.includes(kw));
         }
-        
-        // Temporal coordination: Posts within short timeframe
         if (ttpLower.includes('temporal') || ttpLower.includes('synchronized')) {
             return post.timestamp && post.timestamp !== 'N/A';
         }
-        
-        // Bot-like behavior
         if (ttpLower.includes('bot')) {
             return post.is_bot || (post.username || '').toLowerCase().includes('bot');
         }
-        
-        // Default: show some posts
         return true;
     }
 
-    // Close modal when clicking outside
     window.onclick = function(event) {
         const modal = document.getElementById('ttp-modal');
         if (event.target === modal) {
@@ -650,7 +629,6 @@
         }
     }
 
-    // Initialize the graph when the page loads
     document.addEventListener('DOMContentLoaded', initNetwork);
 </script>
 {% endblock %}
