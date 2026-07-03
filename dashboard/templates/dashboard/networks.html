@@ -156,7 +156,7 @@
                 <strong>Node size = connections</strong>, <strong>edge thickness = coordination strength</strong>.
             </p>
         </div>
-        <a href="{% url 'export_merged_gephi' %}?min_connections={{ min_connections }}" 
+        <a href="{% url 'export_merged_gephi_csv' %}?min_connections={{ min_connections }}" 
            class="btn-download">
             📥 Download Merged Gephi CSV
         </a>
@@ -368,14 +368,20 @@
         document.getElementById('graph-stats').textContent = 
             `(${graphData.nodes.length} nodes, ${graphData.edges.length} edges)`;
 
-        // Map nodes for vis.js
+        // Map nodes for vis.js with clean viewport settings
         const nodes = new vis.DataSet(graphData.nodes.map(n => ({
             id: n.id,
-            label: n.label,
+            label: n.label || n.id,
             title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}<br>Connections: ${n.degree}`,
             color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size || 15,
-            font: { color: '#ffffff', size: 12 }
+            size: n.size ? Math.min(n.size, 25) : 12,
+            font: { 
+                color: '#94a3b8',           
+                size: 10,                   
+                face: 'Arial, Helvetica, sans-serif',
+                strokeWidth: 0,             
+                background: '#0f172a'       
+            }
         })));
         
         // Map edges for vis.js
@@ -389,7 +395,6 @@
 
         const data = { nodes: nodes, edges: edges };
         
-        // Optimized settings for clean layout communities and to eliminate overlapping tangles
         const options = {
             physics: {
                 enabled: true,
@@ -412,12 +417,7 @@
             nodes: {
                 shape: 'dot',
                 borderWidth: 1.5,
-                shadow: true,
-                font: { 
-                    color: '#cbd5e1',           
-                    size: 11,
-                    face: 'Arial, Helvetica, sans-serif'
-                }
+                shadow: true
             },
             edges: {
                 smooth: {
@@ -444,7 +444,6 @@
         allNodes = nodes;
         allEdges = edges;
 
-        // Disables the live loop engine once fully assembled, locking tree positions
         network.once("stabilizationIterationsDone", function() {
             network.setOptions({ physics: { enabled: false } });
         });
@@ -466,15 +465,21 @@
         const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
         const filteredEdges = graphData.edges.filter(e => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target));
 
-        // Update the network graph
+        // Update the network graph safely using clear and read
         allNodes.clear();
         allNodes.add(filteredNodes.map(n => ({
             id: n.id,
-            label: n.label,
+            label: n.label || n.id,
             title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}<br>Connections: ${n.degree}`,
             color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size || 15,
-            font: { color: '#ffffff', size: 12 }
+            size: n.size ? Math.min(n.size, 25) : 12,
+            font: { 
+                color: '#94a3b8',           
+                size: 10,                   
+                face: 'Arial, Helvetica, sans-serif',
+                strokeWidth: 0,             
+                background: '#0f172a'       
+            }
         })));
         
         allEdges.clear();
@@ -516,7 +521,6 @@
             postsContainer.style.display = 'block';
         }
         
-        // Smooth scroll to the posts container
         postsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
