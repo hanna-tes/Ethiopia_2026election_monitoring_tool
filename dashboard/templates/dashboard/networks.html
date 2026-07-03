@@ -10,7 +10,39 @@
         background: #0f172a;
         border-radius: 0.75rem;
         border: 1px solid #334155;
+        position: relative;
     }
+    /* Style vis.js custom navigation buttons to match our slate/blue UI instead of the generic green */
+    div.vis-network div.vis-navigation div.vis-button {
+        background-image: none !important;
+        background-color: #1e293b !important;
+        border: 1px solid #475569 !important;
+        color: #94a3b8 !important;
+        border-radius: 0.375rem !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-weight: bold !important;
+        width: 28px !important;
+        height: 28px !important;
+        transition: all 0.2s ease;
+    }
+    div.vis-network div.vis-navigation div.vis-button:hover {
+        background-color: #3b82f6 !important;
+        color: white !important;
+        border-color: #3b82f6 !important;
+    }
+    div.vis-network div.vis-navigation div.vis-button:after {
+        font-size: 14px;
+    }
+    div.vis-network div.vis-navigation div.vis-up:after { content: "▲"; }
+    div.vis-network div.vis-navigation div.vis-down:after { content: "▼"; }
+    div.vis-network div.vis-navigation div.vis-left:after { content: "◀"; }
+    div.vis-network div.vis-navigation div.vis-right:after { content: "▶"; }
+    div.vis-network div.vis-navigation div.vis-zoomIn:after { content: "＋"; font-size: 16px; }
+    div.vis-network div.vis-navigation div.vis-zoomOut:after { content: "－"; font-size: 16px; }
+    div.vis-network div.vis-navigation div.vis-zoomExtents:after { content: "⛶"; }
+
     .group-card {
         transition: all 0.2s ease;
         cursor: pointer;
@@ -357,6 +389,14 @@
     let allNodes;
     let allEdges;
 
+    // Standardized node sizing metric following the network graph principle 
+    // Higher connections = meaningfully bigger node; lower connections = smaller crisp node
+    function getStandardizedNodeSize(n) {
+        const structuralValue = n.size || n.degree || 5;
+        // Uses square root scaling to preserve clean visual weight gaps without clump generation
+        return Math.max(5, Math.min(22, Math.sqrt(structuralValue) * 3));
+    }
+
     function initNetwork() {
         const container = document.getElementById('network-graph');
         if (!container || !graphData.nodes || graphData.nodes.length === 0) {
@@ -368,16 +408,16 @@
         document.getElementById('graph-stats').textContent = 
             `(${graphData.nodes.length} nodes, ${graphData.edges.length} edges)`;
 
-        // Map nodes for vis.js with clean viewport settings
+        // Map nodes for vis.js with dynamic structural sizes
         const nodes = new vis.DataSet(graphData.nodes.map(n => ({
             id: n.id,
             label: n.label || n.id,
             title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}<br>Connections: ${n.degree}`,
             color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size ? Math.min(n.size, 25) : 12,
+            size: getStandardizedNodeSize(n),
             font: { 
                 color: '#94a3b8',           
-                size: 10,                   
+                size: 9,                   
                 face: 'Arial, Helvetica, sans-serif',
                 strokeWidth: 0,             
                 background: '#0f172a'       
@@ -389,8 +429,8 @@
             from: e.source,
             to: e.target,
             title: `Weight: ${e.weight || 1}`,
-            color: { color: '#475569', highlight: '#3b82f6' },
-            width: Math.min(3, (e.weight || 1) * 0.5)
+            color: { color: '#334155', highlight: '#3b82f6' },
+            width: Math.min(2, (e.weight || 1) * 0.3)
         })));
 
         const data = { nodes: nodes, edges: edges };
@@ -400,24 +440,24 @@
                 enabled: true,
                 solver: 'forceAtlas2Based',
                 forceAtlas2Based: {
-                    gravitationalConstant: -180, 
-                    centralGravity: 0.015,
-                    springLength: 45,             
-                    springConstant: 0.09,
-                    damping: 0.4,
+                    gravitationalConstant: -260, // Higher repulsion allows partner visibility without clump overlap
+                    centralGravity: 0.008,
+                    springLength: 175,           // Wide default distance so names fit beautifully
+                    springConstant: 0.05,
+                    damping: 0.5,
                     avoidOverlap: 1               
                 },
                 stabilization: {
                     enabled: true,
-                    iterations: 180,             
+                    iterations: 200,             
                     updateInterval: 25,
                     fit: true
                 }
             },
             nodes: {
                 shape: 'dot',
-                borderWidth: 1.5,
-                shadow: true
+                borderWidth: 1,
+                shadow: false
             },
             edges: {
                 smooth: {
@@ -425,17 +465,16 @@
                     roundness: 0
                 },
                 shadow: false,
-                width: 1,
                 color: { 
                     color: '#334155',           
                     highlight: '#3b82f6',
-                    opacity: 0.4
+                    opacity: 0.3
                 }
             },
             interaction: {
                 hover: true,
-                tooltipDelay: 150,
-                navigationButtons: true,
+                tooltipDelay: 120,
+                navigationButtons: true, 
                 hideEdgesOnDrag: true           
             }
         };
@@ -472,10 +511,10 @@
             label: n.label || n.id,
             title: `Account: ${n.id}<br>Posts: ${n.post_count || 0}<br>Platform: ${n.platform || 'Unknown'}<br>Connections: ${n.degree}`,
             color: n.type === 'source' ? '#3b82f6' : '#f59e0b',
-            size: n.size ? Math.min(n.size, 25) : 12,
+            size: getStandardizedNodeSize(n),
             font: { 
                 color: '#94a3b8',           
-                size: 10,                   
+                size: 9,                   
                 face: 'Arial, Helvetica, sans-serif',
                 strokeWidth: 0,             
                 background: '#0f172a'       
@@ -488,7 +527,7 @@
             to: e.target,
             title: `Weight: ${e.weight || 1}`,
             color: { color: '#475569', highlight: '#3b82f6' },
-            width: Math.min(3, (e.weight || 1) * 0.5)
+            width: Math.min(2, (e.weight || 1) * 0.3)
         })));
 
         // Update stats
@@ -552,7 +591,7 @@
                     </div>
                     <p class="text-sm text-slate-300 mb-2">${post.text_preview || ''}</p>
                     <div class="flex justify-between items-center">
-                        <span class="text-xs text-green-400 bg-green-900/20 px-2 py-1 rounded">✓ Matches this TTP pattern</span>
+                        <span class="text-xs text-blue-400 bg-blue-900/20 px-2 py-1 rounded">✓ Matches this TTP pattern</span>
                         ${post.url ? `<a href="${post.url}" target="_blank" class="text-xs text-blue-400 hover:underline">🔗 View Original</a>` : ''}
                     </div>
                 `;
