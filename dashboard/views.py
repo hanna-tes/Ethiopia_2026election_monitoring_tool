@@ -5815,13 +5815,13 @@ class PEPsView(TemplateView):
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
-
+    
     def get(self, request, *args, **kwargs):
         # 1. Parse connection limits and parameters from the frontend filters
         min_connections = int(request.GET.get('min_connections', 3))
         top_n = int(request.GET.get('top_n', 40))
         layout_style = request.GET.get('layout', 'spring')
-
+        
         # 2. Extract coordination data frames via graph engines
         posts_qs = ProcessedPost.objects.filter(is_election_related=True)
         coordination_groups = get_coordination_groups(posts_qs, min_accounts=min_connections)
@@ -5830,7 +5830,7 @@ class NetworksView(TemplateView):
         unique_nodes = set()
         for group in coordination_groups:
             unique_nodes.update(str(acc) for acc in group.get('accounts', []))
-            
+        
         graph_stats = {
             'nodes': len(unique_nodes),
             'edges': sum(len(group.get('accounts', [])) * (len(group.get('accounts', [])) - 1) // 2 for group in coordination_groups)
@@ -5840,7 +5840,7 @@ class NetworksView(TemplateView):
         total_coordinated_accounts = graph_stats.get('nodes', 0)
         max_group_size = max([g.get('account_count', 0) for g in coordination_groups]) if coordination_groups else 0
         total_posts_analyzed = posts_qs.count()
-
+        
         # 3. Generate spatial layouts for Plotly Network graphs
         network_graph_json = "{}"
         if total_coordinated_groups > 0:
@@ -5862,19 +5862,19 @@ class NetworksView(TemplateView):
                                 G[node_a][node_b]['weight'] += weight
                             else:
                                 G.add_edge(node_a, node_b, weight=weight, behavior=behavior)
-
+                
                 if layout_style == 'circular':
                     pos = nx.circular_layout(G)
                 elif layout_style == 'kamada_kawai':
                     pos = nx.kamada_kawai_layout(G)
                 else:
                     pos = nx.spring_layout(G, k=0.4, iterations=30)
-
+                
                 nodes_list = []
                 for node in G.nodes():
                     # Convert nodes and account lists to string consistently to guarantee matching metrics
                     is_source = any(
-                        g.get('accounts', []) and str(g.get('accounts', [])[0]) == str(node) 
+                        g.get('accounts', []) and str(g.get('accounts', [])[0]) == str(node)
                         for g in active_groups_subset
                     )
                     nodes_list.append({
@@ -5885,7 +5885,7 @@ class NetworksView(TemplateView):
                         'type': 'source' if is_source else 'amplifier',
                         'size': int(G.degree(node))
                     })
-
+                
                 edges_list = []
                 for u, v, data in G.edges(data=True):
                     edges_list.append({
@@ -5898,59 +5898,40 @@ class NetworksView(TemplateView):
                         'weight': int(data.get('weight', 1)),
                         'behavior': data.get('behavior', 'Generic')
                     })
-
+                
                 network_graph_json = json.dumps({'nodes': nodes_list, 'edges': edges_list})
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(f"Error drawing network framework structure: {e}")
-
-        # 4. Fetch reference DISARM TTP Framework metadata metrics
+        
+        # 4. Use analyze_ttps() to get TTPs from ACTUAL DATA ANALYSIS
+        # instead of loading static DISARM reference data
         try:
-            ttps = get_disarm_ttp_reference()
-        except Exception:
+            # Call analyze_ttps to get TTPs analyzed from your actual posts
+            analyzed_ttps = analyze_ttps(coordination_groups, posts_qs)
+            
+            # Convert example_posts to evidence_posts for template compatibility
             ttps = []
+            for ttp in analyzed_ttps:
+                # Copy the TTP and add evidence_posts field
+                ttp_copy = ttp.copy()
+                # Rename example_posts to evidence_posts for template compatibility
+                ttp_copy['evidence_posts'] = ttp.get('example_posts', [])
+                ttps.append(ttp_copy)
             
-        # EXACT BUG FIX: Fail-safe fallbacks if the JSONL database file missing notice triggers
-        if not ttps:
-            ttps = [
-                {"id": "T0012", "name": "Plan Strategy", "description": "Developing targeted cross-platform digital narrative attack sequences.", "severity": "High", "threat_vector": "Inauthentic Amplification"},
-                {"id": "T0015", "name": "Create Mass Content", "description": "Generating systematic text copy variants for narrative replication.", "severity": "Critical", "threat_vector": "Coordinated Manipulation"},
-                {"id": "T0023", "name": "Pump Narratives", "description": "Deploying coordinated amplification networks to dominate regional tags.", "severity": "Medium", "threat_vector": "Astroturfing Operations"},
-                {"id": "T0031", "name": "Microtarget Audience", "description": "Tailoring polarizing political messages to specific geographic clusters.", "severity": "High", "threat_vector": "Targeted Influence"}
-            ]
-
-        # 5. DYNAMIC EVIDENCE FIXED LOOP:
-        flagged_posts = ProcessedPost.objects.filter(is_election_related=True)[:100]
-
-        ttp_evidence_map = defaultdict(list)
-        for p in flagged_posts:
-            text_content = (p.original_text or '').lower()
-            lexicon_str = str(p.lexicon_matches or '').lower()
-            
-            for ttp in ttps:
-                ttp_name = str(ttp.get('name') or '').strip().lower()
-                ttp_id = str(ttp.get('id') or '').strip().lower()
-                
-                if (ttp_id and ttp_id in lexicon_str) or (ttp_name and ttp_name in text_content):
-                    ttp_evidence_map[ttp_id].append({
-                        'username': p.account_id or 'anonymous',
-                        'platform': p.platform or 'Social Web',
-                        'timestamp': p.timestamp_share.strftime('%Y-%m-%d %H:%M') if p.timestamp_share else 'Recent',
-                        'text_preview': p.original_text or '',
-                        'ttp_reason': f"Matches classification signature for tracking index {ttp_id.upper()}."
-                    })
-
-        for ttp in ttps:
-            ttp_id = str(ttp.get('id') or ttp.get('name') or '').strip().lower()
-            ttp['evidence_posts'] = ttp_evidence_map.get(ttp_id, [])[:3]
-
+            logger.info(f"Loaded {len(ttps)} TTPs from actual data analysis")
+        except Exception as e:
+            logger.error(f"Error analyzing TTPs from data: {e}")
+            # Fallback to empty list if analysis fails
+            ttps = []
+        
         context = {
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
             'coordination_groups': coordination_groups,
-            'coordination_groups_json': json.dumps(coordination_groups),
+            'coordination_groups_json': json.dumps(coordination_groups, default=str),
             'network_graph_json': network_graph_json,
             'graph_stats': graph_stats,
             'total_coordinated_groups': total_coordinated_groups,
