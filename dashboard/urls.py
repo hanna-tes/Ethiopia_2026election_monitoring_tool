@@ -16,7 +16,8 @@ urlpatterns = [
     path('export-network-csv/', views.export_network_csv, name='export_network_csv'),
     path('export-network-nodes/', views.export_network_nodes_csv, name='export_network_nodes'),
     path('export-network-edges-tweets/', views.export_network_edges_with_tweets, name='export_network_edges_tweets'),
-    path('export-merged-gephi/', views.export_merged_gephi_csv, name='export_merged_gephi_csv'),
+    #path('export-merged-gephi/', views.export_merged_gephi_csv, name='export_merged_gephi_csv'),
+    path('networks/export/gephi-edges/', views.export_gephi_edges_csv, name='export_gephi_edges_csv'),
     path('api/trigger-llm-scan/', views.trigger_llm_scan_api, name='trigger_llm_scan'),
      
     
