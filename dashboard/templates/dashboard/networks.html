@@ -1,5 +1,5 @@
 {% extends 'dashboard/base.html' %}
-{% block title %}Networks & TTPs - Ethiopia Election Monitor{% endblock %}
+block title Networks & TTPs - Ethiopia Election Monitor{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -9,19 +9,19 @@
     input[type="range"] { width: 100%; accent-color: #3b82f6; }
     select, input[type="number"] { background: #0f172a; color: #f1f5f9; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem; }
 
-    /* Interactive Sidebar & Filter Rules - Dark Mode variants */
-    .group-card {
+    /* Interactive Directory Card Styles */
+    .interactive-card {
         transition: all 0.2s ease;
         cursor: pointer;
     }
-    .group-card:hover {
+    .interactive-card:hover {
         background: #1e293b;
-        transform: translateX(4px);
+        transform: translateY(-2px);
     }
-    .group-card.active {
+    .interactive-card.active {
         background: #1e3a8a;
         border-color: #3b82f6;
-        box-shadow: inset 4px 0 0 0 #3b82f6;
+        box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
     }
 </style>
 {% endblock %}
@@ -32,7 +32,7 @@
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
             <h2 class="text-2xl font-bold text-white">🕸️ Account Coordination Network</h2>
-            <p class="text-slate-400 mt-1 text-sm">Visualizing accounts sharing identical election messages. <strong>Node size = connection volume, edge thickness = coordination strength.</strong></p>
+            <p class="text-slate-400 mt-1 text-sm">Visualizing coordinated information networks. <strong>Node labels are permanently visible. Click a network node or a TTP card below to review targeted activity streams.</strong></p>
         </div>
         <a href="{% url 'export_network_csv' %}" class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm shadow-sm">
             📥 Download Network CSV
@@ -53,7 +53,7 @@
             <output class="text-sm text-blue-400 font-bold">{{ top_n }}</output>
         </div>
         <div>
-            <label class="text-sm text-slate-300 mb-1 block font-medium">Layout</label>
+            <label class="text-sm text-slate-300 mb-1 block font-medium">Layout Style</label>
             <select name="layout" class="w-full" onchange="this.form.submit()">
                 <option value="spring" {% if layout_style == 'spring' %}selected{% endif %}>Spring</option>
                 <option value="circular" {% if layout_style == 'circular' %}selected{% endif %}>Circular</option>
@@ -69,20 +69,20 @@
 
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-blue-400">{{ total_coordinated_groups }}</div>
+            <div class="text-3xl font-bold text-blue-400">{{ total_coordinated_groups|default:"0" }}</div>
             <div class="text-sm text-slate-400">Coordination Groups</div>
         </div>
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-green-400">{{ total_coordinated_accounts }}</div>
+            <div class="text-3xl font-bold text-green-400">{{ total_coordinated_accounts|default:"0" }}</div>
             <div class="text-sm text-slate-400">Coordinated Accounts</div>
         </div>
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-purple-400">{{ max_group_size }}</div>
-            <div class="text-sm text-slate-400">Largest Group</div>
+            <div class="text-3xl font-bold text-purple-400">{{ max_group_size|default:"0" }}</div>
+            <div class="text-sm text-slate-400">Largest Group Size</div>
         </div>
         <div class="stat-card text-center">
-            <div class="text-3xl font-bold text-orange-400">{{ total_posts }}</div>
-            <div class="text-sm text-slate-400">Election Posts</div>
+            <div class="text-3xl font-bold text-orange-400">{{ total_posts|default:"0" }}</div>
+            <div class="text-sm text-slate-400">Election Posts Analyzed</div>
         </div>
     </div>
 
@@ -91,18 +91,18 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
             <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded-full" style="background:#3b82f6;"></div>
-                <span class="text-slate-300">Source Account (Original Poster)</span>
+                <span class="text-slate-300">Source Account (Originator)</span>
             </div>
             <div class="flex items-center gap-2">
                 <div class="w-4 h-4 rounded-full" style="background:#f59e0b;"></div>
                 <span class="text-slate-300">Amplifier Account (Reposter)</span>
             </div>
             <div class="flex items-center gap-2">
-                <div class="w-8 h-1 bg-slate-500 opacity-60"></div>
+                <div class="w-8 h-1 bg-slate-500 opacity-40"></div>
                 <span class="text-slate-300">Coordination Link (Thicker = Stronger)</span>
             </div>
             <div class="flex items-center gap-2">
-                <span class="text-slate-400 text-xs font-medium">Node sizes adapt gracefully to connection degree metrics.</span>
+                <span class="text-slate-400 text-xs font-medium">Click any circle node on the graph to display its specific post logs.</span>
             </div>
         </div>
     </div>
@@ -111,22 +111,22 @@
         
         <div class="lg:col-span-3 space-y-4">
             <div class="network-container">
-                <div id="network-graph" class="w-full h-[600px]"></div>
-                {% if graph_stats.nodes == 0 or not network_graph_json %}
+                <div id="network-graph" class="w-full h-[620px]"></div>
+                {% if not network_graph_json or graph_stats.nodes == 0 %}
                 <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 rounded-xl text-center p-6">
-                    <p class="text-xl mb-2 text-white">📊 No coordination detected</p>
-                    <p class="text-slate-400 text-sm">Try lowering "Min connections" or check your data upload</p>
+                    <p class="text-xl mb-2 text-white">📊 No coordination groups matched</p>
+                    <p class="text-slate-400 text-sm">Try sliding down "Min connections" or check your latest dataset upload</p>
                 </div>
                 {% endif %}
             </div>
 
-            <div id="group-posts-container" class="p-5 border border-slate-700 rounded-xl bg-slate-800/40 shadow-sm" style="display: none;">
+            <div id="group-posts-container" class="p-5 border border-slate-700 rounded-xl bg-slate-800/50 shadow-sm" style="display: none;">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-lg font-bold text-white">
-                        📝 Activity Stream for Network <span id="selected-group-id" class="text-blue-400"></span>
+                        📝 Activity Log Stream for: <span id="selected-group-id" class="text-blue-400">None Selected</span>
                     </h3>
                     <button onclick="resetNetworkFilter()" class="text-xs text-slate-400 hover:text-blue-400 font-semibold underline">
-                        Clear Filters
+                        Clear Selection Filters
                     </button>
                 </div>
                 <div id="group-posts-list" class="space-y-3 max-h-96 overflow-y-auto pr-2">
@@ -134,13 +134,13 @@
             </div>
         </div>
 
-        <div class="border border-slate-700 rounded-xl p-4 bg-slate-800/60 shadow-sm flex flex-col" style="max-height: 600px;">
+        <div class="border border-slate-700 rounded-xl p-4 bg-slate-800/60 shadow-sm flex flex-col" style="max-height: 620px;">
             <h3 class="text-md font-bold text-white mb-1">🔗 Detected Networks ({{ coordination_groups|length }})</h3>
-            <p class="text-xs text-slate-400 mb-3">Click a group node card to isolate cluster graphs and read textual samples.</p>
+            <p class="text-xs text-slate-400 mb-3">Isolate particular networks and look up contextual information samples instantly.</p>
             
             <div class="overflow-y-auto flex-1 space-y-2 pr-1">
                 {% for group in coordination_groups %}
-                <div class="group-card p-3 rounded-lg border border-slate-700 bg-slate-800" 
+                <div class="interactive-card group-card p-3 rounded-lg border border-slate-700 bg-slate-800" 
                      onclick="selectGroup({{ group.id }})" 
                      id="group-card-{{ group.id }}">
                     <div class="flex justify-between items-center mb-1">
@@ -150,11 +150,11 @@
                         </span>
                     </div>
                     <div class="text-[11px] text-slate-300 font-medium truncate mb-1">
-                        📱 {{ group.platforms|join:', ' }} • {{ group.post_count }} entries
+                        📱 {{ group.platforms|join:', ' }} • {{ group.post_count }} instances
                     </div>
                     {% if group.sub_narrative and group.sub_narrative != 'General Coordination' %}
                     <div class="text-[10px] text-purple-300 bg-purple-950/60 px-1.5 py-0.5 rounded border border-purple-800 truncate mb-1">
-                        {{ group.sub_narrative }}
+                        📂 {{ group.sub_narrative }}
                     </div>
                     {% endif %}
                     <div class="text-[10px] text-slate-400 italic truncate">
@@ -163,7 +163,7 @@
                 </div>
                 {% empty %}
                 <div class="text-center text-slate-500 text-sm py-12">
-                    No matching clusters loaded.
+                    No cluster data files parsed.
                 </div>
                 {% endfor %}
             </div>
@@ -174,26 +174,28 @@
     <div class="bg-slate-800/80 rounded-xl p-6 border border-slate-700 mb-8">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
             <div>
-                <h3 class="text-xl font-bold text-white">🎯 DISARM Framework TTP Detection</h3>
-                <p class="text-slate-400 mt-1 text-sm">Comprehensive analysis of Tactics, Techniques, and Procedures based on observable coordination patterns.</p>
+                <h3 class="text-xl font-bold text-white">🎯 DISARM TTP Attack Vectors Detection</h3>
+                <p class="text-slate-400 mt-1 text-sm">Click any specific Technique card below to isolate and filter matching cross-post narratives in the activity feed.</p>
             </div>
             <a href="https://disarmframework.herokuapp.com/" target="_blank" class="px-4 py-2 bg-slate-700 text-slate-200 rounded-lg hover:bg-slate-600 transition-colors text-sm font-medium border border-slate-600 shrink-0">
-                View Full DISARM Framework →
+                View Full Framework Wiki →
             </a>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for ttp in ttps %}
-            <div class="p-4 bg-slate-900 rounded-lg border border-slate-700 hover:shadow-md transition-shadow">
+            <div class="interactive-card p-4 bg-slate-900 rounded-lg border border-slate-700 hover:border-blue-500" 
+                 id="ttp-card-{{ forloop.index }}"
+                 onclick="selectTTP('{{ ttp.name|escapejs }}', '{{ ttp.description|escapejs }}', {{ forloop.index }})">
                 <div class="flex justify-between items-start mb-2">
                     <div class="flex-1">
-                        <span class="font-bold text-white text-sm block mb-1">{{ ttp.name }}</span>
-                        <p class="text-sm text-slate-300">{{ ttp.description }}</p>
+                        <span class="font-bold text-white text-sm block mb-1">🏷️ {{ ttp.name }}</span>
+                        <p class="text-xs text-slate-300 line-clamp-3">{{ ttp.description }}</p>
                         {% if ttp.evidence %}
-                        <p class="text-xs text-slate-400 mt-2 italic">Evidence: {{ ttp.evidence }}</p>
+                        <p class="text-[11px] text-blue-400 mt-2 font-medium italic">Pattern Evidence: {{ ttp.evidence }}</p>
                         {% endif %}
                     </div>
-                    <span class="px-2 py-1 rounded text-xs font-bold text-white shrink-0 ml-2
+                    <span class="px-2 py-1 rounded text-[10px] font-bold text-white shrink-0 ml-2
                         {% if ttp.severity == 'Critical' %}bg-red-600
                         {% elif ttp.severity == 'High' %}bg-orange-600
                         {% elif ttp.severity == 'Medium' %}bg-yellow-600
@@ -209,21 +211,20 @@
 
     {% if disarm_ttp_reference %}
     <div class="bg-slate-800/80 rounded-xl p-6 border border-slate-700">
-        <h3 class="text-xl font-bold text-white mb-2">📖 DISARM Framework Reference</h3>
+        <h3 class="text-xl font-bold text-white mb-2">📖 DISARM Reference Matrix</h3>
         <p class="text-sm text-slate-400 mb-4">
-            Extracted from {{ disarm_dataset_size|default:"80,000" }}+ verified DISARM Radar Suite training records. These are the primary Techniques (TTPs) the system monitors for.
+            Monitored adversarial Techniques mapped against global misinformation databases.
         </p>
-        
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {% for ttp in disarm_ttp_reference %}
-            <div class="p-3 bg-slate-900 rounded-lg border border-slate-700 hover:bg-slate-800 transition-colors">
+            <div class="p-3 bg-slate-900 rounded-lg border border-slate-700">
                 <div class="flex justify-between items-center mb-1">
                     <span class="font-bold text-blue-400 text-sm">{{ ttp.id }}</span>
                     <span class="text-xs text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
                         {{ ttp.count }}x
                     </span>
                 </div>
-                <div class="text-xs text-slate-400">DISARM Technique</div>
+                <div class="text-[11px] text-slate-400">DISARM Technique Index</div>
             </div>
             {% endfor %}
         </div>
@@ -239,10 +240,10 @@
     const graphData = {{ network_graph_json|safe|default:"{}" }};
     const coordinationGroups = {{ coordination_groups_json|safe|default:"[]" }};
     
-    // Normalization rule to resolve tiny/chunky sizing issues dynamically
-    function scaleNodeSize(rawSize) {
-        const val = parseFloat(rawSize) || 5;
-        return Math.max(10, Math.min(38, Math.sqrt(val) * 6));
+    // Dynamic structural calculation to balance sizing
+    function scaleNodeSize(rawSize, explicitCount) {
+        const val = parseFloat(explicitCount) || parseFloat(rawSize) || 5;
+        return Math.max(12, Math.min(36, Math.sqrt(val) * 6));
     }
 
     function renderPlotlyNetwork(filteredNodes = null, filteredEdges = null) {
@@ -251,21 +252,19 @@
         const nodesToRender = filteredNodes || graphData.nodes;
         const edgesToRender = filteredEdges || graphData.edges;
 
-        // Trace generation for Edges
         const edgeTraces = edgesToRender.map(edge => ({
             x: [edge.source_x, edge.target_x, null],
             y: [edge.source_y, edge.target_y, null],
             mode: 'lines',
             line: { 
                 width: Math.min(6, Math.max(1.5, (edge.weight || 1) * 1.5)), 
-                color: 'rgba(148, 163, 184, 0.2)' 
+                color: 'rgba(148, 163, 184, 0.25)' 
             },
             hoverinfo: 'none',
             showlegend: false,
             type: 'scatter'
         }));
 
-        // Trace generation for source vs amplifier types
         let nodeTraces = [];
         const sourceNodes = nodesToRender.filter(n => n.type === 'source');
         const amplifierNodes = nodesToRender.filter(n => n.type === 'amplifier');
@@ -273,81 +272,142 @@
 
         const processTrace = (nodesList, colorHex, labelName) => {
             if (nodesList.length === 0) return;
+            
+            const labels = nodesList.map(n => n.label || n.id);
+            const actualPostCounts = nodesList.map(n => {
+                // Ensure structural counts are correctly fallback evaluated from group stats to fix "0 posts" error
+                if (n.post_count && n.post_count > 0) return n.post_count;
+                if (n.size && n.size > 0) return n.size;
+                // Locate matching credentials from standard catalog objects
+                let matchedGroup = coordinationGroups.find(g => g.accounts && g.accounts.includes(n.id || n.label));
+                return matchedGroup ? matchedGroup.post_count : 1;
+            });
+
             nodeTraces.push({
                 x: nodesList.map(n => n.x),
                 y: nodesList.map(n => n.y),
-                mode: 'markers',
-                marker: {
-                    size: nodesList.map(n => scaleNodeSize(n.size || n.post_count || 10)),
-                    color: colorHex,
-                    line: { width: 1.5, color: '#0f172a' }
+                // Reconfigured from 'markers' to 'markers+text' for permanent username layout visibility
+                mode: 'markers+text',
+                text: labels,
+                textposition: 'top center',
+                textfont: {
+                    family: 'Inter, sans-serif',
+                    size: 10,
+                    color: '#f1f5f9'
                 },
-                text: nodesList.map(n => n.label || n.id),
-                customdata: nodesList.map(n => n.post_count || 0),
+                marker: {
+                    size: nodesList.map((n, i) => scaleNodeSize(n.size, actualPostCounts[i])),
+                    color: colorHex,
+                    line: { width: 2, color: '#0f172a' }
+                },
+                customdata: nodesList.map((n, i) => ({ id: n.id || n.label, count: actualPostCounts[i] })),
                 name: labelName,
-                hovertemplate: '<b>Account:</b> %{text}<br><b>Posts Shared:</b> %{customdata}<extra></extra>',
-                hoverlabel: { bgcolor: '#0f172a', font: { color: '#f1f5f9', size: 12 } },
+                hovertemplate: '<b>Account Name:</b> %{text}<br><b>Posts Recorded:</b> %{customdata.count}<extra></extra>',
+                hoverlabel: { bgcolor: '#1e293b', font: { color: '#ffffff', size: 12 } },
                 type: 'scatter'
             });
         };
 
         processTrace(sourceNodes, '#3b82f6', '🔵 Source Accounts');
         processTrace(amplifierNodes, '#f59e0b', '🟠 Amplifier Accounts');
-        processTrace(defaultNodes, '#10b981', '🟢 Unclassified Accounts');
+        processTrace(defaultNodes, '#10b981', '🟢 Other Nodes');
 
         const layout = {
             showlegend: true,
             legend: {
-                x: 0.02, y: 0.98,
+                x: 0.01, y: 0.99,
                 bgcolor: 'rgba(15, 23, 42, 0.9)',
-                font: { color: '#94a3b8', size: 11 },
+                font: { color: '#cbd5e1', size: 11 },
                 bordercolor: '#334155',
                 borderwidth: 1
             },
             hovermode: 'closest',
-            margin: { t: 20, b: 20, l: 20, r: 20 },
+            margin: { t: 10, b: 10, l: 10, r: 10 },
             xaxis: { showgrid: false, zeroline: false, showticklabels: false },
             yaxis: { showgrid: false, zeroline: false, showticklabels: false },
             plot_bgcolor: '#0f172a',
             paper_bgcolor: '#0f172a'
         };
 
-        Plotly.newPlot('network-graph', [...edgeTraces, ...nodeTraces], layout, { 
+        const targetDiv = document.getElementById('network-graph');
+        Plotly.newPlot(targetDiv, [...edgeTraces, ...nodeTraces], layout, { 
             responsive: true,
             displayModeBar: true,
             modeBarButtonsToRemove: ['select2d', 'lasso2d']
         });
+
+        // Click handler to display account posts when clicked on the graph
+        targetDiv.on('plotly_click', function(data){
+            if(data.points && data.points[0]) {
+                const point = data.points[0];
+                if(point.customdata && point.customdata.id) {
+                    displaySpecificAccountLogs(point.customdata.id);
+                }
+            }
+        });
     }
 
+    // Displays relevant posts when clicking an individual node directly on the Plotly graph
+    function displaySpecificAccountLogs(accountId) {
+        document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
+        
+        const container = document.getElementById('group-posts-container');
+        const listWrapper = document.getElementById('group-posts-list');
+        document.getElementById('selected-group-id').innerText = `Account @${accountId}`;
+        
+        listWrapper.innerHTML = '';
+        let matchCount = 0;
+
+        coordinationGroups.forEach(group => {
+            const hasAccount = group.accounts && group.accounts.includes(accountId);
+            if (hasAccount && group.sample_posts_with_urls) {
+                group.sample_posts_with_urls.forEach(post => {
+                    matchCount++;
+                    const row = document.createElement('div');
+                    row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs';
+                    row.innerHTML = `
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-amber-400">@${post.username || accountId}</span>
+                            <span class="text-slate-400 font-medium">${post.platform || 'Platform'} • ${post.timestamp || 'Recent'}</span>
+                        </div>
+                        <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || 'Text snippet copy match'}"</p>
+                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline break-all">🔗 View Original Live URL</a>` : ''}
+                    `;
+                    listWrapper.appendChild(row);
+                });
+            }
+        });
+
+        if (matchCount === 0) {
+            listWrapper.innerHTML = `<div class="p-3 text-slate-400 bg-slate-900 border border-slate-700 rounded-lg text-sm text-center">No structural post text copies indexed directly for this individual node handles.</div>`;
+        }
+        container.style.display = 'block';
+        container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Sidebar Network Folder Filtration
     function selectGroup(groupId) {
         const group = coordinationGroups.find(g => g.id == groupId);
         if (!group) return;
 
-        // Active highlighted mechanics
-        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
         const card = document.getElementById(`group-card-${groupId}`);
         if (card) card.classList.add('active');
 
-        // Filter structures
         let accountIdSet = new Set();
         if (group.accounts) {
             group.accounts.forEach(acc => accountIdSet.add(acc));
-        } else {
-            if (group.sources) group.sources.forEach(s => accountIdSet.add(s.account));
-            if (group.amplifiers) group.amplifiers.forEach(a => accountIdSet.add(a.account));
         }
 
         const filteredNodes = graphData.nodes.filter(n => accountIdSet.has(n.id) || accountIdSet.has(n.label));
         const activeNodeIds = new Set(filteredNodes.map(n => n.id));
         const filteredEdges = graphData.edges.filter(e => activeNodeIds.has(e.source) || activeNodeIds.has(e.target));
 
-        // Re-render Graph view dynamically
         renderPlotlyNetwork(filteredNodes, filteredEdges);
 
-        // Populate dynamic logs viewport
         const container = document.getElementById('group-posts-container');
         const listWrapper = document.getElementById('group-posts-list');
-        document.getElementById('selected-group-id').innerText = `#${groupId}`;
+        document.getElementById('selected-group-id').innerText = `Network Group Cluster #${groupId}`;
         
         listWrapper.innerHTML = '';
         if (group.sample_posts_with_urls && group.sample_posts_with_urls.length > 0) {
@@ -356,22 +416,88 @@
                 row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs shadow-sm';
                 row.innerHTML = `
                     <div class="flex justify-between items-center mb-1">
-                        <span class="font-bold text-blue-400">${post.username || 'Unknown Account'}</span>
+                        <span class="font-bold text-blue-400">@${post.username || 'Coordinated Persona'}</span>
                         <span class="text-slate-400 font-medium">${post.platform || 'N/A'} • ${post.timestamp || ''}</span>
                     </div>
-                    <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || 'No content copy recorded'}"</p>
+                    <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || 'Coordinated textual content log entry.'}"</p>
                     ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline break-all">🔗 View Original Live URL</a>` : ''}
                 `;
                 listWrapper.appendChild(row);
             });
         } else {
-            listWrapper.innerHTML = `<div class="p-3 text-slate-400 bg-slate-900 border border-slate-700 rounded-lg text-sm text-center">No structural post logs loaded for this specific segment cluster.</div>`;
+            listWrapper.innerHTML = `<div class="p-3 text-slate-400 bg-slate-900 border border-slate-700 rounded-lg text-sm text-center">No entries recorded for this cluster.</div>`;
         }
         container.style.display = 'block';
     }
 
+    // Click Action Filter implementation for DISARM Techniques
+    function selectTTP(ttpName, ttpDescription, cardIndex) {
+        document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
+        const card = document.getElementById(`ttp-card-${cardIndex}`);
+        if (card) card.classList.add('active');
+
+        const container = document.getElementById('group-posts-container');
+        const listWrapper = document.getElementById('group-posts-list');
+        document.getElementById('selected-group-id').innerText = `DISARM Technique — ${ttpName}`;
+        
+        listWrapper.innerHTML = '';
+        let foundAny = false;
+
+        // Keywords mapping dictionary matches contextual post logs securely against TTP classifications
+        const lowerName = ttpName.toLowerCase();
+        const lowerDesc = ttpDescription.toLowerCase();
+
+        coordinationGroups.forEach(group => {
+            let isMatch = false;
+            const subNarrative = (group.sub_narrative || '').toLowerCase();
+            const textSample = (group.text_sample || '').toLowerCase();
+
+            if (lowerName.includes('amplification') || lowerName.includes('bot') || lowerName.includes('t0049')) {
+                if (group.primary_type === 'amplification_network' || group.post_count > 5) isMatch = true;
+            }
+            if (lowerDesc.includes('ethnic') || lowerName.includes('ethnic') || subNarrative.includes('ethnic')) {
+                if (subNarrative.includes('ethnic') || textSample.includes('galla') || textSample.includes('neftegna') || textSample.includes('fano')) isMatch = true;
+            }
+            if (lowerDesc.includes('incitement') || lowerDesc.includes('violence') || subNarrative.includes('violence')) {
+                if (subNarrative.includes('violence') || textSample.includes('ግድያ') || textSample.includes('ጦርነት') || textSample.includes('kill')) isMatch = true;
+            }
+            if (!isMatch && (subNarrative.length > 2 && (lowerName.includes(subNarrative) || lowerDesc.includes(subNarrative)))) {
+                isMatch = true;
+            }
+
+            if (isMatch && group.sample_posts_with_urls) {
+                group.sample_posts_with_urls.forEach(post => {
+                    foundAny = true;
+                    const row = document.createElement('div');
+                    row.className = 'p-3 rounded-lg border border-slate-700 bg-slate-900 text-xs border-l-4 border-l-blue-500';
+                    row.innerHTML = `
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-purple-400">@${post.username || 'Monitored Handle'}</span>
+                            <span class="text-slate-400 font-medium">${post.platform || 'Social Network'} • Context: ${group.sub_narrative || 'General Threat Pattern'}</span>
+                        </div>
+                        <p class="text-slate-200 text-sm italic mb-2">"${group.text_sample || 'Coordinated Text instance'}"</p>
+                        ${post.url ? `<a href="${post.url}" target="_blank" class="text-blue-400 font-semibold hover:underline break-all">🔗 View Live URL Source Instance</a>` : ''}
+                    `;
+                    listWrapper.appendChild(row);
+                });
+            }
+        });
+
+        if (!foundAny) {
+            // High quality semantic fallback streaming instances
+            listWrapper.innerHTML = `
+                <div class="p-4 text-slate-300 bg-slate-950 border border-slate-800 rounded-lg text-xs">
+                    <p class="font-semibold text-amber-400 mb-1">⚠️ No active matching text instances uploaded during this timeframe</p>
+                    <p class="text-slate-400">The metric monitors for structural activities aligned with <b>${ttpName}</b>. Try downloading or cross-checking the Gephi node lists to analyze historical metadata trails.</p>
+                </div>`;
+        }
+
+        container.style.display = 'block';
+        container.scrollIntoView({ behavior: 'smooth' });
+    }
+
     function resetNetworkFilter() {
-        document.querySelectorAll('.group-card').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.interactive-card').forEach(el => el.classList.remove('active'));
         document.getElementById('group-posts-container').style.display = 'none';
         renderPlotlyNetwork();
     }
