@@ -105,82 +105,76 @@ WEAPONIZED_KEYWORDS = [
 ]
 
 
+@login_required
 def export_merged_gephi_csv(request):
-    """Export a single, merged Gephi-ready CSV containing edges, tweets, and roles."""
+    """Generates and downloads a Gephi-compatible CSV edge-list representing the coordination network"""
+    import re
+    from collections import defaultdict
+    
+    # Extract query filters
     min_connections = int(request.GET.get('min_connections', 2))
-    posts = ProcessedPost.objects.filter(is_election_related=True)
+    cluster_filter = request.GET.get('cluster') or request.GET.get('group_id') or request.GET.get('coordination_group')
     
-    # Get coordination groups (increase max_groups to export more data)
-    coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=50)
+    query_kwargs = {'is_election_related': True}
+    if cluster_filter and cluster_filter.strip():
+        min_connections = 1  # Relax edge constraints for dedicated groups
+        if hasattr(ProcessedPost, 'coordination_group_id'):
+            query_kwargs['coordination_group_id'] = cluster_filter
+        elif hasattr(ProcessedPost, 'coordination_group'):
+            query_kwargs['coordination_group'] = cluster_filter
+        else:
+            try: query_kwargs['cluster'] = int(cluster_filter)
+            except ValueError: pass
+    else:
+        if hasattr(ProcessedPost, 'cluster'):
+            query_kwargs['cluster__gte'] = 0
+
+    # Stream values from database
+    posts_data = ProcessedPost.objects.filter(**query_kwargs).values('account_id', 'original_text')
     
-    logger.info(f"Exporting {len(coordination_groups)} coordination groups to CSV")
+    G = nx.Graph()
+    rt_pattern = re.compile(r'RT\s+@([a-zA-Z0-9_]+)', re.IGNORECASE)
+    text_to_accounts = defaultdict(set)
     
+    for post in posts_data:
+        acc = post['account_id']
+        text = post['original_text'] or ''
+        if not acc or acc == 'unknown':
+            continue
+            
+        rt_match = rt_pattern.search(text)
+        if rt_match:
+            target_user = rt_match.group(1)
+            if acc != target_user:
+                if G.has_edge(acc, target_user): G[acc][target_user]['weight'] += 1
+                else: G.add_edge(acc, target_user, weight=1)
+                    
+        text_to_accounts[text].add(acc)
+
+    for acc_set in text_to_accounts.values():
+        if len(acc_set) >= 2:
+            acc_list = list(acc_set)
+            for i in range(len(acc_list)):
+                for j in range(i + 1, len(acc_list)):
+                    if acc_list[i] != acc_list[j]:
+                        if G.has_edge(acc_list[i], acc_list[j]): G[acc_list[i]][acc_list[j]]['weight'] += 1
+                        else: G.add_edge(acc_list[i], acc_list[j], weight=1)
+
+    # Filter graph nodes by calculated min degree constraint
+    nodes_to_keep = [n for n, d in G.degree() if d >= min_connections]
+    G = G.subgraph(nodes_to_keep)
+
+    # Set up HTTP streaming response headers for CSV distribution
     response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="ethiopia_election_network_merged.csv"'
+    response['Content-Disposition'] = f'attachment; filename="coordination_network_edges_{timezone.now().strftime("%Y%m%d")}.csv"'
+    
     writer = csv.writer(response)
+    # Gephi natively matches 'Source', 'Target', and 'Weight' columns
+    writer.writerow(['Source', 'Target', 'Type', 'Weight'])
     
-    # Headers formatted for Gephi
-    writer.writerow([
-        'Source', 'Target', 'Weight', 'Type',
-        'Tweet', 'Timestamp', 'Platform', 'Sub_Narrative',
-        'Source_Role', 'Target_Role'
-    ])
-    
-    rows_written = 0
-    
-    for group in coordination_groups:
-        text_sample = group.get('text_sample', '')
-        if not text_sample:
-            continue
-            
-        sub_narrative = group.get('sub_narrative', 'General Coordination')
-        platforms = ', '.join(group.get('platforms', [])) if group.get('platforms') else 'Unknown'
+    for u, v, data in G.edges(data=True):
+        writer.writerow([u, v, 'Undirected', data.get('weight', 1)])
         
-        # Use the sample posts ALREADY fetched by get_coordination_groups
-        # instead of doing a broken database query with truncated text.
-        sample_posts = group.get('sample_posts_with_urls', [])
-        
-        if len(sample_posts) < 2:
-            continue
-            
-        # Sort sample posts by timestamp to identify source vs amplifier
-        def parse_ts(p):
-            try:
-                return datetime.strptime(p.get('timestamp', ''), '%Y-%m-%d %H:%M')
-            except:
-                return datetime.max
-                
-        sorted_posts = sorted(sample_posts, key=parse_ts)
-        
-        # The first post chronologically is the Source
-        source_post = sorted_posts[0]
-        source_account = source_post.get('username', 'Unknown')
-        first_time = source_post.get('timestamp', 'N/A')
-        
-        # Clean tweet text for CSV (escape quotes and newlines)
-        tweet_clean = text_sample[:500].replace('\n', ' ').replace('\r', '').replace('"', '""')
-        
-        # Create edges from the Source to all Amplifiers
-        for amp_post in sorted_posts[1:]:
-            target_account = amp_post.get('username', 'Unknown')
-            if target_account == source_account or target_account == 'Unknown':
-                continue
-                
-            writer.writerow([
-                source_account,
-                target_account,
-                1,  # Weight
-                'Directed',
-                f'"{tweet_clean}"',
-                first_time,
-                platforms,
-                sub_narrative,
-                'Source',
-                'Amplifier'
-            ])
-            rows_written += 1
-            
-    logger.info(f"Successfully exported {rows_written} real coordination edges to CSV.")
     return response
 
 def export_network_csv(request):
