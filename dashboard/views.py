@@ -5872,7 +5872,6 @@ class NetworksView(TemplateView):
                 
                 nodes_list = []
                 for node in G.nodes():
-                    # Convert nodes and account lists to string consistently to guarantee matching metrics
                     is_source = any(
                         g.get('accounts', []) and str(g.get('accounts', [])[0]) == str(node)
                         for g in active_groups_subset
@@ -5901,36 +5900,46 @@ class NetworksView(TemplateView):
                 
                 network_graph_json = json.dumps({'nodes': nodes_list, 'edges': edges_list})
             except Exception as e:
-                
                 logger.error(f"Error drawing network framework structure: {e}")
         
         # 4. Use analyze_ttps() to get TTPs from ACTUAL DATA ANALYSIS
-        # instead of loading static DISARM reference data
         try:
-            # Call analyze_ttps to get TTPs analyzed from your actual posts
             analyzed_ttps = analyze_ttps(coordination_groups, posts_qs)
             
             # Convert example_posts to evidence_posts for template compatibility
             ttps = []
             for ttp in analyzed_ttps:
-                # Copy the TTP and add evidence_posts field
                 ttp_copy = ttp.copy()
-                # Rename example_posts to evidence_posts for template compatibility
+                # Ensure evidence_posts exists and has data
                 ttp_copy['evidence_posts'] = ttp.get('example_posts', [])
                 ttps.append(ttp_copy)
             
             logger.info(f"Loaded {len(ttps)} TTPs from actual data analysis")
         except Exception as e:
             logger.error(f"Error analyzing TTPs from data: {e}")
-            # Fallback to empty list if analysis fails
             ttps = []
+        
+        # 5. Prepare coordination groups with sample posts for JavaScript
+        groups_for_js = []
+        for g in coordination_groups:
+            groups_for_js.append({
+                'id': g.get('id'),
+                'accounts': g.get('accounts', []),
+                'account_count': g.get('account_count', 0),
+                'post_count': g.get('post_count', 0),
+                'coordination_type': g.get('coordination_type', ''),
+                'sub_narrative': g.get('sub_narrative', ''),
+                'sample_posts_with_urls': g.get('sample_posts_with_urls', []),
+                'platforms': g.get('platforms', []),
+                'text_sample': g.get('text_sample', ''),
+            })
         
         context = {
             'min_connections': min_connections,
             'top_n': top_n,
             'layout_style': layout_style,
             'coordination_groups': coordination_groups,
-            'coordination_groups_json': json.dumps(coordination_groups, default=str),
+            'coordination_groups_json': json.dumps(groups_for_js, default=str),
             'network_graph_json': network_graph_json,
             'graph_stats': graph_stats,
             'total_coordinated_groups': total_coordinated_groups,
@@ -5938,6 +5947,7 @@ class NetworksView(TemplateView):
             'max_group_size': max_group_size,
             'total_posts': total_posts_analyzed,
             'ttps': ttps,
+            'ttps_json': json.dumps(ttps, default=str),  
         }
         return render(request, self.template_name, context)
         
