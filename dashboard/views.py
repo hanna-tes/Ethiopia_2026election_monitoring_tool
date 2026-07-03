@@ -2494,11 +2494,6 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
 def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='spring'):
     """
     Build network graph from coordination groups.
-    
-    GEPHI-STYLE FIX: 
-    Uses the CLEANED 'username' from sample_posts as the Node ID.
-    This ensures the graph node label perfectly matches the username 
-    shown in the sample posts list when a group is clicked.
     """
     import networkx as nx
     import re
@@ -2513,109 +2508,85 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     
     # ─ PHASE 1: Build graph ─────────────────────────────────────
     for group in coordination_groups:
-        # Use sample posts as the source of truth for usernames
-        sample_posts = group.get('sample_posts_with_urls', [])
-        if not sample_posts:
+        # CRITICAL FIX: Use the FULL accounts list from the group
+        group_accounts = group.get('accounts', [])
+        if len(group_accounts) < 2:
             continue
             
-        # Extract unique CLEANED usernames for this group
-        group_usernames = list(set(p.get('username', '') for p in sample_posts if p.get('username')))
-        if len(group_usernames) < 2:
-            continue
+        sample_posts = group.get('sample_posts_with_urls', [])
         
-        account_timestamps = {}
-        
+        # Track metrics from sample posts
         for post in sample_posts:
             username = post.get('username', '')
-            timestamp = post.get('timestamp', '')
-            platform = post.get('platform', '')
-            text_preview = post.get('text_preview', '') or ''
-            
             if not username:
                 continue
                 
-            # Track post count
             account_post_counts[username] = account_post_counts.get(username, 0) + 1
             
-            # Track platform
+            platform = post.get('platform', '')
             if platform and platform != 'Unknown':
                 account_platforms[username] = platform
             elif username not in account_platforms:
-                account_platforms[username] = platform or 'Unknown'
-            
-            # Track timestamp
-            if timestamp and timestamp != 'N/A':
-                account_timestamps[username] = timestamp
-            
-            # ─ DETECT RETWEET EDGES ──────────────────────────────
-            rt_match = rt_pattern.search(text_preview)
-            if rt_match:
-                original_author = rt_match.group(1)
-                if original_author != username:
-                    if G.has_edge(original_author, username):
-                        G[original_author][username]['weight'] += 1
-                        G[original_author][username]['type'] = 'retweet'
-                    else:
-                        G.add_edge(original_author, username, weight=1, type='retweet')
-                    
-                    if original_author not in account_roles:
-                        account_roles[original_author] = 'source'
-                    account_roles[username] = 'amplifier'
+                account_platforms[username] = 'Unknown'
         
-        # ─ Determine source vs amplifier by timestamp ────────────
+        # Determine source vs amplifier by timestamp from sample posts
+        account_timestamps = {}
+        for post in sample_posts:
+            username = post.get('username', '')
+            timestamp = post.get('timestamp', '')
+            if username and timestamp and timestamp != 'N/A':
+                account_timestamps[username] = timestamp
+                
         if account_timestamps:
             sorted_accounts = sorted(account_timestamps.items(), key=lambda x: x[1])
             if sorted_accounts:
                 source_account = sorted_accounts[0][0]
-                if source_account not in account_roles:
-                    account_roles[source_account] = 'source'
+                account_roles[source_account] = 'source'
                 for acc, _ in sorted_accounts[1:]:
                     if acc not in account_roles:
                         account_roles[acc] = 'amplifier'
         
-        # ── Connect all accounts in this group (clique) ───────────
-        # Uses the CLEANED usernames from group_usernames
-        for i in range(len(group_usernames)):
-            for j in range(i + 1, len(group_usernames)):
-                u, v = group_usernames[i], group_usernames[j]
-                if G.has_edge(u, v):
-                    G[u][v]['weight'] += 1
-                    if 'type' not in G[u][v]:
-                        G[u][v]['type'] = 'coordination'
+        # ── Connect accounts ──────────────────────────────────────
+        # SMART LAYOUT: If group is huge (>20 accounts), use hub-and-spoke 
+        # to prevent browser crash. Otherwise, use full clique.
+        if len(group_accounts) > 20:
+            # Hub and spoke: connect everyone to the first account (or source)
+            hub = group_accounts[0]
+            for user in group_accounts[1:]:
+                if G.has_edge(hub, user):
+                    G[hub][user]['weight'] += 1
                 else:
-                    G.add_edge(u, v, weight=1, type='coordination')
+                    G.add_edge(hub, user, weight=1, type='coordination')
+        else:
+            # Small group: full clique (connect everyone to everyone)
+            for i in range(len(group_accounts)):
+                for j in range(i + 1, len(group_accounts)):
+                    u, v = group_accounts[i], group_accounts[j]
+                    if G.has_edge(u, v):
+                        G[u][v]['weight'] += 1
+                    else:
+                        G.add_edge(u, v, weight=1, type='coordination')
     
-    if G.number_of_edges() == 0:
-        return {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0}}
+    if G.number_of_nodes() == 0:
+        return {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0, 'density': 0}}
     
-    # ── PHASE 2: Select nodes to include ──────────────────────────
-    # 1. Get top nodes by degree
-    top_nodes_by_degree = sorted(G.degree(), key=lambda x: x[1], reverse=True)[:top_n]
-    nodes_to_include = set(n for n, _ in top_nodes_by_degree)
+    # ── PHASE 2: Select nodes ─────────────────────────────────────
+    # Include ALL nodes from the graph (since we used the full accounts list)
+    nodes_to_include = set(G.nodes())
     
-    # 2. ADD all accounts from every coordination group (using cleaned usernames)
-    for group in coordination_groups:
-        for p in group.get('sample_posts_with_urls', []):
-            uname = p.get('username', '')
-            if uname and uname in G.nodes():
-                nodes_to_include.add(uname)
-    
-    # 3. Expand to include direct neighbors so edges are visible
-    expanded_nodes = set(nodes_to_include)
-    for node in nodes_to_include:
-        if node in G:
-            for neighbor in G.neighbors(node):
-                expanded_nodes.add(neighbor)
-    
-    G_final = G.subgraph(expanded_nodes).copy()
+    G_final = G.subgraph(nodes_to_include).copy()
     
     # Layout computation
-    if layout == 'circular':
-        pos = nx.circular_layout(G_final)
-    elif layout == 'kamada_kawai':
-        pos = nx.kamada_kawai_layout(G_final)
+    if len(G_final.nodes()) > 100:
+        # Faster layout for large graphs
+        pos = nx.spring_layout(G_final, k=0.6, iterations=20, seed=42)
     else:
-        pos = nx.spring_layout(G_final, k=0.6, iterations=50, seed=42)
+        if layout == 'circular':
+            pos = nx.circular_layout(G_final)
+        elif layout == 'kamada_kawai':
+            pos = nx.kamada_kawai_layout(G_final)
+        else:
+            pos = nx.spring_layout(G_final, k=0.6, iterations=50, seed=42)
     
     # ─ PHASE 3: Build JSON for frontend ─────────────────────────
     nodes = []
@@ -2629,7 +2600,7 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
         
         nodes.append({
             'id': node,
-            'label': node,  # This now perfectly matches the sample posts username
+            'label': node,
             'degree': degree,
             'post_count': post_count,
             'platform': platform,
@@ -2655,13 +2626,22 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
                 'target_y': float(pos[v][1]),
             })
     
+    # Robust density calculation
+    n_nodes = G_final.number_of_nodes()
+    n_edges = G_final.number_of_edges()
+    density = 0.0
+    if n_nodes > 1:
+        max_possible_edges = n_nodes * (n_nodes - 1) / 2
+        if max_possible_edges > 0:
+            density = n_edges / max_possible_edges
+
     return {
         'nodes': nodes,
         'edges': edges,
         'stats': {
-            'nodes': len(nodes),
-            'edges': len(edges),
-            'density': G_final.number_of_edges() / (G_final.number_of_nodes() * (G_final.number_of_nodes() - 1) / 2) if G_final.number_of_nodes() > 1 else 0
+            'nodes': n_nodes,
+            'edges': n_edges,
+            'density': round(density, 4)
         }
     }
    
