@@ -5823,8 +5823,8 @@ class NetworksView(TemplateView):
         layout_style = request.GET.get('layout', 'spring')
 
         # 2. Extract coordination data frames via graph engines
-        coordination_result = get_coordination_groups(min_connections=min_connections)
-        coordination_groups = coordination_result.get('groups', [])
+        posts_qs = ProcessedPost.objects.filter(is_election_related=True)
+        coordination_groups = get_coordination_groups(posts_qs, min_accounts=min_connections)
         graph_stats = coordination_result.get('stats', {'nodes': 0, 'edges': 0})
         
         total_coordinated_groups = len(coordination_groups)
