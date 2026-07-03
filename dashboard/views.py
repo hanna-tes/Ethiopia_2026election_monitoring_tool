@@ -2497,38 +2497,40 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     """
     import networkx as nx
     import re
-    
+    import math
+
     G = nx.Graph()
     account_roles = {}
     account_post_counts = {}
     account_platforms = {}
-    
+    hub_nodes = set()   # accounts that are the hub of a hub-and-spoke group
+
     # Regex to detect retweets
     rt_pattern = re.compile(r'RT\s+@([A-Za-z0-9_]+)', re.IGNORECASE)
-    
+
     # ─ PHASE 1: Build graph ─────────────────────────────────────
     for group in coordination_groups:
-        # CRITICAL FIX: Use the FULL accounts list from the group
+        # Use the FULL accounts list from the group
         group_accounts = group.get('accounts', [])
         if len(group_accounts) < 2:
             continue
-            
+
         sample_posts = group.get('sample_posts_with_urls', [])
-        
+
         # Track metrics from sample posts
         for post in sample_posts:
             username = post.get('username', '')
             if not username:
                 continue
-                
+
             account_post_counts[username] = account_post_counts.get(username, 0) + 1
-            
+
             platform = post.get('platform', '')
             if platform and platform != 'Unknown':
                 account_platforms[username] = platform
             elif username not in account_platforms:
                 account_platforms[username] = 'Unknown'
-        
+
         # Determine source vs amplifier by timestamp from sample posts
         account_timestamps = {}
         for post in sample_posts:
@@ -2536,7 +2538,7 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             timestamp = post.get('timestamp', '')
             if username and timestamp and timestamp != 'N/A':
                 account_timestamps[username] = timestamp
-                
+
         if account_timestamps:
             sorted_accounts = sorted(account_timestamps.items(), key=lambda x: x[1])
             if sorted_accounts:
@@ -2545,13 +2547,13 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
                 for acc, _ in sorted_accounts[1:]:
                     if acc not in account_roles:
                         account_roles[acc] = 'amplifier'
-        
+
         # ── Connect accounts ──────────────────────────────────────
-        # SMART LAYOUT: If group is huge (>20 accounts), use hub-and-spoke 
+        # SMART LAYOUT: If group is huge (>20 accounts), use hub-and-spoke
         # to prevent browser crash. Otherwise, use full clique.
         if len(group_accounts) > 20:
-            # Hub and spoke: connect everyone to the first account (or source)
             hub = group_accounts[0]
+            hub_nodes.add(hub)
             for user in group_accounts[1:]:
                 if G.has_edge(hub, user):
                     G[hub][user]['weight'] += 1
@@ -2566,19 +2568,45 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
                         G[u][v]['weight'] += 1
                     else:
                         G.add_edge(u, v, weight=1, type='coordination')
-    
+
     if G.number_of_nodes() == 0:
         return {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0, 'density': 0}}
-    
+
     # ── PHASE 2: Select nodes ─────────────────────────────────────
-    # Include ALL nodes from the graph (since we used the full accounts list)
     nodes_to_include = set(G.nodes())
-    
     G_final = G.subgraph(nodes_to_include).copy()
-    
-    # Layout computation
-    if len(G_final.nodes()) > 100:
-        # Faster layout for large graphs
+
+    # ── Layout computation ─────────────────────────────────────────
+    # Networks made of one or more hub-and-spoke stars render poorly under a
+    # generic force-directed layout — spokes tend to bunch up near the hub
+    # instead of fanning out, which is what made small/medium groups look
+    # like a tiny illegible clump. When the graph is (mostly) star-shaped,
+    # lay each hub's spokes out on an explicit circle around it instead.
+    components = list(nx.connected_components(G_final))
+    is_star_shaped = bool(hub_nodes) and all(
+        any(h in comp for h in hub_nodes) for comp in components
+    )
+
+    if is_star_shaped and len(components) <= 12:
+        pos = {}
+        # Arrange multiple star components side-by-side on a grid so they
+        # don't overlap each other.
+        cols = math.ceil(math.sqrt(len(components)))
+        cell = 4.0  # spacing between component centers, in layout units
+        for idx, comp in enumerate(components):
+            comp = list(comp)
+            hub = next((h for h in comp if h in hub_nodes), comp[0])
+            spokes = [n for n in comp if n != hub]
+            cx = (idx % cols) * cell
+            cy = (idx // cols) * cell
+            pos[hub] = (cx, cy)
+            n_spokes = max(len(spokes), 1)
+            radius = 1.0 + 0.05 * n_spokes  # bigger groups get a bit more room
+            for i, spoke in enumerate(spokes):
+                angle = 2 * math.pi * i / n_spokes
+                pos[spoke] = (cx + radius * math.cos(angle),
+                              cy + radius * math.sin(angle))
+    elif len(G_final.nodes()) > 100:
         pos = nx.spring_layout(G_final, k=0.6, iterations=20, seed=42)
     else:
         if layout == 'circular':
@@ -2587,17 +2615,44 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             pos = nx.kamada_kawai_layout(G_final)
         else:
             pos = nx.spring_layout(G_final, k=0.6, iterations=50, seed=42)
-    
+
+    # ── Rescale positions to a large, predictable coordinate space ────────
+    # Whatever the raw layout produced (often squeezed into roughly -1..1),
+    # stretch it to fill a fixed, generous canvas so the graph always uses
+    # the available drawing area instead of appearing as a tiny dot cluster
+    # in the middle of a mostly-empty viewport. Target: roughly 1000x1000
+    # units, centered at (0, 0), regardless of node count.
+    xs = [p[0] for p in pos.values()]
+    ys = [p[1] for p in pos.values()]
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    x_range = (x_max - x_min) or 1.0
+    y_range = (y_max - y_min) or 1.0
+    TARGET = 900.0  # final coordinates roughly span -450 .. +450
+
+    def _rescale(x, y):
+        nx_ = (x - x_min) / x_range * TARGET - TARGET / 2
+        ny_ = (y - y_min) / y_range * TARGET - TARGET / 2
+        return nx_, ny_
+
+    pos = {node: _rescale(*p) for node, p in pos.items()}
+
     # ─ PHASE 3: Build JSON for frontend ─────────────────────────
     nodes = []
     for node in G_final.nodes():
         degree = G_final.degree(node)
         node_type = account_roles.get(node, 'source')
         node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'
-        
+
         post_count = account_post_counts.get(node, 0)
         platform = account_platforms.get(node, 'Unknown')
-        
+
+        # Slightly larger baseline size so leaf/spoke nodes (degree=1 in a
+        # hub-and-spoke layout) are still comfortably visible, not just dots.
+        is_hub = node in hub_nodes
+        base_size = 28 if is_hub else 18
+        size = max(base_size, min(55, base_size + degree * 2))
+
         nodes.append({
             'id': node,
             'label': node,
@@ -2606,11 +2661,12 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             'platform': platform,
             'x': float(pos[node][0]),
             'y': float(pos[node][1]),
-            'size': max(15, min(40, degree * 3)),
+            'size': size,
             'color': node_color,
-            'type': node_type
+            'type': node_type,
+            'is_hub': is_hub,
         })
-    
+
     edges = []
     for u, v, data in G_final.edges(data=True):
         if u in pos and v in pos:
@@ -2625,7 +2681,7 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
                 'target_x': float(pos[v][0]),
                 'target_y': float(pos[v][1]),
             })
-    
+
     # Robust density calculation
     n_nodes = G_final.number_of_nodes()
     n_edges = G_final.number_of_edges()
@@ -2638,6 +2694,10 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     return {
         'nodes': nodes,
         'edges': edges,
+        # Tell the frontend exactly what coordinate space to expect so it
+        # can size its viewBox/canvas to match instead of guessing.
+        'bounds': {'x_min': -TARGET / 2, 'x_max': TARGET / 2,
+                   'y_min': -TARGET / 2, 'y_max': TARGET / 2},
         'stats': {
             'nodes': n_nodes,
             'edges': n_edges,
