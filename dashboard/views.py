@@ -5823,18 +5823,18 @@ class NetworksView(TemplateView):
         layout_style = request.GET.get('layout', 'spring')
 
         # 2. Extract coordination data frames via graph engines
-        #  Pass posts_qs as first positional argument & update kwarg to min_accounts
         posts_qs = ProcessedPost.objects.filter(is_election_related=True)
         coordination_groups = get_coordination_groups(posts_qs, min_accounts=min_connections)
         
-        #  Safeguard against non-dict structures safely without losing stats variables
-        graph_stats = {'nodes': 0, 'edges': 0}
+        # Calculate graph stats precisely matching the active groups list structure
         unique_nodes = set()
         for group in coordination_groups:
             unique_nodes.update(group.get('accounts', []))
-        graph_stats['nodes'] = len(unique_nodes)
-        # Structural edge projection count
-        graph_stats['edges'] = sum(len(group.get('accounts', [])) * (len(group.get('accounts', [])) - 1) // 2 for group in coordination_groups)
+            
+        graph_stats = {
+            'nodes': len(unique_nodes),
+            'edges': sum(len(group.get('accounts', [])) * (len(group.get('accounts', [])) - 1) // 2 for group in coordination_groups)
+        }
         
         total_coordinated_groups = len(coordination_groups)
         total_coordinated_accounts = graph_stats.get('nodes', 0)
@@ -5846,7 +5846,10 @@ class NetworksView(TemplateView):
         if total_coordinated_groups > 0:
             try:
                 G = nx.Graph()
-                for group in coordination_groups[:top_n]:
+                # Use the sliced subset consistently across nodes and edges
+                active_groups_subset = coordination_groups[:top_n]
+                
+                for group in active_groups_subset:
                     accounts = group.get('accounts', [])
                     weight = group.get('post_count', 1)
                     behavior = group.get('behavior_class', 'Coordination')
@@ -5870,7 +5873,8 @@ class NetworksView(TemplateView):
 
                 nodes_list = []
                 for node in G.nodes():
-                    is_source = any(g.get('accounts', []) and g.get('accounts', [])[0] == node for g in coordination_groups)
+                    # FIX: Match explicitly against the sliced subset used to construct the Graph G
+                    is_source = any(g.get('accounts', []) and g.get('accounts', [])[0] == node for g in active_groups_subset)
                     nodes_list.append({
                         'id': node,
                         'label': str(node)[:15],
@@ -5902,11 +5906,11 @@ class NetworksView(TemplateView):
         # 4. Fetch reference DISARM TTP Framework metadata metrics
         ttps = get_disarm_ttp_reference()
 
-        # 5. DYNAMIC EVIDENCE LOOP:
-        # Pull evidence using valid database schema fields (original_text & account_id)
+        # 5. DYNAMIC EVIDENCE FIXED LOOP:
+        # Fetch actual posts using valid database schema fields
         flagged_posts = ProcessedPost.objects.filter(is_election_related=True)[:100]
 
-        # Map actual evidence records to their respective TTP IDs dynamically via text scanning
+        # Map actual evidence records dynamically using text matching against existing fields
         ttp_evidence_map = defaultdict(list)
         for p in flagged_posts:
             text_content = (p.original_text or '').lower()
@@ -5925,7 +5929,7 @@ class NetworksView(TemplateView):
                         'ttp_reason': f"Matches classification signature for tracking index {ttp_id.upper()}."
                     })
 
-        # Inject matched evidence into the original parsed reference items array
+        # Inject evidence arrays back into original parsed objects so front-end cards render correctly
         for ttp in ttps:
             ttp_id = str(ttp.get('id') or ttp.get('name') or '').strip().lower()
             ttp['evidence_posts'] = ttp_evidence_map.get(ttp_id, [])[:3]
