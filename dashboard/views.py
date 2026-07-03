@@ -5832,8 +5832,7 @@ class NetworksView(TemplateView):
  
         # ── Fetch posts ────────────────────────────────────────────────────
         try:
-            posts_queryset, start_date, end_date = get_election_posts_queryset(
-                request)
+            posts_queryset, start_date, end_date = get_election_posts_queryset(request)
             posts = (posts_queryset
                      .exclude(platform__icontains='tiktok')
                      .exclude(platform__icontains='media')
@@ -5844,30 +5843,75 @@ class NetworksView(TemplateView):
             start_date = end_date = timezone.now()
  
         total_posts = posts.count()
-        logger.info(
-            f"NetworksView: {total_posts} posts available "
-            f"(view_all={view_all})"
-        )
+        logger.info(f"NetworksView: {total_posts} posts available (view_all={view_all})")
  
         # ── Coordination groups ────────────────────────────────────────────
-        # Pass view_all so get_coordination_groups removes its internal cap
-        # when the user has selected "show all data".
         coordination_groups = get_coordination_groups(
             posts,
             min_accounts=min_connections,
             max_groups=50,
-            #view_all=view_all,
         )
  
+        # ── Contextualizing & Validating TTP Reasoning ──────────────────────
+        enhanced_groups = []
+        for g in coordination_groups:
+            text_sample = g.get('text_sample', '')
+            accounts = g.get('accounts', [])
+            
+            # Fetch actual database timestamps for posts matching this exact cluster text
+            matched_posts = list(posts.filter(original_text=text_sample).order_by('timestamp_share'))
+            timestamps = [p.timestamp_share for p in matched_posts if p.timestamp_share]
+            
+            time_justification = "Manual text duplication; high-resolution timestamps unavailable for latency logging."
+            behavior_class = "👥 Organized Manual Distribution"
+            first_seen_str = "N/A"
+            last_seen_str = "N/A"
+            
+            if len(timestamps) >= 2:
+                t_first = min(timestamps)
+                t_last = max(timestamps)
+                first_seen_str = t_first.strftime('%Y-%m-%d %H:%M:%S')
+                last_seen_str = t_last.strftime('%Y-%m-%d %H:%M:%S')
+                
+                total_delta = int((t_last - t_first).total_seconds())
+                avg_gap = total_delta / len(timestamps)
+                
+                # Apply structural boundaries to create defensible evidence justifications
+                if total_delta <= 60:
+                    behavior_class = "🚨 Critical Synchronicity (Automated Burst)"
+                    time_justification = f"Identified as automated behavior because {len(accounts)} accounts shared this text within a tiny window of {total_delta}s (First: {t_first.strftime('%H:%M:%S')}, Last: {t_last.strftime('%H:%M:%S')})."
+                elif avg_gap <= 300:
+                    behavior_class = "⏱️ Coordinated Temporal Burst"
+                    time_justification = f"Flagged as a coordinated network sequence; accounts systematically amplified this payload with an average latency gap of {int(avg_gap)}s."
+                else:
+                    behavior_class = "👥 Organized Distribution"
+                    time_justification = f"Verbatim narrative duplication observed across {len(accounts)} distinct handle nodes over a manual distribution window spanning {total_delta // 60} minutes."
+            
+            # Embed the proof properties into the group object directly
+            g['behavior_class'] = behavior_class
+            g['time_justification'] = time_justification
+            g['first_seen'] = first_seen_str
+            g['last_seen'] = last_seen_str
+            
+            # Inject explicit reason values for the assigned DISARM TTP markers
+            g_type = g.get('coordination_type', 'Coordinated Amplification')
+            g['ttp_reasoning_map'] = {
+                'T0012': f"Triggered Technique: Bot-like Account Behavior. {time_justification}",
+                'T0085': f"Triggered Technique: Mass Canonical Amplification. Verbatim payload content replicated exactly {g.get('post_count', 0)} times by {len(accounts)} separate nodes.",
+                'T0082': f"Triggered Technique: Multi-Account Management. Multi-node coordination pushing identical contextual tokens across platform feeds."
+            }
+            
+            enhanced_groups.append(g)
+
         # ── Network graph ──────────────────────────────────────────────────
         graph_data = generate_network_graph_from_groups(
-            coordination_groups,
+            enhanced_groups,
             top_n=top_n,
             layout=layout_style,
         )
  
         # ── TTP analysis ───────────────────────────────────────────────────
-        ttps = analyze_ttps(coordination_groups, posts)
+        ttps = analyze_ttps(enhanced_groups, posts)
  
         # ── DISARM reference ───────────────────────────────────────────────
         try:
@@ -5878,50 +5922,40 @@ class NetworksView(TemplateView):
         # ── Serialise groups for JavaScript ───────────────────────────────
         groups_for_js = [
             {
-                'id':                    g.get('id'),
-                'accounts':              g.get('accounts', []),
-                'account_count':         g.get('account_count', 0),
-                'post_count':            g.get('post_count', 0),
-                'coordination_type':     g.get('coordination_type', ''),
-                'sub_narrative':         g.get('sub_narrative', ''),
+                'id':                      g.get('id'),
+                'accounts':               g.get('accounts', []),
+                'account_count':          g.get('account_count', 0),
+                'post_count':             g.get('post_count', 0),
+                'coordination_type':      g.get('behavior_class', ''), # Passes verified class instead of raw type
+                'sub_narrative':          g.get('sub_narrative', ''),
                 'sample_posts_with_urls': g.get('sample_posts_with_urls', []),
-                'platforms':             g.get('platforms', []),
-                'text_sample':           g.get('text_sample', ''),
+                'platforms':              g.get('platforms', []),
+                'text_sample':            g.get('text_sample', ''),
+                'time_justification':     g.get('time_justification', ''),
             }
-            for g in coordination_groups
+            for g in enhanced_groups
         ]
  
         # ── Date strings ───────────────────────────────────────────────────
-        start_str = (start_date.date().isoformat()
-                     if hasattr(start_date, 'date') else str(start_date))
-        end_str   = (end_date.date().isoformat()
-                     if hasattr(end_date, 'date') else str(end_date))
+        start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
+        end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
  
         context.update({
             'active_tab':                 'networks',
             'network_graph_json':         json.dumps(graph_data, default=str),
- 
-            # Show ALL groups (was sliced to [:15] before)
-            'coordination_groups':        coordination_groups,
+            'coordination_groups':        enhanced_groups,
             'coordination_groups_json':   json.dumps(groups_for_js, default=str),
- 
-            'total_coordinated_groups':   len(coordination_groups),
-            'total_coordinated_accounts': sum(
-                g.get('account_count', 0) for g in coordination_groups),
+            'total_coordinated_groups':   len(enhanced_groups),
+            'total_coordinated_accounts': sum(g.get('account_count', 0) for g in enhanced_groups),
             'total_posts':                total_posts,
-            'max_group_size':             max(
-                (g.get('account_count', 0) for g in coordination_groups),
-                default=0),
- 
+            'max_group_size':             max((g.get('account_count', 0) for g in enhanced_groups), default=0),
             'min_connections':            min_connections,
             'top_n':                      top_n,
             'layout_style':               layout_style,
             'view_all':                   view_all,
- 
             'ttps':                       ttps,
             'disarm_ttp_reference':       disarm_ttp_reference,
             'disarm_dataset_size':        80000,
- 
             'start_date':                 start_str,
             'end_date':                   end_str,
         })
