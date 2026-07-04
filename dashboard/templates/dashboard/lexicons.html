@@ -8,7 +8,7 @@
     <div class="flex justify-between items-center mb-6">
         <div>
             <h2 class="text-2xl font-bold text-white">🗣️ Mapped Lexicons</h2>
-            <p class="text-gray-400 mt-1">Detecting hateful terms with AI-powered Amharic translation + AFRO-XLMR model</p>
+            <p class="text-gray-400 mt-1">Detecting hateful terms with AI-powered analysis + AFRO-XLMR model</p>
         </div>
         <div class="flex gap-2">
             <span class="px-3 py-1 bg-blue-900/50 text-blue-200 rounded-full text-sm font-medium border border-blue-700">
@@ -100,7 +100,8 @@
             </div>
         </div>
 
-        <!-- Top Trigger Terms - Card Grid Layout -->
+        <!-- Top Trigger Terms - Card Grid Layout (ONLY SHOW IN OVERVIEW) -->
+        {% if not selected_category %}
         <div class="mb-6">
             <h4 class="text-lg font-bold text-blue-300 mb-4 flex items-center gap-2">
                 <span>🔥</span> Top Trigger Terms (Lexicon Matches)
@@ -133,9 +134,10 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
 
-        <!-- Word Cloud -->
-        {% if wordcloud_base64 %}
+        <!-- Word Cloud (ONLY SHOW IN OVERVIEW) -->
+        {% if wordcloud_base64 and not selected_category %}
         <div class="bg-gray-800 rounded-lg p-4 border border-blue-700">
             <h4 class="font-bold text-blue-300 mb-3">🌩️ Lexicon Trigger Word Cloud</h4>
             <div class="flex justify-center bg-gray-900 rounded p-2">
@@ -146,73 +148,7 @@
         {% endif %}
     </div>
 
-    <!-- SECTION 2: AI-POWERED AMHARIC TRANSLATIONS -->
-    <div class="mb-8 border-t border-purple-500/50 pt-6">
-        <div class="flex items-center gap-3 mb-4">
-            <span class="text-3xl">🌐</span>
-            <div>
-                <h3 class="text-xl font-bold text-purple-300"> Amharic Term Translations</h3>
-                <p class="text-sm text-purple-400">LLM-based translation of Amharic hate speech terms to English</p>
-            </div>
-        </div>
-
-        <div class="bg-gradient-to-r from-purple-900/20 to-indigo-900/20 border border-purple-500/30 rounded-lg p-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Amharic Terms Column -->
-                <div>
-                    <h4 class="text-lg font-semibold text-purple-300 mb-3">📝 Amharic Terms Detected</h4>
-                    <div class="space-y-2">
-                        {% for term in top_terms %}
-                            {% if term.metadata.language == 'amharic' or term.metadata.language == 'Amharic' %}
-                            <div class="bg-gray-800/80 rounded-lg p-3 border border-purple-700/50">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-purple-200 font-mono">{{ term.term }}</span>
-                                    <span class="px-2 py-1 rounded text-xs 
-                                        {% if term.metadata.severity == 'critical' %}bg-red-900/50 text-red-300
-                                        {% elif term.metadata.severity == 'high' %}bg-orange-900/50 text-orange-300
-                                        {% else %}bg-yellow-900/50 text-yellow-300{% endif %}">
-                                        {{ term.metadata.severity }}
-                                    </span>
-                                </div>
-                                <div class="text-xs text-gray-400 mt-1">{{ term.count }} occurrences</div>
-                            </div>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                </div>
-
-                <!-- English Translations Column -->
-                <div>
-                    <h4 class="text-lg font-semibold text-indigo-300 mb-3">🔤 English Translations (LLM)</h4>
-                    <div class="space-y-2">
-                        {% for term in top_terms %}
-                            {% if term.metadata.language == 'amharic' or term.metadata.language == 'Amharic' %}
-                            <div class="bg-gray-800/80 rounded-lg p-3 border border-indigo-700/50">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-indigo-200">{{ term.metadata.target_entity|default:"General insult" }}</span>
-                                    <span class="text-xs text-gray-400">{{ term.metadata.category|title }}</span>
-                                </div>
-                                <div class="text-xs text-gray-400 mt-1">
-                                    Context: {{ term.metadata.severity }} severity
-                                </div>
-                            </div>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Translation Note -->
-            <div class="mt-4 p-3 bg-purple-900/30 rounded-lg border border-purple-600/30">
-                <p class="text-sm text-purple-200">
-                    <strong>💡 Note:</strong> Translations are generated using LLM (Llama-4) for contextual accuracy. 
-                    The model understands Ethiopian cultural context and provides nuanced translations of hate speech terms.
-                </p>
-            </div>
-        </div>
-    </div>
-
-    <!-- SECTION 3: CATEGORY & SEVERITY BREAKDOWN (CLICKABLE) -->
+    <!-- SECTION 2: CATEGORY & SEVERITY BREAKDOWN (CLICKABLE) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div>
             <div class="flex justify-between items-center mb-4">
@@ -253,14 +189,14 @@
             <span class="text-3xl">🎯</span>
             <div>
                 <h3 class="text-xl font-bold text-blue-300">Category: "{{ selected_category|title }}"</h3>
-                <p class="text-sm text-blue-400">Terms in lexicon and posts containing them</p>
+                <p class="text-sm text-blue-400">Terms in this category and posts containing them</p>
             </div>
         </div>
 
-        <!-- Category Terms from Lexicon -->
+        <!-- Category Terms from Lexicon (ONLY terms from selected category) -->
         {% if category_terms %}
         <div class="mb-6">
-            <h4 class="text-lg font-semibold text-gray-200 mb-3">📚 Terms in this Category ({{ category_terms|length }})</h4>
+            <h4 class="text-lg font-semibold text-gray-200 mb-3">📚 Terms in "{{ selected_category|title }}" Category ({{ category_terms|length }})</h4>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {% for term_data in category_terms %}
                 <div class="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-blue-500 transition-colors">
@@ -290,10 +226,10 @@
         </div>
         {% endif %}
 
-        <!-- Posts containing these terms -->
+        <!-- Posts containing these terms (WITH MODEL INFO AND ENGLISH CONTEXT) -->
         {% if posts_with_terms %}
         <div class="mb-6">
-            <h4 class="text-lg font-semibold text-gray-200 mb-3">📄 Posts with these Terms ({{ posts_with_terms|length }})</h4>
+            <h4 class="text-lg font-semibold text-gray-200 mb-3">📄 Posts with "{{ selected_category|title }}" Terms ({{ posts_with_terms|length }})</h4>
             <div class="space-y-3">
                 {% for post in posts_with_terms %}
                 <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
@@ -309,7 +245,40 @@
                         </a>
                         {% endif %}
                     </div>
+                    
+                    <!-- Model Detection Info -->
+                    <div class="mb-3 p-2 bg-gray-900/50 rounded border border-gray-700">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="font-semibold text-purple-400">🤖 Detected by:</span>
+                            <span class="px-2 py-0.5 rounded 
+                                {% if post.detected_by == 'AFRO-XLMR' %}bg-purple-900/50 text-purple-300 border border-purple-700
+                                {% elif post.detected_by == 'LLM' %}bg-blue-900/50 text-blue-300 border border-blue-700
+                                {% else %}bg-gray-700 text-gray-300 border border-gray-600{% endif %}">
+                                {{ post.detected_by }}
+                            </span>
+                            {% if post.confidence > 0 %}
+                            <span class="text-gray-400">Confidence: {{ post.confidence|floatformat:2 }}</span>
+                            {% endif %}
+                            {% if post.model_category and post.model_category != 'Unknown' %}
+                            <span class="text-gray-400">Category: {{ post.model_category }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Original Text -->
                     <p class="text-gray-300 text-sm mb-2">{{ post.text }}{% if post.text|length > 300 %}...{% endif %}</p>
+                    
+                    <!-- English Context (for Amharic terms) -->
+                    {% if post.english_context %}
+                    <div class="mb-2 p-2 bg-blue-900/20 rounded border border-blue-800/50">
+                        <div class="flex items-start gap-2 text-xs">
+                            <span class="font-semibold text-blue-400">🌐 English Context:</span>
+                            <span class="text-blue-300">{{ post.english_context }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Matched Terms -->
                     <div class="flex flex-wrap gap-2">
                         {% for term in post.matched_terms %}
                         <span class="px-2 py-1 bg-blue-900/50 text-blue-300 rounded text-xs border border-blue-700">
@@ -329,8 +298,8 @@
     </div>
     {% endif %}
 
-    <!-- SECTION 4: TARGETED ENTITIES -->
-    {% if targeted_entities %}
+    <!-- SECTION 3: TARGETED ENTITIES (ONLY IN OVERVIEW) -->
+    {% if targeted_entities and not selected_category %}
     <div class="mb-8">
         <h3 class="text-lg font-semibold text-gray-200 mb-4">🎯 Most Targeted Entities</h3>
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
