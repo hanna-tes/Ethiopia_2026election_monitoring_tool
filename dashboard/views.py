@@ -122,7 +122,79 @@ def detect_hate_speech_afro_xlmr(text: str) -> dict:
             'severity': 'low',
             'error': str(e)
         }
-       
+def translate_amharic_terms_llm(terms_list):
+    """
+    Use LLM to translate Amharic terms to English with context
+    """
+    if not terms_list:
+        return []
+    
+    # Filter only Amharic terms
+    amharic_terms = [t for t in terms_list if t.get('metadata', {}).get('language', '').lower() == 'amharic']
+    
+    if not amharic_terms:
+        return []
+    
+    try:
+        # Prepare prompt for LLM
+        terms_text = "\n".join([f"- {t['term']} (Severity: {t['metadata'].get('severity', 'unknown')}, Category: {t['metadata'].get('category', 'unknown')})" for t in amharic_terms])
+        
+        prompt = f"""Translate these Amharic hate speech terms to English. Provide contextual meaning and explain the severity:
+
+{terms_text}
+
+Format each translation as:
+Term: [Amharic term]
+English: [Translation]
+Context: [Explanation of usage and severity]
+---
+"""
+        
+        # Call LLM (using your existing detect_hate_speech_llm function or similar)
+        from .utils.llm_integration import call_llm_api  # Adjust import based on your setup
+        
+        response = call_llm_api(prompt, temperature=0.3)
+        
+        # Parse the response and attach translations to terms
+        translations = parse_llm_translations(response)
+        
+        # Merge translations back into terms
+        for term in amharic_terms:
+            term_term = term['term']
+            if term_term in translations:
+                term['translation'] = translations[term_term]
+        
+        return amharic_terms
+        
+    except Exception as e:
+        logger.error(f"LLM translation failed: {e}")
+        # Return original terms without translation
+        return amharic_terms
+
+def parse_llm_translations(response_text):
+    """Parse LLM response to extract translations"""
+    translations = {}
+    current_term = None
+    current_translation = {}
+    
+    for line in response_text.strip().split('\n'):
+        line = line.strip()
+        if line.startswith('Term:'):
+            if current_term and current_translation:
+                translations[current_term] = current_translation
+            current_term = line.replace('Term:', '').strip()
+            current_translation = {}
+        elif line.startswith('English:'):
+            current_translation['english'] = line.replace('English:', '').strip()
+        elif line.startswith('Context:'):
+            current_translation['context'] = line.replace('Context:', '').strip()
+    
+    # Don't forget the last one
+    if current_term and current_translation:
+        translations[current_term] = current_translation
+    
+    return translations
+    
 @login_required
 def export_merged_gephi_csv(request):
     """Generates and downloads a Gephi-compatible CSV edge-list representing the coordination network"""
@@ -5279,7 +5351,7 @@ class LexiconsView(TemplateView):
 
     def _scan_post(self, text: str, category_filter=None):
         """
-        Scan one post's text.  Returns a (possibly empty) list of match dicts
+        Scan one post's text. Returns a (possibly empty) list of match dicts
         after applying word-boundary and innocuous-context filters.
         """
         if not text or len(text.strip()) < 10:
@@ -5443,7 +5515,7 @@ class LexiconsView(TemplateView):
                     daemon=True,
                 )
                 t.start()
-                logger.info("LexiconsView: background AI analysis triggered")
+                logger.info("LexiconsView: background analysis triggered")
 
             logger.info(
                 f"LexiconsView: overview scan of {total_posts} posts …"
@@ -5607,6 +5679,7 @@ class LexiconsView(TemplateView):
             
             if detector is None:
                 logger.error("AFRO-XLMR detector failed to load.")
+                cache.delete("lexicons_ai_running")
                 return
                 
             logger.info("AFRO-XLMR model loaded.")
@@ -5670,7 +5743,8 @@ class LexiconsView(TemplateView):
                 'total_hateful': 0, 'error': str(e),
             }, 3600)
         finally:
-            cache.delete("lexicons_analysis_running")
+            # FIXED: Use consistent cache key name
+            cache.delete("lexicons_ai_running")
             logger.info("Background thread finished and cleaned up.")
 
 
