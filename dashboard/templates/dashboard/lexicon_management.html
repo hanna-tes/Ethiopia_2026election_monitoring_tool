@@ -38,7 +38,7 @@
                     <h4 class="font-semibold text-white">1. Lexicon Engine</h4>
                 </div>
                 <p class="text-sm text-slate-400 leading-relaxed">
-                    Curated dictionary of {{ total_terms|default:0 }} known ethnic slurs, violence incitement, and election interference terms in English and Amharic. Provides <strong>100% precision</strong> for known high-risk keywords.
+                    Curated dictionary of {{ total_terms|default:0 }} known ethnic slurs, violence incitement, and election interference terms in English, Amharic, and Oromo. Provides <strong>100% precision</strong> for known high-risk keywords.
                 </p>
             </div>
             
@@ -55,19 +55,19 @@
             <div class="bg-slate-950/40 p-4 rounded-lg border border-slate-800/60">
                 <div class="flex items-center gap-2 mb-2">
                     <span class="text-2xl">🎯</span>
-                    <h4 class="font-semibold text-white">3. Fine-Tuned Gemma Model</h4>
+                    <h4 class="font-semibold text-white">3. AFRO-XLMR Transformer</h4>
                 </div>
                 <p class="text-sm text-slate-400 leading-relaxed">
-                    Custom-trained multiclass classifier using <strong>LoRA adapter</strong> on Gemma model. Specifically trained to detect <strong>19 distinct categories</strong> of weaponized language in the Ethiopia election context.
+                    Fine-tuned <strong>multilingual XLM-RoBERTa</strong> classifier specifically trained on Ethiopian languages (Amharic, Oromo, English). Detects <strong>20 distinct categories</strong> of weaponized language in the Ethiopia election context.
                 </p>
             </div>
         </div>
         
-        <!-- The 19 Categories Grid -->
+        <!-- The 20 Categories Grid -->
         <div class="mb-6">
             <h4 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                 <i class="fas fa-list text-purple-400"></i>
-                Gemma Model Detection Categories:
+                AFRO-XLMR Detection Categories (20):
             </h4>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <span class="px-3 py-1.5 bg-red-950/40 border border-red-800/60 rounded text-xs text-red-300">🔴 Violence</span>
@@ -93,12 +93,13 @@
                 <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Ancestry</span>
                 <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Class</span>
                 <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Structural</span>
+                <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Neutral</span>
             </div>
         </div>
         
         <div class="p-4 bg-blue-900/20 rounded-lg border border-blue-800/40">
             <p class="text-sm text-blue-300">
-                <strong>🔬 Methodology:</strong> Our hybrid approach combines rule-based precision with AI-powered contextual understanding. Each detection method votes on the classification, and we calculate a <strong>weighted confidence score</strong> to minimize false positives while catching sophisticated manipulation tactics. The Gemma model was specifically trained on Ethiopia election discourse to recognize these 19 distinct categories of harmful language.
+                <strong>🔬 Methodology:</strong> Our hybrid approach combines rule-based precision with AI-powered contextual understanding. Each detection method votes on the classification, and we calculate a <strong>weighted confidence score</strong> to minimize false positives while catching sophisticated manipulation tactics. The AFRO-XLMR model was specifically fine-tuned on Ethiopian election discourse across Amharic, Oromo, and English to recognize these 20 distinct categories of harmful language with high accuracy.
             </p>
         </div>
     </div>
@@ -133,13 +134,13 @@
                         </p>
                         <p class="text-sm {% if scan_results.is_hate_speech %}text-red-400/80{% else %}text-green-400/80{% endif %}">
                             Severity: <strong class="underline">{{ scan_results.overall_severity|default:'low'|upper }}</strong>
-                            {% if scan_results.gemma_confidence_pct %}| Gemma Confidence: {{ scan_results.gemma_confidence_pct }}{% endif %}
+                            {% if scan_results.overall_confidence_pct %}| Combined Confidence: {{ scan_results.overall_confidence_pct }}{% endif %}
                         </p>
                     </div>
                 </div>
             </div>
             
-            <!--  Analysis/Explanation Section -->
+            <!-- Analysis/Explanation Section -->
             {% if scan_results.analysis %}
             <div class="mb-4 p-3 bg-blue-950/40 rounded border border-blue-900/60">
                 <p class="text-sm text-blue-300"><strong>🤖 Analysis:</strong> {{ scan_results.analysis }}</p>
@@ -150,40 +151,40 @@
             </div>
             {% endif %}
             
-            <!-- 🎯 Gemma Model Results (ONLY SHOW IF ACTIVE) -->
-            {% if scan_results.gemma_result and scan_results.gemma_result.model_status == 'active' %}
+            <!-- 🎯 AFRO-XLMR Model Results (ONLY SHOW IF ACTIVE) -->
+            {% if scan_results.afro_xlmr_result and scan_results.afro_xlmr_result.category != 'error' %}
             <div class="mb-4 p-4 bg-gradient-to-br from-purple-950/40 to-indigo-950/40 rounded-lg border border-purple-800/60">
                 <div class="flex items-start justify-between mb-3">
                     <div>
                         <p class="text-sm font-semibold text-purple-300 mb-1">
-                            <strong>🎯 Fine-Tuned Gemma Model Detection:</strong>
+                            <strong>🎯 AFRO-XLMR Transformer Detection:</strong>
                         </p>
                         <div class="flex items-center gap-3">
                             <span class="px-3 py-1 bg-purple-600/30 border border-purple-500/50 rounded-full text-purple-200 text-sm font-semibold">
-                                {{ scan_results.gemma_result.category|default:'neutral'|title }}
+                                {{ scan_results.afro_xlmr_result.category|default:'neutral'|title }}
                             </span>
                             <span class="text-xs text-purple-400">
-                                Confidence: {{ scan_results.gemma_result.confidence|default:0|floatformat:2 }} ({{ scan_results.gemma_confidence_pct|default:'0%' }})
+                                Confidence: {{ scan_results.afro_xlmr_result.confidence|default:0|floatformat:2 }} ({{ scan_results.afro_xlmr_result.confidence|default:0|floatformat:1 }}0%)
                             </span>
                         </div>
                     </div>
-                    <span class="px-2 py-1 rounded text-xs font-bold {% if scan_results.gemma_result.severity == 'critical' %}bg-red-950 text-red-400 border border-red-800{% elif scan_results.gemma_result.severity == 'high' %}bg-orange-950 text-orange-400 border border-orange-800{% elif scan_results.gemma_result.severity == 'medium' %}bg-yellow-950 text-yellow-400 border border-yellow-800{% else %}bg-green-950 text-green-400 border border-green-800{% endif %}">
-                        {{ scan_results.gemma_result.severity|default:'low'|upper }}
+                    <span class="px-2 py-1 rounded text-xs font-bold {% if scan_results.afro_xlmr_result.severity == 'critical' %}bg-red-950 text-red-400 border border-red-800{% elif scan_results.afro_xlmr_result.severity == 'high' %}bg-orange-950 text-orange-400 border border-orange-800{% elif scan_results.afro_xlmr_result.severity == 'medium' %}bg-yellow-950 text-yellow-400 border border-yellow-800{% else %}bg-green-950 text-green-400 border border-green-800{% endif %}">
+                        {{ scan_results.afro_xlmr_result.severity|default:'low'|upper }}
                     </span>
                 </div>
                 
-                {% if scan_results.gemma_result.raw_prediction %}
+                {% if scan_results.afro_xlmr_result.group %}
                 <div class="mt-2 p-2 bg-slate-950/40 rounded border border-slate-800/60">
-                    <p class="text-xs text-slate-400"><strong>Model Prediction:</strong> <span class="text-purple-300">{{ scan_results.gemma_result.raw_prediction }}</span></p>
+                    <p class="text-xs text-slate-400"><strong>Category Group:</strong> <span class="text-purple-300">{{ scan_results.afro_xlmr_result.group }}</span></p>
                 </div>
                 {% endif %}
             </div>
             
             <!-- ℹ️ FALLBACK: Show this if model is unavailable -->
-            {% elif scan_results.gemma_result and scan_results.gemma_result.model_status == 'unavailable' %}
+            {% elif scan_results.afro_xlmr_result and scan_results.afro_xlmr_result.category == 'error' %}
             <div class="mb-4 p-4 bg-slate-900/40 rounded-lg border border-slate-800/60">
                 <p class="text-sm text-slate-400">
-                    <strong>ℹ️ Gemma Model:</strong> <span class="italic">Not loaded on this server. Relying on LLM + Lexicon Engine only.</span>
+                    <strong>ℹ️ AFRO-XLMR Model:</strong> <span class="italic">Not loaded on this server. Relying on LLM + Lexicon Engine only.</span>
                 </p>
             </div>
             {% endif %}
@@ -198,14 +199,14 @@
                 </p>
                 <p class="text-xs text-blue-400/80">
                     Aggregated from: <strong>Lexicon Engine</strong> ({{ total_terms|default:0 }} terms) + <strong>LLM Semantic Analysis</strong>
-                    {% if scan_results.gemma_result.model_status == 'active' %}
-                        + <strong>Fine-tuned Gemma Model</strong> (19 multiclass categories)
+                    {% if scan_results.afro_xlmr_result.category != 'error' %}
+                        + <strong>AFRO-XLMR Transformer</strong> (20 multiclass categories)
                     {% endif %}
                 </p>
             </div>
             {% endif %}
             
-            <!--  Specific Harmful Terms Extracted -->
+            <!-- Specific Harmful Terms Extracted -->
             {% if scan_results.lexicon_matches %}
             <div class="mb-4 p-4 bg-orange-950/20 rounded-lg border border-orange-800/40">
                 <p class="text-sm font-semibold text-orange-300 mb-3">
@@ -222,7 +223,7 @@
             </div>
             {% endif %}
             
-            <!--  LLM-Extracted Trigger Terms (Not in Lexicon Yet) -->
+            <!-- LLM-Extracted Trigger Terms (Not in Lexicon Yet) -->
             {% if scan_results.new_trigger_terms and scan_results.has_new_terms %}
             <div class="mb-4 p-4 bg-purple-950/20 rounded-lg border border-purple-800/40">
                 <p class="text-sm font-semibold text-purple-300 mb-3 flex items-center gap-2">
@@ -291,7 +292,7 @@
             </div>
             {% endif %}
             
-            <!--  View Detection Details (Hides fake Gemma stats if model isn't loaded) -->
+            <!-- View Detection Details -->
             <details class="mt-4">
                 <summary class="cursor-pointer text-blue-400 hover:underline text-sm font-medium">🔍 View Detection Details</summary>
                 <div class="mt-2 p-3 bg-slate-950/40 rounded text-sm text-slate-300 space-y-1 border border-slate-800">
@@ -299,11 +300,12 @@
                     <p><strong>Overall Severity:</strong> {{ scan_results.overall_severity|default:'low'|title }}</p>
                     <p><strong>LLM Confidence:</strong> {{ scan_results.llm_result.confidence|default:0|floatformat:2 }}</p>
                     
-                    {% if scan_results.gemma_result.model_status == 'active' %}
-                        <p><strong>Gemma Category:</strong> {{ scan_results.gemma_result.category|default:'neutral'|title }}</p>
-                        <p><strong>Gemma Confidence:</strong> {{ scan_results.gemma_result.confidence|default:0|floatformat:2 }}</p>
+                    {% if scan_results.afro_xlmr_result.category != 'error' %}
+                        <p><strong>AFRO-XLMR Category:</strong> {{ scan_results.afro_xlmr_result.category|default:'neutral'|title }}</p>
+                        <p><strong>AFRO-XLMR Confidence:</strong> {{ scan_results.afro_xlmr_result.confidence|default:0|floatformat:2 }}</p>
+                        <p><strong>AFRO-XLMR Group:</strong> {{ scan_results.afro_xlmr_result.group|default:'Unknown' }}</p>
                     {% else %}
-                        <p><strong>Gemma Model:</strong> <span class="text-slate-500 italic">Not loaded (Using LLM + Lexicon only)</span></p>
+                        <p><strong>AFRO-XLMR Model:</strong> <span class="text-slate-500 italic">Not loaded (Using LLM + Lexicon only)</span></p>
                     {% endif %}
                     
                     <p><strong>Categories Detected:</strong> {{ scan_results.all_categories|join:", "|default:"None" }}</p>
@@ -334,6 +336,9 @@
             <select name="language" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
                 <option value="amharic">Amharic</option>
                 <option value="english">English</option>
+                <option value="oromo">Oromo</option>
+                <option value="tigrinya">Tigrinya</option>
+                <option value="somali">Somali</option>
             </select>
             <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold transition text-sm">Add Term</button>
         </form>
