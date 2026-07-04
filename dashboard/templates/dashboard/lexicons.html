@@ -8,7 +8,7 @@
     <div class="flex justify-between items-center mb-6">
         <div>
             <h2 class="text-2xl font-bold text-white">🗣️ Mapped Lexicons</h2>
-            <p class="text-gray-400 mt-1">Detecting hateful terms and content in posts using rule-based lexicon + AFRO-XLMR model</p>
+            <p class="text-gray-400 mt-1">Detecting hateful terms with AI-powered Amharic translation + AFRO-XLMR model</p>
         </div>
         <div class="flex gap-2">
             <span class="px-3 py-1 bg-blue-900/50 text-blue-200 rounded-full text-sm font-medium border border-blue-700">
@@ -47,7 +47,7 @@
         <!-- Engine 2: AFRO-XLMR AI Model -->
         <div class="bg-gradient-to-r from-purple-900/40 to-purple-800/30 border-l-4 border-purple-500 p-4 rounded-lg">
             <div class="flex items-start gap-3">
-                <div class="text-3xl"></div>
+                <div class="text-3xl">🤖</div>
                 <div class="flex-1">
                     <h3 class="font-bold text-purple-300 text-lg">Engine 2: AFRO-XLMR Model</h3>
                     <p class="text-sm text-purple-200 mt-1">
@@ -144,6 +144,72 @@
             <p class="text-xs text-gray-400 mt-2 text-center">Size = frequency • Color = severity</p>
         </div>
         {% endif %}
+    </div>
+
+    <!-- SECTION 2: AI-POWERED AMHARIC TRANSLATIONS -->
+    <div class="mb-8 border-t border-purple-500/50 pt-6">
+        <div class="flex items-center gap-3 mb-4">
+            <span class="text-3xl">🌐</span>
+            <div>
+                <h3 class="text-xl font-bold text-purple-300"> Amharic Term Translations</h3>
+                <p class="text-sm text-purple-400">LLM-based translation of Amharic hate speech terms to English</p>
+            </div>
+        </div>
+
+        <div class="bg-gradient-to-r from-purple-900/20 to-indigo-900/20 border border-purple-500/30 rounded-lg p-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Amharic Terms Column -->
+                <div>
+                    <h4 class="text-lg font-semibold text-purple-300 mb-3">📝 Amharic Terms Detected</h4>
+                    <div class="space-y-2">
+                        {% for term in top_terms %}
+                            {% if term.metadata.language == 'amharic' or term.metadata.language == 'Amharic' %}
+                            <div class="bg-gray-800/80 rounded-lg p-3 border border-purple-700/50">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-purple-200 font-mono">{{ term.term }}</span>
+                                    <span class="px-2 py-1 rounded text-xs 
+                                        {% if term.metadata.severity == 'critical' %}bg-red-900/50 text-red-300
+                                        {% elif term.metadata.severity == 'high' %}bg-orange-900/50 text-orange-300
+                                        {% else %}bg-yellow-900/50 text-yellow-300{% endif %}">
+                                        {{ term.metadata.severity }}
+                                    </span>
+                                </div>
+                                <div class="text-xs text-gray-400 mt-1">{{ term.count }} occurrences</div>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- English Translations Column -->
+                <div>
+                    <h4 class="text-lg font-semibold text-indigo-300 mb-3">🔤 English Translations (LLM)</h4>
+                    <div class="space-y-2">
+                        {% for term in top_terms %}
+                            {% if term.metadata.language == 'amharic' or term.metadata.language == 'Amharic' %}
+                            <div class="bg-gray-800/80 rounded-lg p-3 border border-indigo-700/50">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-indigo-200">{{ term.metadata.target_entity|default:"General insult" }}</span>
+                                    <span class="text-xs text-gray-400">{{ term.metadata.category|title }}</span>
+                                </div>
+                                <div class="text-xs text-gray-400 mt-1">
+                                    Context: {{ term.metadata.severity }} severity
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Translation Note -->
+            <div class="mt-4 p-3 bg-purple-900/30 rounded-lg border border-purple-600/30">
+                <p class="text-sm text-purple-200">
+                    <strong>💡 Note:</strong> Translations are generated using LLM (Llama-4) for contextual accuracy. 
+                    The model understands Ethiopian cultural context and provides nuanced translations of hate speech terms.
+                </p>
+            </div>
+        </div>
     </div>
 
     <!-- SECTION 3: CATEGORY & SEVERITY BREAKDOWN (CLICKABLE) -->
