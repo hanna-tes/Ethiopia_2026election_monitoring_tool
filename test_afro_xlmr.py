@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Set the correct Django settings module
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Ethiopia_2026election_monitoring_tool.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'election_monitor.settings')
 
 import django
 django.setup()
