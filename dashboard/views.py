@@ -5368,6 +5368,77 @@ class LexiconsView(TemplateView):
                 filtered.append(m)
         return filtered
 
+    def _get_model_detection_info(self, text: str):
+        """
+        Run AFRO-XLMR model on text and return detection info.
+        Returns dict with model name, confidence, and category.
+        """
+        try:
+            from .utils.hate_speech_detector import get_hate_speech_detector
+            detector = get_hate_speech_detector()
+            
+            if detector is None:
+                return {
+                    'model': 'Lexicon',
+                    'confidence': 0.0,
+                    'category': 'Unknown',
+                    'severity': 'medium'
+                }
+            
+            result = detector.detect(text)
+            
+            # Determine which model detected it
+            if result.get('is_hate_speech') and result.get('confidence', 0) > 0.6:
+                return {
+                    'model': 'AFRO-XLMR',
+                    'confidence': result.get('confidence', 0),
+                    'category': result.get('category', 'Unknown'),
+                    'severity': result.get('severity', 'medium')
+                }
+            else:
+                return {
+                    'model': 'Lexicon',
+                    'confidence': 0.0,
+                    'category': 'Unknown',
+                    'severity': 'medium'
+                }
+        except Exception as e:
+            logger.warning(f"Model detection failed: {e}")
+            return {
+                'model': 'Lexicon',
+                'confidence': 0.0,
+                'category': 'Unknown',
+                'severity': 'medium'
+            }
+
+    def _get_english_context(self, text: str, matched_terms: list):
+        """
+        Get English context for Amharic terms.
+        Returns a brief English description of what was detected.
+        """
+        # Check if text contains Amharic characters
+        has_amharic = bool(re.search(r'[\u1200-\u137F]', text))
+        
+        if not has_amharic:
+            return None
+        
+        # Build context from matched terms
+        context_parts = []
+        for term in matched_terms[:3]:  # Limit to 3 terms
+            # Try to get metadata for this term
+            for cat, terms in CONFIG.get('lexicon', {}).items():
+                if term in terms:
+                    meta = terms[term]
+                    target = meta.get('target_entity', '')
+                    if target:
+                        context_parts.append(f"{term} → {target}")
+                    break
+        
+        if context_parts:
+            return " | ".join(context_parts)
+        
+        return "Contains Amharic hate speech terms"
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
@@ -5429,7 +5500,7 @@ class LexiconsView(TemplateView):
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category}")
             
-            # Load terms (medium/high/critical only — skip 'low')
+            # Load terms ONLY from the selected category (medium/high/critical only)
             db_terms = LexiconTerm.objects.filter(
                 category=selected_category
             ).exclude(severity='low')
@@ -5484,6 +5555,13 @@ class LexiconsView(TemplateView):
 
                     if matched_terms:
                         posts_scanned += 1
+                        
+                        # Get model detection info
+                        model_info = self._get_model_detection_info(text)
+                        
+                        # Get English context for Amharic terms
+                        english_context = self._get_english_context(text, matched_terms)
+                        
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text[:300],
@@ -5491,6 +5569,10 @@ class LexiconsView(TemplateView):
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
+                            'detected_by':   model_info['model'],
+                            'confidence':    model_info['confidence'],
+                            'model_category': model_info['category'],
+                            'english_context': english_context,
                         })
 
                 logger.info(
@@ -5547,7 +5629,7 @@ class LexiconsView(TemplateView):
             severity_counts = Counter([m['severity'] for m in all_matches])
 
             if selected_category and category_terms:
-                # Category view: show every term, sorted by hit count
+                # Category view: show every term from this category, sorted by hit count
                 top_terms_with_meta = sorted(
                     [{'term': td['term'],
                       'count': term_counts.get(td['term'], 0),
