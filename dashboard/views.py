@@ -5275,7 +5275,7 @@ class NarrativesView(TemplateView):
 
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
- 
+
     def _get_lexicon_term_count(self):
         """Count total terms in CONFIG lexicon + Database."""
         try:
@@ -5284,7 +5284,7 @@ class LexiconsView(TemplateView):
             return total
         except Exception:
             return "1000+"
- 
+
     def _scan_post(self, text: str, category_filter=None):
         """
         Scan one post's text.  Returns a (possibly empty) list of match dicts
@@ -5292,12 +5292,9 @@ class LexiconsView(TemplateView):
         """
         if not text or len(text.strip()) < 10:
             return []
- 
         text_lower = text.lower()
         is_innocuous = bool(_INNOCUOUS_RE.search(text_lower))
- 
         raw_matches = scan_text_for_lexicon_terms(text, category_filter=category_filter)
- 
         filtered = []
         for m in raw_matches:
             if len(m['term'].strip()) <= 1:
@@ -5305,22 +5302,21 @@ class LexiconsView(TemplateView):
             if _is_genuine_match(m['term'], text_lower,
                                   m.get('severity', 'medium'), is_innocuous):
                 filtered.append(m)
- 
         return filtered
- 
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
- 
-        # ── 1. URL params ──────────────────────────────────────────────────
+        
+        # ── 1. URL params ─────────────────────────────────────────────────
         selected_category = self.request.GET.get('category', '').strip()
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
- 
+
         # ── 2. Cache (overview only, keyed to date range) ─────────────────
         cache_key = f"lexicon_dashboard_v4_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
- 
+
         if cached_data and not selected_category:
             context.update(cached_data)
             context['ai_insights']  = cache.get("lexicons_ai_insights_v1")
@@ -5330,17 +5326,16 @@ class LexiconsView(TemplateView):
             context['category_terms']    = []
             context['posts_with_terms']  = []
             return context
- 
+
         # ── 3. Fetch posts ─────────────────────────────────────────────────
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(
                 self.request)
             # Mapped Lexicons should reflect social media activity only —
             # exclude Media/News wire content (not actual social posts).
-            # icontains (not iexact) so variants like 'News/Media' are caught too.
             filtered_posts = (filtered_posts
-                               .exclude(platform__icontains='media')
-                               .exclude(platform__icontains='news'))
+                              .exclude(platform__icontains='media')
+                              .exclude(platform__icontains='news'))
             total_posts = filtered_posts.count()
         except Exception as e:
             logger.error(f"LexiconsView: error fetching posts: {e}")
@@ -5355,26 +5350,26 @@ class LexiconsView(TemplateView):
                 'category_terms': [], 'posts_with_terms': [],
             })
             return context
- 
+
         start_str = (start_date.date().isoformat()
                      if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat()
                      if hasattr(end_date, 'date') else str(end_date))
- 
+
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         category_terms  = []
         posts_with_terms = []
         all_matches     = []
         posts_scanned   = 0
- 
+
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category}")
- 
+            
             # Load terms (medium/high/critical only — skip 'low')
             db_terms = LexiconTerm.objects.filter(
                 category=selected_category
             ).exclude(severity='low')
- 
+            
             if db_terms.exists():
                 category_terms = [
                     {'term': t.term, 'severity': t.severity,
@@ -5390,26 +5385,25 @@ class LexiconsView(TemplateView):
                     for t, m in CONFIG['lexicon'][selected_category].items()
                     if m.get('severity', 'medium') != 'low'
                 ]
- 
+
             logger.info(f"  {len(category_terms)} terms loaded for {selected_category}")
- 
+
             if category_terms:
                 # Build a fast lookup: term_lower → metadata
                 term_meta = {
                     td['term'].lower(): td for td in category_terms
                     if len(td['term']) > 1
                 }
- 
+                
                 # Scan ALL posts (iterator = memory efficient)
                 for post in filtered_posts.iterator(chunk_size=500):
                     if not post.original_text:
                         continue
- 
                     text       = post.original_text
                     text_lower = text.lower()
                     is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
- 
                     matched_terms = []
+
                     for term_lower, meta in term_meta.items():
                         if not _is_genuine_match(
                                 term_lower, text_lower,
@@ -5423,7 +5417,7 @@ class LexiconsView(TemplateView):
                             'target_entity': meta.get('target_entity', ''),
                             'language':      meta.get('language', ''),
                         })
- 
+
                     if matched_terms:
                         posts_scanned += 1
                         posts_with_terms.append({
@@ -5434,19 +5428,19 @@ class LexiconsView(TemplateView):
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
                         })
- 
+
                 logger.info(
                     f"  Category scan complete: {posts_scanned} posts matched "
                     f"out of {total_posts}"
                 )
- 
+
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             # Trigger background AI analysis if not already running
             cache_key_ai  = "lexicons_ai_insights_v1"
             ai_insights   = cache.get(cache_key_ai)
             ai_is_running = cache.get("lexicons_ai_running")
- 
+
             if not ai_insights and not ai_is_running and total_posts > 10:
                 cache.set("lexicons_ai_running", True, 300)
                 post_ids    = list(filtered_posts.values_list('id', flat=True)[:1000])
@@ -5458,11 +5452,11 @@ class LexiconsView(TemplateView):
                 )
                 t.start()
                 logger.info("LexiconsView: background AI analysis triggered")
- 
+
             logger.info(
                 f"LexiconsView: overview scan of {total_posts} posts …"
             )
- 
+
             # Scan ALL posts — no arbitrary cap
             for post in filtered_posts.iterator(chunk_size=1000):
                 if not post.original_text:
@@ -5475,19 +5469,19 @@ class LexiconsView(TemplateView):
                 except Exception as e:
                     logger.warning(f"Scan error post {post.id}: {e}")
                     continue
- 
+
             logger.info(
                 f"LexiconsView: overview scan done — "
                 f"{posts_scanned} posts with matches, "
                 f"{len(all_matches)} total matches"
             )
- 
+
         # ── 5. Aggregate analytics ─────────────────────────────────────────
         try:
             term_counts     = Counter([m['term']     for m in all_matches])
             category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
- 
+
             if selected_category and category_terms:
                 # Category view: show every term, sorted by hit count
                 top_terms_with_meta = sorted(
@@ -5525,7 +5519,7 @@ class LexiconsView(TemplateView):
             top_terms_with_meta = []
             category_counts     = Counter()
             severity_counts     = Counter()
- 
+
         # ── 6. Word cloud (overview only) ──────────────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
@@ -5540,7 +5534,7 @@ class LexiconsView(TemplateView):
                     wordcloud_base64 = wordcloud_to_base64(wc)
             except Exception as e:
                 logger.warning(f"Word cloud error: {e}")
- 
+
         # ── 7. Targeted entities (overview only) ───────────────────────────
         targeted_entities = []
         if not selected_category:
@@ -5571,7 +5565,7 @@ class LexiconsView(TemplateView):
                 ]
             except Exception as e:
                 logger.error(f"Entity extraction error: {e}")
- 
+
         # ── 8. Build context ───────────────────────────────────────────────
         shared = {
             'active_tab':        'lexicons',
@@ -5585,7 +5579,7 @@ class LexiconsView(TemplateView):
             'end_date':          end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
         }
- 
+
         if not selected_category:
             shared['wordcloud_base64']  = wordcloud_base64
             shared['targeted_entities'] = targeted_entities
@@ -5594,7 +5588,7 @@ class LexiconsView(TemplateView):
         else:
             shared['wordcloud_base64']  = None
             shared['targeted_entities'] = []
- 
+
         context.update(shared)
         context['ai_insights']     = cache.get("lexicons_ai_insights_v1")
         context['ai_is_running']   = (cache.get("lexicons_ai_running")
@@ -5602,43 +5596,50 @@ class LexiconsView(TemplateView):
         context['selected_category'] = selected_category
         context['category_terms']    = category_terms
         context['posts_with_terms']  = posts_with_terms[:100]  # up to 100
- 
         return context
- 
+
     @staticmethod
     def _run_ai_analysis_background(post_ids, cache_key):
-        """Runs Gemma model in background thread and saves results to cache."""
+        """
+        Runs AFRO-XLMR model in background thread and saves results to cache.
+        (Replaces the old Gemma background task)
+        """
         import traceback
         logger.info(f"Background AI analysis STARTED for {len(post_ids)} posts")
         try:
             from .utils.hate_speech_detector import get_hate_speech_detector
             from .models import ProcessedPost
- 
-            logger.info("Loading Gemma model …")
+            
+            logger.info("Loading AFRO-XLMR model …")
             detector = get_hate_speech_detector()
-            logger.info("Gemma model loaded.")
- 
+            
+            if detector is None:
+                logger.error("AFRO-XLMR detector failed to load.")
+                return
+                
+            logger.info("AFRO-XLMR model loaded.")
             posts = ProcessedPost.objects.filter(id__in=post_ids)
             category_counts = Counter()
             total_analyzed  = 0
- 
-            gemma_severity_map = {
-                'violence': 'critical', 'inciteful': 'critical',
-                'call for action': 'critical', 'dehumanization': 'critical',
-                'extremism': 'high', 'ethnic slur': 'high', 'slur': 'high',
-                'misogynistic': 'high', 'derogatory': 'medium',
-                'inflammatory': 'high', 'gender disinformation': 'high',
-                'stereotype': 'high', 'homophobic': 'high',
-                'ethnicity': 'high', 'xenophobia': 'high', 'religion': 'high',
-                'ancestry': 'low', 'class': 'low', 'structural': 'low',
+            
+            # Severity map matching AFRO-XLMR output categories
+            afro_severity_map = {
+                'Violence': 'critical', 'Inciteful': 'critical',
+                'Call for action': 'critical', 'Dehumanization': 'critical',
+                'Extremism': 'high', 'Ethnic slur': 'high', 'Slur': 'high',
+                'Misognistic': 'high', 'Deragatory': 'medium',
+                'Inflammatory': 'high', 'Gender disinformation': 'high',
+                'Stereotype': 'high', 'Homophobic': 'high',
+                'Ethnicity': 'high', 'Xenophobia': 'high', 'Religion': 'high',
+                'Ancestry': 'medium', 'Class': 'low', 'Stractural': 'low',
             }
- 
+            
             for idx, post in enumerate(posts):
                 if post.original_text and len(post.original_text) > 20:
                     try:
                         result = detector.detect(post.original_text)
                         cat = result.get('category')
-                        if cat and cat not in ['neutral', 'error']:
+                        if cat and cat not in ['Neutral', 'error']:
                             category_counts[cat] += 1
                             total_analyzed += 1
                         if (idx + 1) % 10 == 0:
@@ -5646,7 +5647,7 @@ class LexiconsView(TemplateView):
                                 f"Progress: {idx + 1}/{posts.count()} posts")
                     except Exception as e:
                         logger.warning(f"Scan failed post {post.id}: {e}")
- 
+                        
             total_hateful = sum(category_counts.values())
             ai_results = [
                 {
@@ -5654,15 +5655,17 @@ class LexiconsView(TemplateView):
                     'count':      count,
                     'percentage': round(count / total_analyzed * 100, 1)
                                   if total_analyzed else 0,
-                    'severity':   gemma_severity_map.get(cat, 'medium'),
+                    'severity':   afro_severity_map.get(cat, 'medium'),
                 }
                 for cat, count in category_counts.most_common(5)
             ]
+            
             cache.set(cache_key, {
                 'results':        ai_results,
                 'total_analyzed': total_analyzed,
                 'total_hateful':  total_hateful,
             }, 86400)
+            
             logger.info(
                 f"Background analysis COMPLETE: {total_hateful} hateful "
                 f"/ {total_analyzed} analysed."
@@ -5675,19 +5678,8 @@ class LexiconsView(TemplateView):
                 'total_hateful': 0, 'error': str(e),
             }, 3600)
         finally:
-            cache.delete("lexicons_ai_running")
+            cache.delete("lexicons_analysis_running")
             logger.info("Background thread finished and cleaned up.")
-           
-class PEPsHubView(TemplateView):
-    template_name = 'dashboard/peps_hub.html'
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        #  Clear default ordering before distinct() to prevent duplicates
-        context['files'] = ElectionOfficeholder.objects.order_by().values('source_file').annotate(
-            total=Count('id')
-        ).order_by('source_file')
-        return context
 
 class PEPsDataView(TemplateView):
     template_name = 'dashboard/peps_data.html'
