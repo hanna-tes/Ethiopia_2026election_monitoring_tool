@@ -1,4 +1,4 @@
- {% extends 'dashboard/base.html' %}
+{% extends 'dashboard/base.html' %}
 {% block title %}Mapped Lexicons - Hateful Content Detection{% endblock %}
 
 {% block content %}
@@ -8,14 +8,14 @@
     <div class="flex justify-between items-center mb-6">
         <div>
             <h2 class="text-2xl font-bold text-white">🗣️ Mapped Lexicons</h2>
-            <p class="text-gray-400 mt-1">Detecting hateful terms and content in posts using rule-based lexicon + Gemma-4 LoRA model</p>
+            <p class="text-gray-400 mt-1">Detecting hateful terms and content in posts using rule-based lexicon + AFRO-XLMR model</p>
         </div>
         <div class="flex gap-2">
             <span class="px-3 py-1 bg-blue-900/50 text-blue-200 rounded-full text-sm font-medium border border-blue-700">
                  {{ posts_scanned|default:0 }} posts scanned
             </span>
             <span class="px-3 py-1 bg-purple-900/50 text-purple-200 rounded-full text-sm font-medium border border-purple-700">
-                🎯 {{ total_matches|default:0 }} lexicon matches
+                 {{ total_matches|default:0 }} lexicon matches
             </span>
             <span class="px-3 py-1 bg-green-900/50 text-green-200 rounded-full text-sm font-medium border border-green-700">
                 📚 {{ lexicon_term_count|default:"1000+" }} terms
@@ -44,20 +44,20 @@
             </div>
         </div>
 
-        <!-- Engine 2: Gemma LoRA AI Model -->
+        <!-- Engine 2: AFRO-XLMR AI Model -->
         <div class="bg-gradient-to-r from-purple-900/40 to-purple-800/30 border-l-4 border-purple-500 p-4 rounded-lg">
             <div class="flex items-start gap-3">
-                <div class="text-3xl">🤖</div>
+                <div class="text-3xl"></div>
                 <div class="flex-1">
-                    <h3 class="font-bold text-purple-300 text-lg">Engine 2: Gemma LoRA Model</h3>
+                    <h3 class="font-bold text-purple-300 text-lg">Engine 2: AFRO-XLMR Model</h3>
                     <p class="text-sm text-purple-200 mt-1">
-                        Fine-tuned <strong class="text-purple-100">Gemma-4 4-bit</strong> model analyzes context & nuance.
+                        Fine-tuned <strong class="text-purple-100">AFRO-XLMR</strong> model analyzes context & nuance in Amharic, Oromo, and Tigrinya.
                         Catches implicit hate speech, sarcasm, and coded language.
                     </p>
                     <div class="mt-2 flex gap-2 flex-wrap">
                         <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">Context-Aware</span>
-                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">19 Categories</span>
-                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">4-bit Quantized</span>
+                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">20 Categories</span>
+                        <span class="px-2 py-0.5 bg-purple-800 text-purple-100 rounded text-xs border border-purple-600">Ethiopian Languages</span>
                     </div>
                 </div>
             </div>
