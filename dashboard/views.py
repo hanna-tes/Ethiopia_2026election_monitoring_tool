@@ -591,13 +591,11 @@ def export_gephi_edges_with_roles_csv(request):
 def export_gephi_edges_tweets_csv(request):
     """Export Edges + Tweets CSV for Gephi"""
     edges, _ = _get_coordination_edges()
-    
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="gephi_edges_tweets.csv"'
-    
     writer = csv.writer(response)
-    writer.writerow(['Source', 'Target', 'Tweet', 'Date', 'Platform', 'URL'])
-    
+    # Updated header: removed Platform, keeping Source, Target, Tweet, Date, URL
+    writer.writerow(['Source', 'Target', 'Tweet', 'Date', 'URL'])
     for edge in edges:
         # Truncate long tweets to prevent CSV issues
         tweet_text = edge['tweet'][:200].replace('\n', ' ').replace('\r', '')
@@ -606,10 +604,8 @@ def export_gephi_edges_tweets_csv(request):
             edge['target'], 
             tweet_text,
             edge['date'],
-            edge['platform'],
             edge['url']
         ])
-        
     return response
     
 def export_network_edges_with_tweets(request):
