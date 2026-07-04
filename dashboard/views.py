@@ -55,7 +55,7 @@ from typing import List, Dict, Any, Optional
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
 from django.contrib.auth.decorators import login_required
-from .utils.afro_xlmr_detector import get_afro_xlmr_detector
+from .utils.afro_xlmr_detector import get_detector
 
 
 
@@ -111,7 +111,7 @@ def detect_hate_speech_afro_xlmr(text: str) -> dict:
     Separate from Gemma model to avoid confusion
     """
     try:
-        detector = get_afro_xlmr_detector()
+        detector = get_detector()
         return detector.detect(text)
     except Exception as e:
         logger.error(f"AFRO-XLMR detection failed: {e}")
@@ -6238,8 +6238,8 @@ class LexiconManagementView(TemplateView):
                 
                 # 5. AFRO-XLMR Model detection (specialized for Ethiopian languages)
                 try:
-                   from .utils.afro_xlmr_detector import get_afro_xlmr_detector
-                   afro_detector = get_afro_xlmr_detector()
+                   from .utils.afro_xlmr_detector import get_detector
+                   afro_detector = get_detector()
                    afro_result = afro_detector.detect(text)
                 except Exception as e:
                    logger.error(f"AFRO-XLMR detection failed: {e}")
