@@ -2,15 +2,15 @@ import os
 import logging
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from django.conf import settings 
 
 logger = logging.getLogger(__name__)
 
-# --- MODEL PATH CONFIGURATION ---
-# __file__ is dashboard/utils/afro_xlmr_detector.py
-# 1st dirname -> dashboard/utils/
-# 2nd dirname -> dashboard/
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(_BASE_DIR, 'models_cache', 'afro_xlmr')
+# Use Django's BASE_DIR for bulletproof path resolution ---
+# settings.BASE_DIR points to /home/ubuntu/Ethiopia_2026election_monitoring_tool/
+MODEL_PATH = os.path.join(settings.BASE_DIR, 'dashboard', 'models_cache', 'afro_xlmr')
+
+logger.info(f"🎯 AFRO-XLMR Model Path: {MODEL_PATH}")
 
 # Global cache
 _AFRO_XLMR_MODEL = None
