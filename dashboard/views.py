@@ -55,7 +55,8 @@ from typing import List, Dict, Any, Optional
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
 from django.contrib.auth.decorators import login_required
-   
+from .utils.afro_xlmr_detector import get_afro_xlmr_detector
+
 
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,24 @@ WEAPONIZED_KEYWORDS = [
     'PP', 'nafxanyaa'
 ]
 
-
+def detect_hate_speech_afro_xlmr(text: str) -> dict:
+    """
+    Detect hate speech using AFRO-XLMR model
+    Separate from Gemma model to avoid confusion
+    """
+    try:
+        detector = get_afro_xlmr_detector()
+        return detector.detect(text)
+    except Exception as e:
+        logger.error(f"AFRO-XLMR detection failed: {e}")
+        return {
+            'is_hate_speech': False,
+            'confidence': 0.0,
+            'category': 'error',
+            'severity': 'low',
+            'error': str(e)
+        }
+       
 @login_required
 def export_merged_gephi_csv(request):
     """Generates and downloads a Gephi-compatible CSV edge-list representing the coordination network"""
@@ -6069,11 +6087,37 @@ class LexiconManagementView(TemplateView):
                 except Exception as e:
                    logger.error(f"Gemma detection failed: {e}")
                    gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'error': 'Model not loaded - using LLM + Lexicon only'}
-                # 5. Determine final verdict - LLM HAS PRIORITY
+                
+                # 5. AFRO-XLMR Model detection (specialized for Ethiopian languages)
+                try:
+                   from .utils.afro_xlmr_detector import get_afro_xlmr_detector
+                   afro_detector = get_afro_xlmr_detector()
+                   afro_result = afro_detector.detect(text)
+                except Exception as e:
+                   logger.error(f"AFRO-XLMR detection failed: {e}")
+                   afro_result = {
+                       'is_hate_speech': False,
+                       'confidence': 0.0,
+                       'category': 'error',
+                       'severity': 'low',
+                       'language_detected': 'unknown',
+                       'error': 'AFRO-XLMR model not loaded'
+                   }
+
+                # 6. Determine final verdict - AFRO-XLMR HAS HIGHEST PRIORITY (Ethiopian languages)
                 is_hate_speech = False
                 overall_severity_num = 1
                 explanation = ""
+                model_used = ""
 
+                # AFRO-XLMR results
+                afro_is_hate = afro_result.get('is_hate_speech', False)
+                afro_confidence = afro_result.get('confidence', 0)
+                afro_category = afro_result.get('category', 'neutral')
+                afro_severity = afro_result.get('severity', 'low')
+                afro_language = afro_result.get('language_detected', 'unknown')
+                
+                # LLM results
                 llm_is_hate = llm_result.get('is_hate_speech', False)
                 llm_confidence = llm_result.get('confidence', 0)
                 llm_explanation = llm_result.get('explanation', '').lower()
@@ -6089,19 +6133,28 @@ class LexiconManagementView(TemplateView):
                     llm_is_hate = True
                     llm_confidence = max(llm_confidence, 0.75)
                 
-                # PRIORITY 1: LLM says hate speech
-                if llm_is_hate and llm_confidence >= 0.6:
+                # PRIORITY 1: AFRO-XLMR (specialized for Ethiopian languages)
+                if afro_is_hate and afro_confidence >= 0.6:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_severity, 2)
+                    explanation = f"AFRO-XLMR detected {afro_category} in {afro_language} ({afro_confidence*100:.0f}% confidence)"
+                    model_used = "AFRO-XLMR"
+                
+                # PRIORITY 2: LLM says hate speech
+                elif llm_is_hate and llm_confidence >= 0.6:
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
                     explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
+                    model_used = "LLM"
                 
-                # PRIORITY 2: Lexicon finds high-risk terms
+                # PRIORITY 3: Lexicon finds high-risk terms
                 elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
                     explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
+                    model_used = "Lexicon"
                 
-                # PRIORITY 3: Default to not hate speech
+                # PRIORITY 4: Default to not hate speech
                 else:
                     is_hate_speech = False
                     overall_severity_num = 1
@@ -6109,11 +6162,14 @@ class LexiconManagementView(TemplateView):
                         explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
                     else:
                         explanation = "No hate speech detected by any method."
+                    model_used = "None"
                 
                 severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
                 
                 # Create combined analysis
                 analysis_parts = []
+                if afro_result.get('category') != 'error':
+                    analysis_parts.append(f"AFRO-XLMR ({afro_language}): {afro_category} ({afro_confidence*100:.0f}%)")
                 if llm_result.get('explanation'):
                     analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
                 if lexicon_matches:
@@ -6128,21 +6184,24 @@ class LexiconManagementView(TemplateView):
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
                     'gemma_result': gemma_result,
+                    'afro_xlmr_result': afro_result,
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity_num],
-                    'overall_confidence': round(llm_confidence, 2),
-                    'overall_confidence_pct': f"{round(llm_confidence * 100)}%",
+                    'overall_confidence': max(afro_confidence, llm_confidence),
+                    'overall_confidence_pct': f"{round(max(afro_confidence, llm_confidence) * 100)}%",
                     'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
                     'targeted_groups': llm_result.get('targeted_groups', []),
-                    'explanation': llm_result.get('explanation', ''),
+                    'explanation': explanation,
                     'analysis': combined_analysis,
                     'has_lexicon_matches': len(lexicon_matches) > 0,
                     'new_trigger_terms': new_terms,
                     'has_new_terms': len(new_terms) > 0,
+                    'model_used': model_used,
+                    'afro_language_detected': afro_language,
                 }
                 
                 if is_hate_speech:
-                    messages.warning(request, f"Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {llm_confidence*100:.0f}%)")
+                    messages.warning(request, f"Potential hate speech detected by {model_used}! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {max(afro_confidence, llm_confidence)*100:.0f}%)")
                     if new_terms:
                         messages.info(request, f"{len(new_terms)} new trigger terms extracted for review.")
                 else:
@@ -6687,3 +6746,30 @@ def trigger_llm_scan_api(request):
             'success': False,
             'message': 'Scan already in progress. Please wait.'
         }, status=429)
+       
+def scan_text_afro_xlmr_api(request):
+    """API endpoint for AFRO-XLMR hate speech scanning"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    text = request.POST.get('text', '')
+    if not text:
+        return JsonResponse({'error': 'No text provided'}, status=400)
+    
+    # Use AFRO-XLMR for detection
+    afro_result = detect_hate_speech_afro_xlmr(text)
+    
+    # Also run lexicon-based detection for comparison
+    lexicon_matches = scan_text_for_lexicon_terms(text)
+    lexicon_risk = calculate_risk_score(lexicon_matches)
+    
+    # Combine results
+    return JsonResponse({
+        'afro_xlmr': afro_result,
+        'lexicon': {
+            'matches': lexicon_matches,
+            'risk': lexicon_risk
+        },
+        'model_used': 'AFRO-XLMR',
+        'text_length': len(text)
+    })
