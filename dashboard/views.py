@@ -5681,6 +5681,18 @@ class LexiconsView(TemplateView):
             cache.delete("lexicons_analysis_running")
             logger.info("Background thread finished and cleaned up.")
 
+
+class PEPsHubView(TemplateView):
+    template_name = 'dashboard/peps_hub.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        #  Clear default ordering before distinct() to prevent duplicates
+        context['files'] = ElectionOfficeholder.objects.order_by().values('source_file').annotate(
+            total=Count('id')
+        ).order_by('source_file')
+        return context
+        
 class PEPsDataView(TemplateView):
     template_name = 'dashboard/peps_data.html'
     
