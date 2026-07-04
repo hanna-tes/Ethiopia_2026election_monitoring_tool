@@ -1907,18 +1907,10 @@ def analyze_ttps(coordination_groups, posts):
         numeric = [re.findall(r'\d+', acc) for acc in accounts]
         numeric = [int(p[0]) for p in numeric if p]
         if len(numeric) >= 3:
-            diffs = [numbers[i+1] - numbers[i] for i in range(len(numbers)-1)]
+            # FIX: Use 'numeric' instead of 'numbers'
+            diffs = [numeric[i+1] - numeric[i] for i in range(len(numeric)-1)]
             if any(d == 1 for d in diffs[:3]):
                 cluster_groups.append(g)
-    if cluster_groups:
-        evidence = [make_evidence(p, f"Account has sequential numbering pattern.") for p in cluster_groups[0].get('sample_posts_with_urls', [])[:3]]
-        ttps.append({
-            'name': 'Account Clustering (Sequential Patterns)',
-            'description': f'{len(cluster_groups)} group(s) contain accounts with sequential numbering.',
-            'severity': 'High',
-            'evidence': 'Accounts likely created in batches.',
-            'example_posts': evidence
-        })
 
     # TTP 11: Content Recycling
     recycle_groups = []
