@@ -119,7 +119,8 @@ def get_hate_speech_detector():
     global _detector_instance
     if _detector_instance is None:
         # We will place your model files in this folder on EC2
-        model_path = os.path.join(os.path.dirname(__file__), 'lexicon_model')
+        _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        model_path = os.path.join(_BASE_DIR, 'models_cache', 'afro_xlmr')
         if not os.path.exists(model_path):
             logger.error(f"Model path {model_path} not found. Ensure you uploaded the model folder.")
             return None 
