@@ -72,6 +72,10 @@ SEVERITY_MAP = {
     'Neutral': 'low'
 }
 
+_UTILS_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_DIR = os.path.dirname(_UTILS_DIR)  
+MODEL_PATH = os.path.join(_PROJECT_DIR, 'models_cache', 'afro_xlmr')
+
 class HateSpeechDetector:
     def __init__(self, model_path):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
