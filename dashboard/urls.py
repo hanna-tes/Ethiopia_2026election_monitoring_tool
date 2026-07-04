@@ -19,6 +19,9 @@ urlpatterns = [
     #path('export-merged-gephi/', views.export_merged_gephi_csv, name='export_merged_gephi_csv'),
     path('networks/export/gephi-edges/', views.export_gephi_edges_csv, name='export_gephi_edges_csv'),
     path('api/trigger-llm-scan/', views.trigger_llm_scan_api, name='trigger_llm_scan'),
+
+    # AFRO-XLMR specific endpoints
+    path('api/scan-text-afro-xlmr/', views.scan_text_afro_xlmr_api, name='scan_text_afro_xlmr'),
      
     
     # === PEPs DATA VIEWS (FIXED CONFLICT) ===
