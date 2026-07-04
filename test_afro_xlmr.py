@@ -1,67 +1,74 @@
 #!/usr/bin/env python
 """
-Test script for AFRO-XLMR model
-Run this locally before deploying to production
+Test script for AFRO-XLMR hate speech detector
+Run from project root: python test_afro_xlmr.py
 """
 import os
 import sys
-import django
 
-# Setup Django
-sys.path.append('/path/to/your/project')  # Update this path
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'your_project.settings')
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Set the correct Django settings module
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Ethiopia_2026election_monitoring_tool.settings')
+
+import django
 django.setup()
 
-from dashboard.utils.afro_xlmr_detector import get_afro_xlmr_detector
+from dashboard.utils.hate_speech_detector import get_hate_speech_detector
 
-def test_afro_xlmr():
-    """Test AFRO-XLMR detector with sample texts"""
+def test_detector():
+    """Test the AFRO-XLMR detector with sample texts"""
     
-    # Test cases in different Ethiopian languages
-    test_texts = [
-        # Amharic - Hate speech example (Fixed "ክ" to "ክፉ")
-        "ይህ ሰው በጣም ክፉ ነው እሱን ማጥፋት አለብን።",
+    print("=" * 70)
+    print("🧪 Testing AFRO-XLMR Hate Speech Detector")
+    print("=" * 70)
+    
+    # Initialize detector
+    detector = get_hate_speech_detector()
+    if detector is None:
+        print("❌ Failed to load model. Check the path and try again.")
+        return
+    
+    print("✅ Model loaded successfully!\n")
+    
+    # Test cases
+    test_cases = [
+        # Amharic examples (Fixed: ሰች -> ሰዎች, ዝብ -> ህዝብ, ይር -> ይኑር)
+        ("እነዚህ ሰዎች እንስሳ ናቸው። መግደል አለብን።", "Amharic - Dehumanization + Violence"),
+        ("የኦሮሞ ህዝብ በጣም ጥሩ ነው ሰላም ይኑር።", "Amharic - Neutral/Positive"),
+        ("ትግሬ ሌባ ነው ወያኔ ይውደም።", "Amharic - Ethnic slur + Incitement"),
         
-        # Amharic - Neutral (Fixed "ዛ" to "ዛሬ")
-        "ዛሬ ጥሩ ቀን ነው። ለስራ እሄዳለሁ።",
+        # Oromo examples
+        ("Namni kun hamaa dha. Ajjeesuu qabna.", "Oromo - Dehumanization + Violence"),
+        ("Oromoon nagaa fi jaalala.", "Oromo - Neutral/Positive"),
         
-        # Oromo - Offensive
-        "Namni kun baay'ee hamaa dha. Isa fixuu qabna.",
+        # English examples
+        ("These people are animals and should be eliminated", "English - Dehumanization"),
+        ("The election was fair and transparent", "English - Neutral"),
+        ("Kill all the woyane supporters now", "English - Violence + Incitement"),
         
-        # English - Threat
-        "I will destroy this person and their family",
-        
-        # Mixed - Hate speech
-        "These people are animals and should be eliminated"
+        # Mixed / Ethnic slurs (Fixed: ነፍኛ -> ነፍጠኛ, ላ -> ሌባ)
+        ("ነፍጠኛ ፋኖ ሌባ ናቸው።", "Mixed - Ethnic slurs"),
     ]
     
-    print("="*70)
-    print("Testing AFRO-XLMR Hate Speech Detector")
-    print("="*70)
+    print(f"Running {len(test_cases)} test cases...\n")
     
-    detector = get_afro_xlmr_detector(model_path="/path/to/your/model")  # Update path
-    
-    for i, text in enumerate(test_texts, 1):
-        print(f"\n[Test {i}]")
-        print(f"Text: {text[:80]}{'...' if len(text) > 80 else ''}")
-        print("-" * 70)
-        
+    for text, description in test_cases:
         result = detector.detect(text)
         
-        print(f"Is Hate Speech: {result.get('is_hate_speech')}")
-        print(f"Category: {result.get('category')}")
-        print(f"Severity: {result.get('severity')}")
-        print(f"Confidence: {result.get('confidence', 0)*100:.2f}%")
-        print(f"Language: {result.get('language_detected')}")
-        
+        print(f"📝 {description}")
+        print(f"   Text: {text[:60]}{'...' if len(text) > 60 else ''}")
+        print(f"   Category: {result.get('category', 'N/A')}")
+        print(f"   Confidence: {result.get('confidence', 0)*100:.1f}%")
+        print(f"   Severity: {result.get('severity', 'N/A')}")
+        print(f"   Is Hate Speech: {'🚨 YES' if result.get('is_hate_speech') else '✅ NO'}")
         if result.get('error'):
-            print(f"Error: {result.get('error')}")
-        
-        print()
+            print(f"   ⚠️  Error: {result.get('error')}")
+        print("-" * 70)
     
-    print("="*70)
-    print("Testing Complete!")
-    print("="*70)
+    print("\n✅ Testing complete!")
+
 
 if __name__ == "__main__":
-    test_afro_xlmr()
+    test_detector()
