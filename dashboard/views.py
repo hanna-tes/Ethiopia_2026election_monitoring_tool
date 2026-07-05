@@ -4717,7 +4717,66 @@ def _get_category_severity_display(category):
         'religious_cultural': 'low'
     }
     return severity_map.get(category, 'medium')
-   
+    
+def batch_translate_terms_llm(terms_list):
+    """
+    Use LLM to translate a batch of Amharic/Oromo terms to English with context.
+    Uses caching to avoid redundant API calls and improve page load speed.
+    """
+    if not terms_list:
+        return {}
+    
+    # Check cache first (Cache for 7 days)
+    cache_key = "llm_amharic_oromo_translations_v1"
+    cached_translations = cache.get(cache_key, {})
+    
+    # Filter out terms we already translated
+    terms_to_translate = [t for t in terms_list if t not in cached_translations]
+    
+    if not terms_to_translate:
+        return cached_translations
+    
+    # Limit to 50 terms per batch to avoid token limits
+    terms_to_translate = terms_to_translate[:50]
+    terms_str = "\n".join([f"- {t}" for t in terms_to_translate])
+    
+    prompt = f"""You are an expert linguist specializing in Ethiopian languages (Amharic, Oromo, Tigrinya) and English.
+Translate the following terms into English. Provide the literal meaning and any contextual nuance (e.g., if it's a slur, insult, dehumanizing term, or specific cultural reference).
+Return ONLY a valid JSON object where the keys are the exact original terms and the values are the English translations.
+
+Terms to translate:
+{terms_str}
+
+Example Output:
+{{
+  "ነፍጠኛ": "oppressor / exploiter (historical term for landlords, used as a political slur)",
+  "ሸርሙጣ": "whore / prostitute (highly offensive misogynistic slur)",
+  "የጭን ገረድ": "stupid girl / foolish woman (derogatory term against women)"
+}}
+"""
+    try:
+        # Use the existing safe_llm_call utility from your codebase
+        response = safe_llm_call(prompt, max_tokens=1024)
+        if not response:
+            return cached_translations
+        
+        # Extract JSON from response
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            new_translations = json.loads(json_match.group(0))
+            # Update cache
+            cached_translations.update(new_translations)
+            cache.set(cache_key, cached_translations, 86400 * 7) # Cache for 7 days
+            return cached_translations
+        else:
+            logger.warning("LLM translation response did not contain valid JSON.")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse LLM translation JSON: {e}")
+    except Exception as e:
+        logger.error(f"LLM batch translation failed: {e}")
+        
+    return cached_translations   
+    
 def analyze_pep_sentiment_groq(sample_texts, pep_name):
     """Use Groq to analyze the actual sentiment/criticality of posts mentioning a PEP"""
     if not sample_texts:
@@ -5364,77 +5423,6 @@ class LexiconsView(TemplateView):
                 filtered.append(m)
         return filtered
 
-    def _get_model_detection_info(self, text: str):
-        """
-        Run AFRO-XLMR model on text and return detection info.
-        Returns dict with model name, confidence, and category.
-        """
-        try:
-            from .utils.hate_speech_detector import get_hate_speech_detector
-            detector = get_hate_speech_detector()
-            
-            if detector is None:
-                return {
-                    'model': 'Lexicon',
-                    'confidence': 0.0,
-                    'category': 'Unknown',
-                    'severity': 'medium'
-                }
-            
-            result = detector.detect(text)
-            
-            # Determine which model detected it
-            if result.get('is_hate_speech') and result.get('confidence', 0) > 0.6:
-                return {
-                    'model': 'AFRO-XLMR',
-                    'confidence': result.get('confidence', 0),
-                    'category': result.get('category', 'Unknown'),
-                    'severity': result.get('severity', 'medium')
-                }
-            else:
-                return {
-                    'model': 'Lexicon',
-                    'confidence': 0.0,
-                    'category': 'Unknown',
-                    'severity': 'medium'
-                }
-        except Exception as e:
-            logger.warning(f"Model detection failed: {e}")
-            return {
-                'model': 'Lexicon',
-                'confidence': 0.0,
-                'category': 'Unknown',
-                'severity': 'medium'
-            }
-
-    def _get_english_context(self, text: str, matched_terms: list):
-        """
-        Get English context for Amharic terms.
-        Returns a brief English description of what was detected.
-        """
-        # Check if text contains Amharic characters
-        has_amharic = bool(re.search(r'[\u1200-\u137F]', text))
-        
-        if not has_amharic:
-            return None
-        
-        # Build context from matched terms
-        context_parts = []
-        for term in matched_terms[:3]:  # Limit to 3 terms
-            # Try to get metadata for this term
-            for cat, terms in CONFIG.get('lexicon', {}).items():
-                if term in terms:
-                    meta = terms[term]
-                    target = meta.get('target_entity', '')
-                    if target:
-                        context_parts.append(f"{term} → {target}")
-                    break
-        
-        if context_parts:
-            return " | ".join(context_parts)
-        
-        return "Contains Amharic hate speech terms"
-
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
@@ -5462,8 +5450,6 @@ class LexiconsView(TemplateView):
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(
                 self.request)
-            # Mapped Lexicons should reflect social media activity only —
-            # exclude Media/News wire content (not actual social posts).
             filtered_posts = (filtered_posts
                               .exclude(platform__icontains='media')
                               .exclude(platform__icontains='news'))
@@ -5496,7 +5482,6 @@ class LexiconsView(TemplateView):
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category}")
             
-            # Load terms ONLY from the selected category (medium/high/critical only)
             db_terms = LexiconTerm.objects.filter(
                 category=selected_category
             ).exclude(severity='low')
@@ -5520,7 +5505,6 @@ class LexiconsView(TemplateView):
             logger.info(f"  {len(category_terms)} terms loaded for {selected_category}")
 
             if category_terms:
-                # Build a fast lookup: term_lower → metadata
                 term_meta = {
                     td['term'].lower(): td for td in category_terms
                     if len(td['term']) > 1
@@ -5551,13 +5535,6 @@ class LexiconsView(TemplateView):
 
                     if matched_terms:
                         posts_scanned += 1
-                        
-                        # Get model detection info
-                        model_info = self._get_model_detection_info(text)
-                        
-                        # Get English context for Amharic terms
-                        english_context = self._get_english_context(text, matched_terms)
-                        
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text[:300],
@@ -5565,11 +5542,27 @@ class LexiconsView(TemplateView):
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
-                            'detected_by':   model_info['model'],
-                            'confidence':    model_info['confidence'],
-                            'model_category': model_info['category'],
-                            'english_context': english_context,
                         })
+
+                # ── 🚀 LLM TRANSLATION FOR NON-ENGLISH TERMS ──────────────────
+                unique_foreign_terms = set()
+                for p_dict in posts_with_terms:
+                    for term in p_dict['matched_terms']:
+                        # Check if term contains non-ASCII characters (Amharic/Oromo/Tigrinya)
+                        if re.search(r'[^\x00-\x7F]', term):
+                            unique_foreign_terms.add(term)
+                
+                translations_map = {}
+                if unique_foreign_terms:
+                    translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
+                
+                # Inject translations into the post dictionaries for the template
+                for p_dict in posts_with_terms:
+                    term_translations = []
+                    for term in p_dict['matched_terms']:
+                        if term in translations_map:
+                            term_translations.append(f"{term}: {translations_map[term]}")
+                    p_dict['english_translations'] = term_translations
 
                 logger.info(
                     f"  Category scan complete: {posts_scanned} posts matched "
@@ -5578,7 +5571,6 @@ class LexiconsView(TemplateView):
 
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
-            # Trigger background AI analysis if not already running
             cache_key_ai  = "lexicons_ai_insights_v1"
             ai_insights   = cache.get(cache_key_ai)
             ai_is_running = cache.get("lexicons_ai_running")
@@ -5593,13 +5585,12 @@ class LexiconsView(TemplateView):
                     daemon=True,
                 )
                 t.start()
-                logger.info("LexiconsView: background analysis triggered")
+                logger.info("LexiconsView: background AI analysis triggered")
 
             logger.info(
                 f"LexiconsView: overview scan of {total_posts} posts …"
             )
 
-            # Scan ALL posts — no arbitrary cap
             for post in filtered_posts.iterator(chunk_size=1000):
                 if not post.original_text:
                     continue
@@ -5625,7 +5616,6 @@ class LexiconsView(TemplateView):
             severity_counts = Counter([m['severity'] for m in all_matches])
 
             if selected_category and category_terms:
-                # Category view: show every term from this category, sorted by hit count
                 top_terms_with_meta = sorted(
                     [{'term': td['term'],
                       'count': term_counts.get(td['term'], 0),
@@ -5635,7 +5625,6 @@ class LexiconsView(TemplateView):
                     reverse=True,
                 )
             else:
-                # Overview: top 15 matched terms with metadata
                 top_terms_with_meta = []
                 for term, count in term_counts.most_common(15):
                     if len(term.strip()) <= 1:
@@ -5688,7 +5677,6 @@ class LexiconsView(TemplateView):
                     r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}',
                 ]
                 entities_found = Counter()
-                # Sample first 5 000 for entity extraction (fast heuristic)
                 for post in filtered_posts.iterator(chunk_size=500):
                     if not post.original_text:
                         continue
@@ -5698,7 +5686,6 @@ class LexiconsView(TemplateView):
                             entity = match[0] if isinstance(match, tuple) else match
                             if len(entity.strip()) >= 3:
                                 entities_found[entity.strip()] += 1
-                    # Soft cap at 5 000 unique entities processed
                     if sum(entities_found.values()) > 50000:
                         break
                 targeted_entities = [
@@ -5725,7 +5712,6 @@ class LexiconsView(TemplateView):
         if not selected_category:
             shared['wordcloud_base64']  = wordcloud_base64
             shared['targeted_entities'] = targeted_entities
-            # Cache overview results for 1 hour
             cache.set(cache_key, shared, 3600)
         else:
             shared['wordcloud_base64']  = None
@@ -5737,14 +5723,13 @@ class LexiconsView(TemplateView):
                                       and not context.get('ai_insights'))
         context['selected_category'] = selected_category
         context['category_terms']    = category_terms
-        context['posts_with_terms']  = posts_with_terms[:100]  # up to 100
+        context['posts_with_terms']  = posts_with_terms[:100]
         return context
 
     @staticmethod
     def _run_ai_analysis_background(post_ids, cache_key):
         """
         Runs AFRO-XLMR model in background thread and saves results to cache.
-        (Replaces the old Gemma background task)
         """
         import traceback
         logger.info(f"Background AI analysis STARTED for {len(post_ids)} posts")
@@ -5757,7 +5742,6 @@ class LexiconsView(TemplateView):
             
             if detector is None:
                 logger.error("AFRO-XLMR detector failed to load.")
-                cache.delete("lexicons_ai_running")
                 return
                 
             logger.info("AFRO-XLMR model loaded.")
@@ -5765,7 +5749,6 @@ class LexiconsView(TemplateView):
             category_counts = Counter()
             total_analyzed  = 0
             
-            # Severity map matching AFRO-XLMR output categories
             afro_severity_map = {
                 'Violence': 'critical', 'Inciteful': 'critical',
                 'Call for action': 'critical', 'Dehumanization': 'critical',
@@ -5821,8 +5804,7 @@ class LexiconsView(TemplateView):
                 'total_hateful': 0, 'error': str(e),
             }, 3600)
         finally:
-            # FIXED: Use consistent cache key name
-            cache.delete("lexicons_ai_running")
+            cache.delete("lexicons_analysis_running")
             logger.info("Background thread finished and cleaned up.")
 
 
