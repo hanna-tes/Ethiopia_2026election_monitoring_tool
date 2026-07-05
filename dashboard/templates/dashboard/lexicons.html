@@ -7,7 +7,7 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
-            <h2 class="text-2xl font-bold text-white">🗣️ Mapped Lexicons</h2>
+            <h2 class="text-2xl font-bold text-white">️ Mapped Lexicons</h2>
             <p class="text-gray-400 mt-1">Detecting hateful terms with AI-powered analysis + AFRO-XLMR model</p>
         </div>
         <div class="flex gap-2">
@@ -36,7 +36,7 @@
                         Fast, deterministic, catches explicit slurs and keywords.
                     </p>
                     <div class="mt-2 flex gap-2 flex-wrap">
-                        <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">አማራ</span>
+                        <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">አማ</span>
                         <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">neftegna</span>
                         <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">kill</span>
                     </div>
@@ -68,7 +68,7 @@
     <!-- SECTION 1: LEXICON ENGINE RESULTS (BLUE) -->
     <div class="mb-8 border-t border-blue-500/50 pt-6">
         <div class="flex items-center gap-3 mb-4">
-            <span class="text-3xl">📋</span>
+            <span class="text-3xl"></span>
             <div>
                 <h3 class="text-xl font-bold text-blue-300">Lexicon Engine Results</h3>
                 <p class="text-sm text-blue-400">Explicit keyword matches from the {{ lexicon_term_count|default:"1000+" }} term dictionary</p>
@@ -186,7 +186,7 @@
     {% if selected_category %}
     <div class="mb-8 border-t border-blue-500/50 pt-6">
         <div class="flex items-center gap-3 mb-4">
-            <span class="text-3xl">🎯</span>
+            <span class="text-3xl"></span>
             <div>
                 <h3 class="text-xl font-bold text-blue-300">Category: "{{ selected_category|title }}"</h3>
                 <p class="text-sm text-blue-400">Terms in this category and posts containing them</p>
@@ -196,7 +196,7 @@
         <!-- Category Terms from Lexicon (ONLY terms from selected category) -->
         {% if category_terms %}
         <div class="mb-6">
-            <h4 class="text-lg font-semibold text-gray-200 mb-3">📚 Terms in "{{ selected_category|title }}" Category ({{ category_terms|length }})</h4>
+            <h4 class="text-lg font-semibold text-gray-200 mb-3"> Terms in "{{ selected_category|title }}" Category ({{ category_terms|length }})</h4>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                 {% for term_data in category_terms %}
                 <div class="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-blue-500 transition-colors">
@@ -226,7 +226,7 @@
         </div>
         {% endif %}
 
-        <!-- Posts containing these terms (WITH MODEL INFO AND ENGLISH CONTEXT) -->
+        <!-- Posts containing these terms (WITH LLM TRANSLATIONS) -->
         {% if posts_with_terms %}
         <div class="mb-6">
             <h4 class="text-lg font-semibold text-gray-200 mb-3">📄 Posts with "{{ selected_category|title }}" Terms ({{ posts_with_terms|length }})</h4>
@@ -279,13 +279,30 @@
                     {% endif %}
                     
                     <!-- Matched Terms -->
-                    <div class="flex flex-wrap gap-2">
+                    <div class="flex flex-wrap gap-2 mb-3">
                         {% for term in post.matched_terms %}
                         <span class="px-2 py-1 bg-blue-900/50 text-blue-300 rounded text-xs border border-blue-700">
                             {{ term }}
                         </span>
                         {% endfor %}
                     </div>
+                    
+                    <!--  LLM English Translations (NOW INSIDE THE LOOP) -->
+                    {% if post.english_translations %}
+                    <div class="mt-3 p-3 bg-blue-950/40 rounded-lg border border-blue-800/50">
+                        <p class="text-xs text-blue-300 font-semibold mb-2 flex items-center gap-1">
+                            🌐 LLM English Translations & Context:
+                        </p>
+                        <ul class="text-xs text-blue-200 space-y-1.5">
+                            {% for trans in post.english_translations %}
+                            <li class="flex items-start gap-2">
+                                <span class="text-blue-400 mt-0.5">▸</span>
+                                <span>{{ trans }}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
