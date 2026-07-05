@@ -7,7 +7,7 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
-            <h2 class="text-2xl font-bold text-white">️ Mapped Lexicons</h2>
+            <h2 class="text-2xl font-bold text-white">🗣️ Mapped Lexicons</h2>
             <p class="text-gray-400 mt-1">Detecting hateful terms with AI-powered analysis + AFRO-XLMR model</p>
         </div>
         <div class="flex gap-2">
@@ -36,7 +36,7 @@
                         Fast, deterministic, catches explicit slurs and keywords.
                     </p>
                     <div class="mt-2 flex gap-2 flex-wrap">
-                        <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">አማ</span>
+                        <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">አማራ</span>
                         <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">neftegna</span>
                         <span class="px-2 py-0.5 bg-blue-800 text-blue-100 rounded text-xs font-mono border border-blue-600">kill</span>
                     </div>
@@ -68,7 +68,7 @@
     <!-- SECTION 1: LEXICON ENGINE RESULTS (BLUE) -->
     <div class="mb-8 border-t border-blue-500/50 pt-6">
         <div class="flex items-center gap-3 mb-4">
-            <span class="text-3xl"></span>
+            <span class="text-3xl">📋</span>
             <div>
                 <h3 class="text-xl font-bold text-blue-300">Lexicon Engine Results</h3>
                 <p class="text-sm text-blue-400">Explicit keyword matches from the {{ lexicon_term_count|default:"1000+" }} term dictionary</p>
@@ -139,7 +139,7 @@
         <!-- Word Cloud (ONLY SHOW IN OVERVIEW) -->
         {% if wordcloud_base64 and not selected_category %}
         <div class="bg-gray-800 rounded-lg p-4 border border-blue-700">
-            <h4 class="font-bold text-blue-300 mb-3">🌩️ Lexicon Trigger Word Cloud</h4>
+            <h4 class="font-bold text-blue-300 mb-3">️ Lexicon Trigger Word Cloud</h4>
             <div class="flex justify-center bg-gray-900 rounded p-2">
                 <img src="data:image/png;base64,{{ wordcloud_base64 }}" alt="Word Cloud" class="w-full max-w-3xl h-auto max-h-96 object-contain">
             </div>
@@ -229,7 +229,7 @@
         <!-- Posts containing these terms (WITH LLM TRANSLATIONS) -->
         {% if posts_with_terms %}
         <div class="mb-6">
-            <h4 class="text-lg font-semibold text-gray-200 mb-3">📄 Posts with "{{ selected_category|title }}" Terms ({{ posts_with_terms|length }})</h4>
+            <h4 class="text-lg font-semibold text-gray-200 mb-3"> Posts with "{{ selected_category|title }}" Terms ({{ posts_with_terms|length }})</h4>
             <div class="space-y-3">
                 {% for post in posts_with_terms %}
                 <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
@@ -287,7 +287,7 @@
                         {% endfor %}
                     </div>
                     
-                    <!--  LLM English Translations (NOW INSIDE THE LOOP) -->
+                    <!-- LLM English Translations (INSIDE THE LOOP) -->
                     {% if post.english_translations %}
                     <div class="mt-3 p-3 bg-blue-950/40 rounded-lg border border-blue-800/50">
                         <p class="text-xs text-blue-300 font-semibold mb-2 flex items-center gap-1">
@@ -318,7 +318,7 @@
     <!-- SECTION 3: TARGETED ENTITIES (ONLY IN OVERVIEW) -->
     {% if targeted_entities and not selected_category %}
     <div class="mb-8">
-        <h3 class="text-lg font-semibold text-gray-200 mb-4">🎯 Most Targeted Entities</h3>
+        <h3 class="text-lg font-semibold text-gray-200 mb-4"> Most Targeted Entities</h3>
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {% for entity in targeted_entities %}
             <div class="bg-purple-900/30 rounded-lg p-3 text-center border border-purple-700 hover:border-purple-500 hover:shadow-lg hover:shadow-purple-500/10 transition-all">
