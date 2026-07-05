@@ -4718,6 +4718,7 @@ def _get_category_severity_display(category):
     }
     return severity_map.get(category, 'medium')
     
+
 def batch_translate_terms_llm(terms_list):
     """
     Use LLM to translate a batch of Amharic/Oromo terms to English with context.
@@ -4740,18 +4741,29 @@ def batch_translate_terms_llm(terms_list):
     terms_to_translate = terms_to_translate[:50]
     terms_str = "\n".join([f"- {t}" for t in terms_to_translate])
     
-    prompt = f"""You are an expert linguist specializing in Ethiopian languages (Amharic, Oromo, Tigrinya) and English.
-Translate the following terms into English. Provide the literal meaning and any contextual nuance (e.g., if it's a slur, insult, dehumanizing term, or specific cultural reference).
-Return ONLY a valid JSON object where the keys are the exact original terms and the values are the English translations.
+    # FIXED PROMPT: Corrected historical context and accurate socio-political/harmful nuance mapping
+    prompt = f"""You are an expert linguist specializing in Ethiopian languages (Amharic, Oromo, Tigrinya) and hate speech/information operations analysis.
+
+These terms have been FLAGGED as potentially harmful in social media posts. Translate them into English, focusing on:
+1. The literal meaning
+2. How it's weaponized as an INSULT, SLUR, or DEROGATORY term in socio-political tensions (this is CRITICAL)
+3. The targeted demographic group or impact
+
+DO NOT provide neutral dictionary definitions. These are being used as narrative weapons.
 
 Terms to translate:
 {terms_str}
 
+Return ONLY a valid JSON object where:
+- Keys are the exact original terms
+- Values are translations that accurately explain the DEROGATORY/OFFENSIVE usage
+
 Example Output:
 {{
-  "ነፍጠኛ": "oppressor / exploiter (historical term for landlords, used as a political slur)",
-  "ሸርሙጣ": "whore / prostitute (highly offensive misogynistic slur)",
-  "የጭን ገረድ": "stupid girl / foolish woman (derogatory term against women)"
+  "ነፍጠኛ": "Literal: Rifleman/historical armed settler. Weaponized use: A highly charged political slur used to target and vilify specific ethnic groups (primarily Amhara), framing them as oppressors or historical expansionists.",
+  "ሸርሙጣ": "Literal: Whore / prostitute. Weaponized use: A highly offensive, derogatory misogynistic slur used to demean, humiliate, and target women.",
+  "ገረድ": "Literal: Maid / domestic worker / female servant. Weaponized use: Used derogatorily to belittle, diminish status, classist abuse, or imply subjugation.",
+  "የጭን ገረድ": "Literal: Concubine / personal maid. Weaponized use: A severely demeaning misogynistic slur denoting subjugation, objectification, or a woman who serves out of subservience."
 }}
 """
     try:
@@ -4760,8 +4772,15 @@ Example Output:
         if not response:
             return cached_translations
         
+        # Strip codeblock wrappers if returned by the LLM
+        response_text = response.strip()
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+            
         # Extract JSON from response
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        json_match = re.search(r'\{.*\}', response_text.strip(), re.DOTALL)
         if json_match:
             new_translations = json.loads(json_match.group(0))
             # Update cache
@@ -4775,7 +4794,7 @@ Example Output:
     except Exception as e:
         logger.error(f"LLM batch translation failed: {e}")
         
-    return cached_translations   
+    return cached_translations
     
 def analyze_pep_sentiment_groq(sample_texts, pep_name):
     """Use Groq to analyze the actual sentiment/criticality of posts mentioning a PEP"""
