@@ -4333,30 +4333,30 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
     existing_terms = set()
     if existing_matches:
         existing_terms = set(m['term'].lower() for m in existing_matches)
-    
     for category, terms in CONFIG.get('lexicon', {}).items():
         existing_terms.update(t.lower() for t in terms.keys())
     
     existing_list = ', '.join(list(existing_terms)[:50])
     
-    # BULLETPROOF PROMPT: No triple quotes, no f-string curly brace escaping
+    # Updated prompt - explicitly ask for confidence scores
     prompt = (
         "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language) "
-        "from this text that are NOT already in the lexicon.\n\n"
+        "from this text that are NOT already in the lexicon.\n"
         "TEXT:\n"
-        '"' + text + '"\n\n'
+        '"' + text + '"\n'
         "EXISTING TERMS (do not extract these):\n"
-        + existing_list + "\n\n"
+        + existing_list + "\n"
         "Return ONLY a valid JSON array. Each object must have:\n"
         '- "term": the exact phrase from the text\n'
         '- "category": one of [ethnic_identity, violence_incitement, dehumanizing, religious_cultural, gender_misogynistic, discriminatory_homophobic, socio_economic_caste, political_groups, foreign_interference, election_governance]\n'
         '- "severity": one of [low, medium, high, critical]\n'
         '- "target_entity": the group being targeted (e.g., Amhara, Oromo, Women) or empty string\n'
-        '- "language": one of [Amharic, Oromo, English, Tigrinya, Somali]\n\n'
+        '- "language": one of [Amharic, Oromo, English, Tigrinya, Somali]\n'
+        '- "confidence": A float between 0.0 and 1.0 representing how certain you are this is a harmful term (e.g., 0.95 for highly certain, 0.6 for borderline)\n'
         "EXAMPLE OUTPUT:\n"
         '[\n'
-        '  {"term": "example slur", "category": "ethnic_identity", "severity": "high", "target_entity": "Group", "language": "Amharic"}\n'
-        ']\n\n'
+        '  {"term": "example slur", "category": "ethnic_identity", "severity": "high", "target_entity": "Group", "language": "Amharic", "confidence": 0.92}\n'
+        ']\n'
         "If no new terms found, return: []"
     )
     
@@ -4381,9 +4381,9 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
         
         valid_terms = []
         valid_categories = ['ethnic_identity', 'violence_incitement', 'dehumanizing',
-                          'religious_cultural', 'gender_misogynistic', 'discriminatory_homophobic',
-                          'socio_economic_caste', 'political_groups', 'foreign_interference',
-                          'election_governance']
+                           'religious_cultural', 'gender_misogynistic', 'discriminatory_homophobic',
+                           'socio_economic_caste', 'political_groups', 'foreign_interference',
+                           'election_governance']
         valid_severities = ['low', 'medium', 'high', 'critical']
         valid_languages = ['Amharic', 'Oromo', 'English', 'Tigrinya', 'Somali']
         
@@ -4410,13 +4410,26 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
             if language not in valid_languages:
                 language = 'Amharic'
             
+            # Ensure confidence is between 0.7 and 1.0
+            confidence = term_data.get('confidence', 0.5) 
+        
+            # Ensure it's a valid number
+            if not isinstance(confidence, (int, float)):
+                try:
+                    confidence = float(confidence)
+                except (ValueError, TypeError):
+                    confidence = 0.5
+    
+            # Clamp between 0.0 and 1.0
+            confidence = max(0.0, min(1.0, confidence))  
+            
             valid_terms.append({
                 'term': term,
                 'category': category,
                 'severity': severity,
                 'target_entity': term_data.get('target_entity', ''),
                 'language': language,
-                'confidence': term_data.get('confidence', 0.8),
+                'confidence': round(confidence, 2),  # Round to 2 decimal places
                 'source': 'LLM Extraction',
                 'context': text[:200]
             })
