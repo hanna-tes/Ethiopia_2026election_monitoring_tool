@@ -812,7 +812,7 @@ def export_complete_network_csv(request):
     
     messages.success(request, f"Exported complete network: {len(all_nodes)} nodes, {len(all_edges)} edges")
     return response
-    
+   
 def extract_sub_narrative(text_sample):
     """
     Extract the primary sub-narrative from a text sample using the CONFIG lexicon.
@@ -917,7 +917,118 @@ def format_ttp_input(coordination_groups: List[Dict[str, Any]]) -> Dict[str, Any
     }
     
     return input_data
-
+    
+def detect_hate_speech_llm_enhanced(text: str) -> dict:
+    """
+    Enhanced LLM detection that returns category label and accurate context.
+    Not limited to the 20 AFRO-XLMR categories.
+    """
+    if not text or len(text.strip()) < 20:
+        return {
+            'is_hate_speech': False,
+            'confidence': 0.0,
+            'category': 'neutral',
+            'explanation': 'Text too short for analysis',
+            'severity': 'low'
+        }
+    
+    # Flexible categories that LLM can choose from (not limited to 20)
+    category_options = """
+    - Ethnic Slur
+    - Religious Hate
+    - Gender-Based Violence/Misogyny
+    - Political Incitement
+    - Violence/Threats
+    - Dehumanization
+    - Xenophobia
+    - Homophobic/LGBTQ+ Hate
+    - Disability Hate
+    - Class/Caste Discrimination
+    - Conspiracy Theory
+    - Misinformation/Disinformation
+    - Harassment/Bullying
+    - Hate Speech (General)
+    - Neutral/Not Hate Speech
+    - Other (specify in explanation)
+    """
+    
+    # Use string concatenation instead of f-string to avoid syntax issues
+    prompt = (
+        "You are an expert hate speech analyst analyzing social media content from Ethiopia.\n\n"
+        "TEXT TO ANALYZE:\n"
+        f'"{text}"\n\n'
+        "INSTRUCTIONS:\n"
+        "1. Analyze the text carefully for hate speech, threats, or harmful content\n"
+        "2. Identify the PRIMARY category from these options (choose ONE):\n"
+        f"{category_options}\n"
+        "3. Provide specific context about:\n"
+        "   - Who is being targeted (ethnic group, religion, gender, etc.)\n"
+        "   - What specific harmful language is used\n"
+        "   - Whether it contains threats, slurs, or incitement\n"
+        "   - The overall tone and intent\n\n"
+        "4. Determine severity level: low, medium, high, or critical\n\n"
+        "5. Provide confidence score (0.0 to 1.0)\n\n"
+        "Return your analysis in this EXACT JSON format:\n"
+        '{\n'
+        '    "category": "Your chosen category",\n'
+        '    "explanation": "Detailed analysis with specific context about the content",\n'
+        '    "severity": "low|medium|high|critical",\n'
+        '    "confidence": 0.0-1.0,\n'
+        '    "is_hate_speech": true|false,\n'
+        '    "target_group": "Who is being targeted (or \'none\' if neutral)",\n'
+        '    "harmful_elements": ["list", "of", "specific", "harmful", "elements"]\n'
+        '}\n\n'
+        "Be specific and accurate. If the text mentions specific ethnic groups, religious groups, or individuals, name them in your analysis."
+    )
+    
+    try:
+        response = safe_llm_call(prompt, max_tokens=500)
+        if not response:
+            return {
+                'is_hate_speech': False,
+                'confidence': 0.0,
+                'category': 'error',
+                'explanation': 'LLM failed to respond',
+                'severity': 'low'
+            }
+        
+        # Extract JSON from response
+        import re
+        import json
+        
+        # Try to find JSON in the response
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group(0))
+            return {
+                'is_hate_speech': result.get('is_hate_speech', False),
+                'confidence': float(result.get('confidence', 0.0)),
+                'category': result.get('category', 'uncategorized'),
+                'explanation': result.get('explanation', ''),
+                'severity': result.get('severity', 'low'),
+                'target_group': result.get('target_group', ''),
+                'harmful_elements': result.get('harmful_elements', [])
+            }
+        else:
+            # Fallback: parse text response
+            return {
+                'is_hate_speech': 'hate speech' in response.lower(),
+                'confidence': 0.5,
+                'category': 'uncategorized',
+                'explanation': response,
+                'severity': 'medium'
+            }
+            
+    except Exception as e:
+        logger.error(f"Enhanced LLM detection failed: {e}")
+        return {
+            'is_hate_speech': False,
+            'confidence': 0.0,
+            'category': 'error',
+            'explanation': f'Analysis failed: {str(e)}',
+            'severity': 'low'
+        }
+        
 def clean_username(raw_name):
     if not raw_name or pd.isna(raw_name):
         return "Unknown"
@@ -6380,8 +6491,8 @@ class LexiconManagementView(TemplateView):
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
             'categories': categories,
-            'total_terms': total_count,  # NOW SHOWS TRUE TOTAL (DB + CONFIG)
-            'db_term_count': db_count,   # Optional: keeps track of custom DB terms
+            'total_terms': total_count, 
+            'db_term_count': db_count,   
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
@@ -6457,8 +6568,8 @@ class LexiconManagementView(TemplateView):
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
 
-                # 2. LLM-based detection
-                llm_result = detect_hate_speech_llm(text)
+                # 2. ENHANCED LLM-based detection with category
+                llm_result = detect_hate_speech_llm_enhanced(text)
 
                 # 3. Extract NEW trigger terms not in lexicon
                 new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
@@ -6490,43 +6601,30 @@ class LexiconManagementView(TemplateView):
                 afro_severity = afro_result.get('severity', 'low')
                 afro_language = afro_result.get('language_detected', 'unknown')
                 
-                # LLM results
+                # LLM results 
                 llm_is_hate = llm_result.get('is_hate_speech', False)
                 llm_confidence = llm_result.get('confidence', 0)
-                llm_explanation = llm_result.get('explanation', '').lower()
-                
-                # SAFETY NET: If LLM explanation indicates hate speech, force flag
-                hate_indicators = [
-                    'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
-                    'derogatory', 'discrimination', 'dangerous', 'threat',
-                    'ethnic cleansing', 'genocide', 'kill', 'attack', 'slaughter'
-                ]
-                
-                if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
-                    llm_is_hate = True
-                    llm_confidence = max(llm_confidence, 0.75)
+                llm_category = llm_result.get('category', 'uncategorized')  # LLM category
+                llm_explanation = llm_result.get('explanation', '')
+                llm_severity = llm_result.get('severity', 'low')
+                llm_target_group = llm_result.get('target_group', '')
+                llm_harmful_elements = llm_result.get('harmful_elements', [])
                 
                 # PRIORITY 1: AFRO-XLMR (specialized for Ethiopian languages)
                 if afro_is_hate and afro_confidence >= 0.6:
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_severity, 2)
-                    explanation = f"AFRO-XLMR detected {afro_category} in {afro_language} ({afro_confidence*100:.0f}% confidence)"
                     model_used = "AFRO-XLMR"
-                
                 # PRIORITY 2: LLM says hate speech
                 elif llm_is_hate and llm_confidence >= 0.6:
                     is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
-                    explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_severity, 2)
                     model_used = "LLM"
-                
                 # PRIORITY 3: Lexicon finds high-risk terms
                 elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
-                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
                     model_used = "Lexicon"
-                
                 # PRIORITY 4: Default to not hate speech
                 else:
                     is_hate_speech = False
@@ -6539,15 +6637,26 @@ class LexiconManagementView(TemplateView):
                 
                 severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
                 
-                # Create combined analysis
+                # Create ENHANCED combined analysis
                 analysis_parts = []
+                
+                # AFRO-XLMR analysis
                 if afro_result.get('category') != 'error':
-                    analysis_parts.append(f"AFRO-XLMR ({afro_language}): {afro_category} ({afro_confidence*100:.0f}%)")
-                if llm_result.get('explanation'):
-                    analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
+                    analysis_parts.append(
+                        f"AFRO-XLMR ({afro_language}): Category='{afro_category}' ({afro_confidence*100:.0f}% confidence)"
+                    )
+                
+                # LLM analysis with category
+                if llm_explanation:
+                    analysis_parts.append(
+                        f"LLM Analysis: Category='{llm_category}' - {llm_explanation}"
+                    )
+                
+                # Lexicon matches
                 if lexicon_matches:
                     terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
                     analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
+                
                 combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
 
                 # AUTO-SAVE NEW TRIGGER TERMS TO DATABASE
@@ -6583,21 +6692,25 @@ class LexiconManagementView(TemplateView):
                     'text': text[:200] + '...' if len(text) > 200 else text,
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
-                    'llm_result': llm_result,
+                    'llm_result': llm_result,  # Now includes category, target_group, harmful_elements
                     'afro_xlmr_result': afro_result,
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity_num],
                     'overall_confidence': max(afro_confidence, llm_confidence),
                     'overall_confidence_pct': f"{round(max(afro_confidence, llm_confidence) * 100)}%",
-                    'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
-                    'targeted_groups': llm_result.get('targeted_groups', []),
-                    'explanation': explanation,
+                    'all_categories': list(set([m['category'] for m in lexicon_matches] + [llm_category, afro_category])),
+                    'targeted_groups': [llm_target_group] if llm_target_group else llm_result.get('targeted_groups', []),
+                    'explanation': combined_analysis,
                     'analysis': combined_analysis,
                     'has_lexicon_matches': len(lexicon_matches) > 0,
                     'new_trigger_terms': new_terms,
                     'has_new_terms': len(new_terms) > 0,
                     'model_used': model_used,
                     'afro_language_detected': afro_language,
+                    # NEW FIELDS
+                    'llm_category': llm_category,
+                    'llm_target_group': llm_target_group,
+                    'llm_harmful_elements': llm_harmful_elements,
                 }
                 
                 if is_hate_speech:
