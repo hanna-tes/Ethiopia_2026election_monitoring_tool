@@ -4935,6 +4935,7 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
     ).exclude(original_text='')
     
     total_available = recent_posts.count()
+    
     if total_available < 10:
         return {
             'chart_json': None,
@@ -4946,8 +4947,8 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
             'message': 'Not enough data'
         }
     
-    # 3. RANDOM SAMPLING (Performance Fix)
-    sample_size = min(1500, total_available)
+    # 3. RANDOM SAMPLING (Increased to 5000 posts)
+    sample_size = min(5000, total_available)  # Changed from 1500 to 5000
     post_ids = list(recent_posts.values_list('id', flat=True))
     sampled_ids = random.sample(post_ids, sample_size)
     
@@ -4957,7 +4958,6 @@ def get_category_trend_analysis(posts_queryset, days_back=90, cache_suffix="all"
     # 4. SCAN ONLY THE SAMPLE
     daily_data = defaultdict(lambda: defaultdict(int))
     total_scanned = 0
-    
     for post in posts_to_scan:
         if post.original_text and post.timestamp_share:
             # This now includes both lexicon AND LLM-based detection
@@ -5801,7 +5801,7 @@ class NarrativesView(TemplateView):
 
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
-
+    
     def _get_lexicon_term_count(self):
         """Count total terms in CONFIG lexicon + Database."""
         try:
@@ -5810,9 +5810,9 @@ class LexiconsView(TemplateView):
             return total
         except Exception:
             return "1000+"
-
+    
     def _scan_post(self, text: str, category_filter=None):
-        """Scan one post's text using lexicon only - FAST."""
+        """Scan one post's text using lexicon."""
         if not text or len(text.strip()) < 10:
             return []
         text_lower = text.lower()
@@ -5825,7 +5825,7 @@ class LexiconsView(TemplateView):
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
                 filtered.append(m)
         return filtered
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
@@ -5834,22 +5834,19 @@ class LexiconsView(TemplateView):
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
-
+        
         # ── 2. Cache (overview only, keyed to date range) ─────────────────
-        # INCREASED CACHE: 4 hours instead of 1 hour
         cache_key = f"lexicon_dashboard_v5_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
         
         if cached_data and not selected_category:
             context.update(cached_data)
-            context['ai_insights']  = cache.get("lexicons_ai_insights_v1")
-            context['ai_is_running'] = cache.get("lexicons_ai_running")
             context['lexicon_term_count'] = self._get_lexicon_term_count()
             context['selected_category'] = ''
             context['category_terms']    = []
             context['posts_with_terms']  = []
             return context
-
+        
         # ── 3. Fetch posts ─────────────────────────────────────────────────
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
@@ -5863,22 +5860,25 @@ class LexiconsView(TemplateView):
                 'active_tab': 'lexicons', 'top_terms': [], 'category_counts': {},
                 'severity_counts': {}, 'total_matches': 0, 'posts_scanned': 0,
                 'total_posts': 0, 'wordcloud_base64': None, 'targeted_entities': [],
-                'ai_insights': None, 'ai_is_running': False,
                 'lexicon_term_count': self._get_lexicon_term_count(),
                 'selected_category': selected_category, 'category_terms': [],
                 'posts_with_terms': [],
+                # NEW: LLM extraction stats
+                'llm_new_terms_count': 0,
+                'total_unique_terms': 0,
             })
             return context
-
+        
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
-
+        
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         category_terms  = []
         posts_with_terms = []
         all_matches     = []
         posts_scanned   = 0
-
+        all_new_llm_terms = []  # NEW: Collect LLM-extracted terms
+        
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category}")
             
@@ -5887,29 +5887,36 @@ class LexiconsView(TemplateView):
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             elif selected_category in CONFIG.get('lexicon', {}):
                 category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items() if m.get('severity', 'medium') != 'low']
-
+            
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
-                # REDUCED: Only scan first 500 posts for category view (fast)
-                for post in filtered_posts.iterator(chunk_size=200):
+                # Scan posts - limit to prevent timeout
+                for post in filtered_posts.iterator(chunk_size=500):
                     if not post.original_text:
                         continue
                     text       = post.original_text
                     text_lower = text.lower()
                     is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
                     matched_terms = []
-
+                    
                     for term_lower, meta in term_meta.items():
                         if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
                             continue
                         matched_terms.append(term_lower)
                         all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
-
+                    
                     if matched_terms:
                         posts_scanned += 1
                         
-                        # NO MODEL DETECTION - Just lexicon data (FAST)
+                        # ── NEW: Extract NEW trigger terms with LLM ─────────────
+                        try:
+                            new_terms = extract_new_trigger_terms_llm(text, matched_terms)
+                            if new_terms:
+                                all_new_llm_terms.extend(new_terms)
+                        except Exception as e:
+                            logger.warning(f"LLM extraction failed: {e}")
+                        
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text[:300],
@@ -5917,7 +5924,7 @@ class LexiconsView(TemplateView):
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
-                            'detected_by':   'Lexicon',  # Always lexicon
+                            'detected_by':   'Lexicon',
                             'confidence':    1.0,
                             'model_category': selected_category,
                         })
@@ -5925,9 +5932,9 @@ class LexiconsView(TemplateView):
                         # LIMIT: Stop after 100 posts to prevent timeout
                         if posts_scanned >= 100:
                             break
-
+                
                 logger.info(f"  Category scan complete: {posts_scanned} posts matched")
-
+                
                 # ── LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
                 unique_foreign_terms = set()
                 for p_dict in posts_with_terms:
@@ -5946,25 +5953,11 @@ class LexiconsView(TemplateView):
                         if term in translations_map:
                             term_translations.append(f"{term}: {translations_map[term]}")
                     p_dict['english_translations'] = term_translations
-
+        
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
-            # Trigger background AI analysis if not already running
-            cache_key_ai  = "lexicons_ai_insights_v1"
-            ai_insights   = cache.get(cache_key_ai)
-            ai_is_running = cache.get("lexicons_ai_running")
-
-            if not ai_insights and not ai_is_running and total_posts > 10:
-                cache.set("lexicons_ai_running", True, 300)
-                post_ids    = list(filtered_posts.values_list('id', flat=True)[:1000])
-                sample_ids  = random.sample(post_ids, min(50, len(post_ids)))
-                t = threading.Thread(target=self._run_ai_analysis_background, args=(sample_ids, cache_key_ai), daemon=True)
-                t.start()
-                logger.info("LexiconsView: background AI analysis triggered")
-
-            # REDUCED: Only scan first 1000 posts for overview (fast)
-            posts_to_scan = filtered_posts[:1000]
-            for post in posts_to_scan.iterator(chunk_size=200):
+            # Scan posts - limit to prevent timeout
+            for post in filtered_posts.iterator(chunk_size=1000):
                 if not post.original_text:
                     continue
                 try:
@@ -5972,16 +5965,28 @@ class LexiconsView(TemplateView):
                     if matches:
                         all_matches.extend(matches)
                         posts_scanned += 1
+                        
+                        # ── NEW: Extract NEW trigger terms with LLM ─────────
+                        try:
+                            new_terms = extract_new_trigger_terms_llm(post.original_text, [m['term'] for m in matches])
+                            if new_terms:
+                                all_new_llm_terms.extend(new_terms)
+                        except Exception as e:
+                            logger.warning(f"LLM extraction failed: {e}")
+                        
+                        # LIMIT: Stop after 500 posts
+                        if posts_scanned >= 500:
+                            break
                 except Exception as e:
                     logger.warning(f"Scan error post {post.id}: {e}")
                     continue
-
+        
         # ── 5. Aggregate analytics ─────────────────────────────────────────
         try:
             term_counts     = Counter([m['term']     for m in all_matches])
             category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
-
+            
             if selected_category and category_terms:
                 top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
             else:
@@ -6002,7 +6007,7 @@ class LexiconsView(TemplateView):
             top_terms_with_meta = []
             category_counts     = Counter()
             severity_counts     = Counter()
-
+        
         # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
@@ -6011,13 +6016,13 @@ class LexiconsView(TemplateView):
                 wc = generate_trigger_wordcloud({'top_terms': valid_terms})
                 if wc: wordcloud_base64 = wordcloud_to_base64(wc)
             except Exception as e: logger.warning(f"Word cloud error: {e}")
-
+        
         targeted_entities = []
         if not selected_category:
             try:
                 entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b', r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b', r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}']
                 entities_found = Counter()
-                for post in filtered_posts.iterator(chunk_size=200):
+                for post in filtered_posts.iterator(chunk_size=500):
                     if not post.original_text: continue
                     for pattern in entity_patterns:
                         for match in re.findall(pattern, post.original_text, re.IGNORECASE):
@@ -6026,7 +6031,20 @@ class LexiconsView(TemplateView):
                     if sum(entities_found.values()) > 50000: break
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
             except Exception as e: logger.error(f"Entity extraction error: {e}")
-
+        
+        # ── NEW: Deduplicate and count LLM terms ─────────────────────────
+        llm_unique_terms = {}
+        for term_data in all_new_llm_terms:
+            term_key = term_data['term'].lower()
+            if term_key not in llm_unique_terms:
+                llm_unique_terms[term_key] = term_data
+        
+        llm_new_terms_count = len(llm_unique_terms)
+        
+        # Calculate total unique terms (lexicon + LLM new)
+        lexicon_unique = len(set(m['term'].lower() for m in all_matches))
+        total_unique_terms = lexicon_unique + llm_new_terms_count
+        
         # ── 8. Build context ───────────────────────────────────────────────
         shared = {
             'active_tab': 'lexicons', 'top_terms': top_terms_with_meta,
@@ -6034,23 +6052,25 @@ class LexiconsView(TemplateView):
             'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
             'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
+            # LLM extraction stats
+            'llm_new_terms_count': llm_new_terms_count,
+            'total_unique_terms': total_unique_terms,
+            'llm_terms_sample': list(llm_unique_terms.values())[:20],  # Show sample
         }
-
+        
         if not selected_category:
             shared['wordcloud_base64']  = wordcloud_base64
             shared['targeted_entities'] = targeted_entities
-            # INCREASED CACHE: 4 hours instead of 1 hour
-            cache.set(cache_key, shared, 14400)
+            cache.set(cache_key, shared, 3600)
         else:
             shared['wordcloud_base64']  = None
             shared['targeted_entities'] = []
-
+        
         context.update(shared)
-        context['ai_insights']     = cache.get("lexicons_ai_insights_v1")
-        context['ai_is_running']   = (cache.get("lexicons_ai_running") and not context.get('ai_insights'))
         context['selected_category'] = selected_category
         context['category_terms']    = category_terms
         context['posts_with_terms']  = posts_with_terms[:100]
+        
         return context
 
     @staticmethod
