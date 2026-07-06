@@ -19,13 +19,15 @@ env = environ.Env(
     SECRET_KEY=(str, 'django-insecure-change-this-in-production'),
 )
 
+# CSRF Configuration for Nginx Reverse Proxy
 CSRF_TRUSTED_ORIGINS = [
+    'https://ethio-monitor.investigate.africa',
     'http://ethio-monitor.investigate.africa',
     'http://localhost',
     'http://127.0.0.1',
 ]
 
-
+# Trust the X-Forwarded-Proto header from Nginx
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # CSRF cookie settings
