@@ -2030,61 +2030,66 @@ def get_top_pairs(coordination_groups):
 # === IMPROVED NETWORK & COORDINATION FUNCTIONS ===
 def is_primarily_ethiopia_related(text: str) -> bool:
     """
-    Relaxed but comprehensive filter to check if a post is about Ethiopia.
-    Supports English, Transliterated variants, and native Ethiopic (Ge'ez) scripts.
+    Check if post is about Ethiopia elections - EXCLUDES US/Western elections
     """
     if not text or len(text.strip()) < 20:
         return False
-        
+    
     text_lower = text.lower()
     
-    # 1. High-Confidence Primary Native Script Signals (Amharic/Oromo/Tigrinya)
-    native_signals = [
-        'ኢትዮጵያ', 'አዲስ አበባ', 'አብይ', 'ብልጽግና', 'ፋኖ', 'ሕወሓት', 'ህወሃት', 'ኦነግ', 'ሸኔ', 
-        'አማራ', 'ኦሮሚያ', 'ትግራይ', 'ክልል', 'ወረዳ', 'ቀበሌ', 'ብር', 'ሐበሻ', 'ሃበሻ', 'ኢሰመቦ'
+    # === EXCLUSION LIST: US/Western Election Content ===
+    us_election_signals = [
+        'colorado', 'california', 'texas', 'florida', 'new york', 'georgia',
+        'pennsylvania', 'michigan', 'wisconsin', 'arizona', 'nevada',
+        'congressional district', 'us election', 'us vote', 'us primary',
+        'american election', 'united states election', 'us congress',
+        'us house', 'us senate', 'us primary', 'us midterm',
+        'democratic primary', 'republican primary', 'us ballot',
+        'drop site news', 'melat kiros',  
     ]
+    
+    # If it contains US election signals, reject it
+    if any(signal in text_lower for signal in us_election_signals):
+        return False
+    
+    # === POSITIVE Ethiopia Signals ===
+    # High-Confidence Primary Native Script Signals
+    native_signals = [
+        'ኢትዮጵያ', 'አዲስ አበባ', 'አብይ', 'ብልግና', 'ኖ', 'ሕወሓት', 
+        'ህወሃት', 'ኦነ', 'ሸኔ', 'አማራ', 'ሮሚያ', 'ትግራይ', 
+        'ክልል', 'ወረዳ', 'ቀበሌ', 'ር', 'ሐበ', 'ሃበሻ', 'ኢሰመቦ'
+    ]
+    
     if any(ns in text_lower for ns in native_signals):
         return True
-
-    # 2. Primary English & Transliterated Ethiopia-Specific Signals
+    
+    # Primary English & Transliterated Ethiopia-Specific Signals
     primary_ethiopia_signals = [
-        # Country & National Identity
         'ethiopia', 'ethiopian', 'habesha', 'abyssinia', 'birr', 'etb',
-        
-        # Political Figures & Parties
-        'abiy', 'abiy ahmed', 'pp party', 'prosperity party', 'nebe', 'shane', 'ola', 
-        'fano', 'tplf', 'eprdf', 'derg', 'haile selassie', 'menelik', 'tayek',
-        
-        # Regional States & Administrative Zones
-        'oromia', 'amhara', 'tigray', 'sidama', 'gambella', 'benishangul', 'gumuz',
-        'afar', 'somali region', 'ogaden', 'woreda', 'kebele', 'gott',
-        # Modern 2026 regional splits (SNNPR is now defunct)
-        'south ethiopia', 'central ethiopia', 'south west ethiopia', 
-        
-        # Major Cities & Key Cultural Sites
-        'addis ababa', 'finfinnee', 'mekelle', 'bahir dar', 'gondar', 'dessie', 
-        'jimma', 'adama', 'hawassa', 'dire dawa', 'harar', 'axum', 'lalibela', 
-        'shashamane', 'debre marqos', 'asosa', 'semera', 'bonga', 'wolkite',
-        
-        # Demographic & Ethnic Groups
-        'oromo', 'amhara', 'tigrayan', 'tegaru', 'gurage', 'wolayta', 'hadaa',
-        'afar', 'sidama', 'hadiya', 'kambata', 'gamo', 'aari', 'hamer', 'mursi'
+        'abiy', 'abiy ahmed', 'pp party', 'prosperity party', 'nebe', 
+        'shane', 'ola', 'fano', 'tplf', 'eprdf', 'derg',
+        'oromia', 'amhara', 'tigray', 'sidama', 'gambella', 
+        'benishangul', 'gumuz', 'afar', 'somali region', 'ogaden', 
+        'woreda', 'kebele', 'gott',
+        'addis ababa', 'finfinnee', 'mekelle', 'bahir dar', 'gondar', 
+        'dessie', 'jimma', 'adama', 'hawassa', 'dire dawa', 'harar', 
+        'axum', 'lalibela',
+        'oromo', 'amhara', 'tigrayan', 'tegaru', 'gurage', 'wolayta',
     ]
+    
     if any(signal in text_lower for signal in primary_ethiopia_signals):
         return True
-        
-    # 3. Secondary Geopolitical / Boundary Horn of Africa Context
-    # To avoid false positives, these trigger True ONLY if they appear alongside 
-    # regional transit words or cross-border geopolitical references.
+    
+    # Secondary Geopolitical Context (Horn of Africa)
     horn_neighbors = ['eritrea', 'sudan', 'somalia', 'djibouti', 'mogadishu', 'asmara', 'khartoum']
-    geopolitical_context = ['gerd', 'nile', 'red sea', 'port access', 'mou', 'somaliland', 'hassan sheikh', 'isaias']
+    geopolitical_context = ['gerd', 'nile', 'red sea', 'port access', 'mou', 'somaliland']
     
     has_neighbor = any(neighbor in text_lower for neighbor in horn_neighbors)
     has_context = any(ctx in text_lower for ctx in geopolitical_context)
     
     if has_neighbor and has_context:
         return True
-        
+    
     return False
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
