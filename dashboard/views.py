@@ -3744,14 +3744,6 @@ CONFIG = {
             
             "አልሸባብ": {"severity": "high", "target_entity": "Al-Shabaab", "language": "Amharic"},
             "ቦኮ ሀራም": {"severity": "high", "target_entity": "Boko Haram", "language": "Amharic"},
-            
-            "ክርስቲያን": {"severity": "low", "target_entity": "Christian", "language": "Amharic"},
-            "christian": {"severity": "low", "target_entity": "Christian", "language": "English"},
-            "ፓስተር": {"severity": "low", "target_entity": "Protestant", "language": "Amharic"},
-            "ጴንጤ": {"severity": "low", "target_entity": "Protestant", "language": "Amharic"},
-            
-            "አይሁድ": {"severity": "low", "target_entity": "Judaism", "language": "Amharic"},
-            "ይሁዲ": {"severity": "low", "target_entity": "Judaism", "language": "Amharic"},
             "ፈላሻ": {"severity": "high", "target_entity": "Beta Israel", "language": "Amharic"},
             
             "መናፍቅ": {"severity": "high", "target_entity": "Protestant/Other", "language": "Amharic"},
@@ -3759,7 +3751,7 @@ CONFIG = {
             "አህዛብ": {"severity": "medium", "target_entity": "Non-believers", "language": "Amharic"},
             "ቃፊር": {"severity": "high", "target_entity": "Non-believers", "language": "Amharic"},
             "ኢ-አማኒ": {"severity": "medium", "target_entity": "Atheist", "language": "Amharic"},
-            "sinful": {"severity": "low", "target_entity": "", "language": "English"},
+            "sinful": {"severity": "high", "target_entity": "", "language": "English"},
             
             "ጣኦት": {"severity": "medium", "target_entity": "Pagan", "language": "Amharic"},
             "ጣኦት አምላኪ": {"severity": "high", "target_entity": "Pagan", "language": "Amharic"},
@@ -3774,9 +3766,9 @@ CONFIG = {
             "Raajii sobaa": {"severity": "medium", "target_entity": "", "language": "Oromo"},
             
             "ገሀነም": {"severity": "low", "target_entity": "", "language": "Amharic"},
-            "ገሀነም ግባ": {"severity": "medium", "target_entity": "", "language": "Amharic"},
+            "ገሀነም ግባ": {"severity": "high", "target_entity": "", "language": "Amharic"},
             
-            "ሞጣ": {"severity": "high", "target_entity": "Muslims", "language": "Amharic"},
+            "ሞጣ": {"severity": "low", "target_entity": "Muslims", "language": "Amharic"},
             "የእርጎ ዝንብ": {"severity": "high", "target_entity": "Muslims", "language": "Amharic"},
             "እሬቻ": {"severity": "low", "target_entity": "Oromo/Irreecha", "language": "Amharic"},
             "ምድረ እሬቻም": {"severity": "high", "target_entity": "Oromo/Irreecha", "language": "Amharic"},
