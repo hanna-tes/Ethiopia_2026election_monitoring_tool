@@ -19,6 +19,21 @@ env = environ.Env(
     SECRET_KEY=(str, 'django-insecure-change-this-in-production'),
 )
 
+CSRF_TRUSTED_ORIGINS = [
+    'http://ethio-monitor.investigate.africa',
+    'http://localhost',
+    'http://127.0.0.1',
+]
+
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# CSRF cookie settings
+CSRF_COOKIE_SECURE = False  # Set to True if using HTTPS
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+
 # Read .env file if it exists (optional)
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
