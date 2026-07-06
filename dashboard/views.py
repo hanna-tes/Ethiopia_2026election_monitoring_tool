@@ -646,6 +646,173 @@ def export_network_edges_with_tweets(request):
     
     return response
     
+@login_required
+def export_complete_network_csv(request):
+    """Export COMPLETE network data - both nodes and edges with full metadata"""
+    import csv
+    from django.http import HttpResponse
+    from django.utils import timezone
+    
+    min_connections = int(request.GET.get('min_connections', 2))
+    
+    # Get all election-related posts
+    posts = ProcessedPost.objects.filter(is_election_related=True)
+    
+    # Get coordination groups
+    coordination_groups = get_coordination_groups(
+        posts, 
+        min_accounts=min_connections, 
+        max_groups=50  # Increased to capture more groups
+    )
+    
+    # Build comprehensive network data
+    all_nodes = {}
+    all_edges = []
+    
+    # Process ALL coordination groups
+    for group_idx, group in enumerate(coordination_groups):
+        accounts = group.get('accounts', [])
+        text_sample = group.get('text_sample', '')
+        post_count = group.get('post_count', 0)
+        platforms = group.get('platforms', [])
+        coordination_type = group.get('coordination_type', 'Unknown')
+        sub_narrative = group.get('sub_narrative', 'General Coordination')
+        bot_count = group.get('bot_count', 0)
+        bot_percentage = group.get('bot_percentage', 0)
+        
+        # Get timestamp from sample posts
+        timestamp = ''
+        url = ''
+        if group.get('sample_posts_with_urls'):
+            first_post = group['sample_posts_with_urls'][0]
+            timestamp = first_post.get('timestamp', '')
+            url = first_post.get('url', '')
+        
+        # Add nodes with metadata
+        for account in accounts:
+            if account not in all_nodes:
+                all_nodes[account] = {
+                    'account_id': account,
+                    'group_count': 0,
+                    'total_posts': 0,
+                    'platforms': set(),
+                    'coordination_types': set(),
+                    'sub_narratives': set(),
+                    'is_bot': False,
+                    'bot_percentage': 0,
+                    'first_seen': timestamp,
+                    'sample_url': url
+                }
+            
+            all_nodes[account]['group_count'] += 1
+            all_nodes[account]['total_posts'] += post_count
+            all_nodes[account]['platforms'].update(platforms)
+            all_nodes[account]['coordination_types'].add(coordination_type)
+            all_nodes[account]['sub_narratives'].add(sub_narrative)
+            
+            # Mark as bot if bot percentage is high
+            if bot_percentage >= 50:
+                all_nodes[account]['is_bot'] = True
+                all_nodes[account]['bot_percentage'] = max(
+                    all_nodes[account]['bot_percentage'], 
+                    bot_percentage
+                )
+        
+        # Create edges between all pairs in this group
+        for i in range(len(accounts)):
+            for j in range(i + 1, len(accounts)):
+                all_edges.append({
+                    'source': accounts[i],
+                    'target': accounts[j],
+                    'weight': post_count,
+                    'group_id': group_idx + 1,
+                    'text_sample': text_sample[:200],
+                    'timestamp': timestamp,
+                    'url': url,
+                    'coordination_type': coordination_type,
+                    'sub_narrative': sub_narrative
+                })
+    
+    # Create CSV response
+    response = HttpResponse(content_type='text/csv')
+    timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+    response['Content-Disposition'] = f'attachment; filename="complete_network_data_{timestamp}.csv"'
+    
+    # Write CSV with UTF-8 BOM for Excel compatibility
+    response.write('\ufeff')
+    writer = csv.writer(response)
+    
+    # Write NODES section
+    writer.writerow(['=== NODES (Accounts) ==='])
+    writer.writerow([
+        'Account ID', 
+        'Group Count', 
+        'Total Posts', 
+        'Platforms', 
+        'Coordination Types', 
+        'Sub Narratives', 
+        'Is Bot', 
+        'Bot Percentage', 
+        'First Seen', 
+        'Sample URL'
+    ])
+    
+    for account, data in sorted(all_nodes.items()):
+        writer.writerow([
+            account,
+            data['group_count'],
+            data['total_posts'],
+            ', '.join(data['platforms']),
+            ', '.join(data['coordination_types']),
+            ', '.join(data['sub_narratives']),
+            'Yes' if data['is_bot'] else 'No',
+            f"{data['bot_percentage']:.1f}%",
+            data['first_seen'],
+            data['sample_url']
+        ])
+    
+    # Add separator
+    writer.writerow([])
+    writer.writerow(['=== EDGES (Connections) ==='])
+    writer.writerow([
+        'Source', 
+        'Target', 
+        'Weight', 
+        'Group ID', 
+        'Text Sample', 
+        'Timestamp', 
+        'URL', 
+        'Coordination Type', 
+        'Sub Narrative'
+    ])
+    
+    # Write EDGES section
+    for edge in all_edges:
+        # Clean text for CSV
+        text_clean = edge['text_sample'].replace('\n', ' ').replace('\r', '').replace('"', '""')
+        writer.writerow([
+            edge['source'],
+            edge['target'],
+            edge['weight'],
+            edge['group_id'],
+            text_clean,
+            edge['timestamp'],
+            edge['url'],
+            edge['coordination_type'],
+            edge['sub_narrative']
+        ])
+    
+    # Add summary
+    writer.writerow([])
+    writer.writerow(['=== NETWORK SUMMARY ==='])
+    writer.writerow(['Total Nodes (Accounts):', len(all_nodes)])
+    writer.writerow(['Total Edges (Connections):', len(all_edges)])
+    writer.writerow(['Total Coordination Groups:', len(coordination_groups)])
+    writer.writerow(['Export Date:', timezone.now().strftime('%Y-%m-%d %H:%M:%S UTC')])
+    
+    messages.success(request, f"Exported complete network: {len(all_nodes)} nodes, {len(all_edges)} edges")
+    return response
+    
 def extract_sub_narrative(text_sample):
     """
     Extract the primary sub-narrative from a text sample using the CONFIG lexicon.
