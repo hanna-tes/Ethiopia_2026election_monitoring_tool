@@ -25,7 +25,7 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 # SECURITY
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
-ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '0.0.0.0', '52.49.201.188']
+ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '0.0.0.0', '52.49.201.188', 'ethio-monitor.investigate.africa']
 
 # Application definition
 INSTALLED_APPS = [
