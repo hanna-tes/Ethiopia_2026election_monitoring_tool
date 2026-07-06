@@ -4469,7 +4469,84 @@ def export_new_terms_csv(request):
     
     messages.success(request, f"Exported {len(new_terms)} new trigger terms to CSV")
     return response
-       
+    
+@login_required
+def export_all_lexicon_terms_csv(request):
+    """Export ALL lexicon terms (Database + CONFIG) as CSV"""
+    import csv
+    from django.http import HttpResponse
+    from django.utils import timezone
+    
+    # 1. Get terms from Database
+    db_terms = LexiconTerm.objects.filter(is_election_related=True).values(
+        'term', 'category', 'severity', 'target_entity', 'language'
+    )
+    
+    # 2. Get terms from CONFIG
+    config_terms = []
+    for category, terms in CONFIG.get('lexicon', {}).items():
+        for term, metadata in terms.items():
+            config_terms.append({
+                'term': term,
+                'category': category,
+                'severity': metadata.get('severity', 'medium'),
+                'target_entity': metadata.get('target_entity', ''),
+                'language': metadata.get('language', 'english'),
+            })
+    
+    # 3. Combine and deduplicate (DB terms take priority)
+    seen_terms = set()
+    all_terms = []
+    
+    # Add DB terms first
+    for term in db_terms:
+        if term['term'] not in seen_terms:
+            seen_terms.add(term['term'])
+            all_terms.append({
+                'term': term['term'],
+                'category': term['category'],
+                'severity': term['severity'],
+                'target_entity': term['target_entity'],
+                'language': term['language'],
+                'source': 'Database'
+            })
+    
+    # Add CONFIG terms (skip duplicates)
+    for term in config_terms:
+        if term['term'] not in seen_terms:
+            seen_terms.add(term['term'])
+            all_terms.append({
+                'term': term['term'],
+                'category': term['category'],
+                'severity': term['severity'],
+                'target_entity': term['target_entity'],
+                'language': term['language'],
+                'source': 'CONFIG'
+            })
+    
+    # 4. Create CSV response
+    response = HttpResponse(content_type='text/csv')
+    timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+    response['Content-Disposition'] = f'attachment; filename="all_lexicon_terms_{timestamp}.csv"'
+    
+    # Write CSV with UTF-8 BOM for Excel compatibility (important for Amharic)
+    response.write('\ufeff')
+    writer = csv.writer(response)
+    writer.writerow(['Term', 'Category', 'Severity', 'Target Entity', 'Language', 'Source'])
+    
+    for term in all_terms:
+        writer.writerow([
+            term['term'],
+            term['category'],
+            term['severity'],
+            term['target_entity'],
+            term['language'],
+            term['source']
+        ])
+    
+    messages.success(request, f"Exported {len(all_terms)} lexicon terms to CSV")
+    return response
+    
 def reports_landing(request):
     """Landing page showing all report categories as cards"""
     baseline_reports = MonitoringReport.objects.filter(report_category='baseline').order_by('-uploaded_at')[:3]
@@ -6126,11 +6203,17 @@ class LexiconManagementView(TemplateView):
         view_all = self.request.GET.get('view_all') == 'true'
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 
+        # Count terms from both Database AND CONFIG lexicon
+        db_count = lexicon_terms.count()
+        config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values())
+        total_count = db_count + config_count
+
         context.update({
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
             'categories': categories,
-            'total_terms': lexicon_terms.count(),
+            'total_terms': total_count,  # NOW SHOWS TRUE TOTAL (DB + CONFIG)
+            'db_term_count': db_count,   # Optional: keeps track of custom DB terms
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
@@ -6212,31 +6295,21 @@ class LexiconManagementView(TemplateView):
                 # 3. Extract NEW trigger terms not in lexicon
                 new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
 
-                # 4. Fine-tuned Gemma Model detection
+                # 4. AFRO-XLMR Model detection (specialized for Ethiopian languages)
                 try:
-                   detector = get_hate_speech_detector()
-                   gemma_result = detector.detect(text)
+                    afro_result = detect_hate_speech_afro_xlmr(text)
                 except Exception as e:
-                   logger.error(f"Gemma detection failed: {e}")
-                   gemma_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'error': 'Model not loaded - using LLM + Lexicon only'}
-                
-                # 5. AFRO-XLMR Model detection (specialized for Ethiopian languages)
-                try:
-                   from .utils.afro_xlmr_detector import get_detector
-                   afro_detector = get_detector()
-                   afro_result = afro_detector.detect(text)
-                except Exception as e:
-                   logger.error(f"AFRO-XLMR detection failed: {e}")
-                   afro_result = {
-                       'is_hate_speech': False,
-                       'confidence': 0.0,
-                       'category': 'error',
-                       'severity': 'low',
-                       'language_detected': 'unknown',
-                       'error': 'AFRO-XLMR model not loaded'
-                   }
+                    logger.error(f"AFRO-XLMR detection failed: {e}")
+                    afro_result = {
+                        'is_hate_speech': False,
+                        'confidence': 0.0,
+                        'category': 'error',
+                        'severity': 'low',
+                        'language_detected': 'unknown',
+                        'error': 'AFRO-XLMR model not loaded'
+                    }
 
-                # 6. Determine final verdict - AFRO-XLMR HAS HIGHEST PRIORITY (Ethiopian languages)
+                # 5. Determine final verdict - AFRO-XLMR HAS HIGHEST PRIORITY (Ethiopian languages)
                 is_hate_speech = False
                 overall_severity_num = 1
                 explanation = ""
@@ -6308,6 +6381,34 @@ class LexiconManagementView(TemplateView):
                     terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
                     analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
                 combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
+
+                # AUTO-SAVE NEW TRIGGER TERMS TO DATABASE
+                auto_saved_count = 0
+                if new_terms:
+                    for term_data in new_terms:
+                        # Normalize language
+                        detected_language = term_data.get('language', 'english').lower().strip()
+                        language_map = {
+                            'amharic': 'amharic', 'oromo': 'oromo', 'tigrinya': 'tigrinya',
+                            'english': 'english', 'somali': 'somali'
+                        }
+                        normalized_language = language_map.get(detected_language, 'english')
+                        
+                        # Auto-save to database (get_or_create prevents duplicates)
+                        obj, created = LexiconTerm.objects.get_or_create(
+                            term=term_data['term'],
+                            defaults={
+                                'category': term_data['category'],
+                                'severity': term_data['severity'],
+                                'target_entity': term_data.get('target_entity', ''),
+                                'language': normalized_language,
+                                'is_election_related': True,
+                                'is_active': True
+                            }
+                        )
+                        if created:
+                            auto_saved_count += 1
+                            logger.info(f"✅ Auto-saved new term: '{term_data['term']}' ({term_data['category']})")
                 
                 # Save to session
                 request.session['scan_results'] = {
@@ -6315,7 +6416,6 @@ class LexiconManagementView(TemplateView):
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
-                    'gemma_result': gemma_result,
                     'afro_xlmr_result': afro_result,
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity_num],
@@ -6333,16 +6433,36 @@ class LexiconManagementView(TemplateView):
                 }
                 
                 if is_hate_speech:
-                    messages.warning(request, f"Potential hate speech detected by {model_used}! Severity: {severity_map[overall_severity_num].upper()} (Confidence: {max(afro_confidence, llm_confidence)*100:.0f}%)")
+                    messages.warning(
+                        request, 
+                        f"🚨 Potential hate speech detected by {model_used}! "
+                        f"Severity: {severity_map[overall_severity_num].upper()} "
+                        f"(Confidence: {max(afro_confidence, llm_confidence)*100:.0f}%)"
+                    )
+                    
                     if new_terms:
-                        messages.info(request, f"{len(new_terms)} new trigger terms extracted for review.")
+                        if auto_saved_count > 0:
+                            messages.success(
+                                request, 
+                                f"✅ {auto_saved_count} new trigger term(s) automatically saved to database! "
+                                f"Use the 'Download All Terms (CSV)' button to export your lexicon."
+                            )
+                        else:
+                            messages.info(
+                                request, 
+                                f"ℹ️ {len(new_terms)} new trigger term(s) detected (already in database)."
+                            )
                 else:
                     if lexicon_matches:
-                        messages.info(request, f"No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
+                        messages.info(
+                            request, 
+                            f"✅ No hate speech detected. "
+                            f"(Note: {len(lexicon_matches)} sensitive term(s) found, but context appears neutral)."
+                        )
                     else:
-                        messages.success(request, "No hate speech detected.")
+                        messages.success(request, "✅ No hate speech detected.")
             else:
-                messages.warning(request, "Please enter text to scan")
+                messages.warning(request, "⚠️ Please enter text to scan")
 
         return redirect('lexicon_management')
            
