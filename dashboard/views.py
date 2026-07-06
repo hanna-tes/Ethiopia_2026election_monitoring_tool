@@ -5450,7 +5450,7 @@ class LexiconsView(TemplateView):
             detector = get_hate_speech_detector()
             if not detector:
                 return
-            
+                
             posts = ProcessedPost.objects.filter(id__in=post_ids)
             for post in posts:
                 cache_key = f"afro_xlmr_{post.id}"
@@ -5471,13 +5471,13 @@ class LexiconsView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # ── 1. URL params ─────────────────────────────────────────────────
+        # ─ 1. URL params ─────────────────────────────────────────────────
         selected_category = self.request.GET.get('category', '').strip()
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
 
-        # ── 2. Cache (overview only, keyed to date range) ─────────────────
+        # ── 2. Cache (overview only, keyed to date range) ────────────────
         cache_key = f"lexicon_dashboard_v4_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
 
@@ -5594,6 +5594,26 @@ class LexiconsView(TemplateView):
                     )
                     t.start()
 
+                # ── 4. LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
+                unique_foreign_terms = set()
+                for p_dict in posts_with_terms:
+                    for term in p_dict.get('matched_terms', []):
+                        # Check if term contains non-ASCII characters (Amharic/Oromo/Tigrinya)
+                        if re.search(r'[^\x00-\x7F]', term):
+                            unique_foreign_terms.add(term)
+                
+                translations_map = {}
+                if unique_foreign_terms:
+                    translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
+                
+                # Inject translations into each post dictionary
+                for p_dict in posts_with_terms:
+                    term_translations = []
+                    for term in p_dict.get('matched_terms', []):
+                        if term in translations_map:
+                            term_translations.append(f"{term}: {translations_map[term]}")
+                    p_dict['english_translations'] = term_translations
+
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             cache_key_ai  = "lexicons_ai_insights_v1"
@@ -5647,7 +5667,7 @@ class LexiconsView(TemplateView):
             category_counts     = Counter()
             severity_counts     = Counter()
 
-        # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
+        # ── 6. Word cloud & 7. Targeted entities ──────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
