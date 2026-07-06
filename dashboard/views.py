@@ -491,13 +491,12 @@ def export_gephi_edges_csv(request):
     """Export Edges CSV for Gephi with tweet content filtered explicitly for Ethiopian context"""
     min_connections = int(request.GET.get('min_connections', 2))
     
-    # Apply strict Ethiopia domestic filtering rule on the query
+
     posts = ProcessedPost.objects.filter(
         is_election_related=True
     ).filter(
-        Q(original_text__icontains='Ethiopia') | 
-        Q(original_text__icontains='ኢትዮጵያ') |
-        Q(target_country__iexact='Ethiopia')
+        Q(original_text__icontains='Ethiopia') |
+        Q(original_text__icontains='ኢትዮጵያ')
     )
     
     coordination_groups = get_coordination_groups(posts, min_accounts=min_connections, max_groups=15)
@@ -506,37 +505,34 @@ def export_gephi_edges_csv(request):
     response['Content-Disposition'] = 'attachment; filename="gephi_edges.csv"'
     writer = csv.writer(response)
     
-    # Write header
-    writer.writerow(['Source', 'Target', 'Weight', 'Type', 'Tweet', 'Sub Narrative', 'Timestamp'])
+    # Updated header: Source, Target, Timestamp, Text, URL
+    writer.writerow(['Source', 'Target', 'Timestamp', 'Text', 'URL'])
     
     for group in coordination_groups:
         accounts = group.get('accounts', [])
         text_sample = group.get('text_sample', '')
-        post_count = group.get('post_count', 0)
-        sub_narrative = group.get('sub_narrative', 'General Coordination')
         
-        # Get timestamp from sample posts
+        # Get timestamp and URL from sample posts
         timestamp = ''
+        url = ''
         if group.get('sample_posts_with_urls'):
             first_post = group['sample_posts_with_urls'][0]
             timestamp = first_post.get('timestamp', '')
+            url = first_post.get('url', '')
+            
+        # Clean tweet text for seamless CSV importing
+        tweet_clean = text_sample.replace('\n', ' ').replace('\r', '').replace('"', '""').strip()
         
         # Create edges between all pairs
         for i in range(len(accounts)):
             for j in range(i+1, len(accounts)):
-                # Clean tweet text for seamless CSV importing
-                tweet_clean = text_sample.replace('\n', ' ').replace('\r', '').replace('"', '""').strip()
-                
                 writer.writerow([
                     accounts[i],
                     accounts[j],
-                    post_count,
-                    'Undirected',
-                    tweet_clean,  
-                    sub_narrative,
-                    timestamp
+                    timestamp,
+                    tweet_clean,
+                    url
                 ])
-    
     return response
 
 def export_gephi_edges_with_roles_csv(request):
