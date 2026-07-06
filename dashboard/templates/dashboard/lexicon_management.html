@@ -99,7 +99,7 @@
         
         <div class="p-4 bg-blue-900/20 rounded-lg border border-blue-800/40">
             <p class="text-sm text-blue-300">
-                <strong>🔬 Methodology:</strong> Our hybrid approach combines rule-based precision with AI-powered contextual understanding. Each detection method votes on the classification, and we calculate a <strong>weighted confidence score</strong> to minimize false positives while catching sophisticated manipulation tactics. The AFRO-XLMR model was specifically fine-tuned on Ethiopian election discourse across Amharic, Oromo, and English to recognize these 20 distinct categories of harmful language with high accuracy.
+                <strong>🔬 Methodology:</strong> Our hybrid approach combines rule-based precision with LLM-powered contextual understanding. Each detection method votes on the classification, and we calculate a <strong>weighted confidence score</strong> to minimize false positives while catching sophisticated manipulation tactics. The AFRO-XLMR model was specifically fine-tuned on Ethiopian election discourse across Amharic, Oromo, and English to recognize these 20 distinct categories of harmful language with high accuracy.
             </p>
         </div>
     </div>
@@ -223,15 +223,24 @@
             </div>
             {% endif %}
             
-            <!-- LLM-Extracted Trigger Terms (Not in Lexicon Yet) -->
+            <!-- LLM-Extracted Trigger Terms  - WITH CSV DOWNLOAD -->
             {% if scan_results.new_trigger_terms and scan_results.has_new_terms %}
             <div class="mb-4 p-4 bg-purple-950/20 rounded-lg border border-purple-800/40">
-                <p class="text-sm font-semibold text-purple-300 mb-3 flex items-center gap-2">
-                    <i class="fas fa-magic text-purple-400"></i>
-                    New Trigger Terms Detected ({{ scan_results.new_trigger_terms|length }})
-                </p>
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-sm font-semibold text-purple-300 flex items-center gap-2">
+                        <i class="fas fa-magic text-purple-400"></i>
+                        New Trigger Terms Detected ({{ scan_results.new_trigger_terms|length }})
+                    </p>
+                    <!--  CSV Download Button -->
+                    <a href="{% url 'export_new_terms_csv' %}" 
+                       class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-semibold transition flex items-center gap-1">
+                        <i class="fas fa-download text-[10px]"></i>
+                        Download CSV
+                    </a>
+                </div>
+                
                 <p class="text-xs text-purple-400/80 mb-4">
-                    These terms were identified by the LLM as harmful but are not yet in the lexicon. Click "Add to Database" to include them in the existing lexicons list.
+                    These terms were identified by the LLM as harmful but are not yet in the lexicon. Click "Add to Database" to include them in the existing lexicons list, or download all as CSV.
                 </p>
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
