@@ -4338,7 +4338,7 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
     
     existing_list = ', '.join(list(existing_terms)[:50])
     
-    # Updated prompt - explicitly ask for confidence scores
+    # FIXED PROMPT: Now includes confidence score requirement
     prompt = (
         "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language) "
         "from this text that are NOT already in the lexicon.\n"
@@ -4352,7 +4352,7 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
         '- "severity": one of [low, medium, high, critical]\n'
         '- "target_entity": the group being targeted (e.g., Amhara, Oromo, Women) or empty string\n'
         '- "language": one of [Amharic, Oromo, English, Tigrinya, Somali]\n'
-        '- "confidence": A float between 0.0 and 1.0 representing how certain you are this is a harmful term (e.g., 0.95 for highly certain, 0.6 for borderline)\n'
+        '- "confidence": A number between 0.0 and 1.0 representing your confidence (e.g., 0.95 for very confident, 0.7 for moderate)\n'
         "EXAMPLE OUTPUT:\n"
         '[\n'
         '  {"term": "example slur", "category": "ethnic_identity", "severity": "high", "target_entity": "Group", "language": "Amharic", "confidence": 0.92}\n'
@@ -4410,18 +4410,14 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
             if language not in valid_languages:
                 language = 'Amharic'
             
-            # Ensure confidence is between 0.7 and 1.0
-            confidence = term_data.get('confidence', 0.5) 
-        
-            # Ensure it's a valid number
-            if not isinstance(confidence, (int, float)):
-                try:
-                    confidence = float(confidence)
-                except (ValueError, TypeError):
-                    confidence = 0.5
-    
-            # Clamp between 0.0 and 1.0
-            confidence = max(0.0, min(1.0, confidence))  
+            # FIXED: Properly handle confidence score
+            confidence = term_data.get('confidence', 0.85)  # Default to 85% if not provided
+            try:
+                confidence = float(confidence)
+                # Ensure it's between 0 and 1
+                confidence = max(0.0, min(1.0, confidence))
+            except (ValueError, TypeError):
+                confidence = 0.85  # Fallback to 85%
             
             valid_terms.append({
                 'term': term,
@@ -4442,6 +4438,37 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
     except Exception as e:
         logger.error(f"Error in LLM trigger term extraction: {e}")
         return []
+
+def export_new_terms_csv(request):
+    """Export new trigger terms detected by LLM to CSV"""
+    # Get terms from session
+    new_terms = request.session.get('new_trigger_terms', [])
+    
+    if not new_terms:
+        messages.warning(request, "No new terms to export. Please scan text first.")
+        return redirect('lexicon_management')
+    
+    # Create CSV response
+    response = HttpResponse(content_type='text/csv')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    response['Content-Disposition'] = f'attachment; filename="new_trigger_terms_{timestamp}.csv"'
+    
+    # Write CSV
+    writer = csv.writer(response)
+    writer.writerow(['Term', 'Category', 'Severity', 'Target Entity', 'Language', 'Confidence'])
+    
+    for term in new_terms:
+        writer.writerow([
+            term.get('term', ''),
+            term.get('category', ''),
+            term.get('severity', ''),
+            term.get('target_entity', ''),
+            term.get('language', ''),
+            term.get('confidence', '')
+        ])
+    
+    messages.success(request, f"Exported {len(new_terms)} new trigger terms to CSV")
+    return response
        
 def reports_landing(request):
     """Landing page showing all report categories as cards"""
