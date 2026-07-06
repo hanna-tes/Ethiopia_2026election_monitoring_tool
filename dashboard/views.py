@@ -5820,7 +5820,7 @@ class LexiconsView(TemplateView):
             return "1000+"
 
     def _scan_post(self, text: str, category_filter=None):
-        """Scan one post's text using lexicon."""
+        """Scan one post's text using lexicon only - FAST."""
         if not text or len(text.strip()) < 10:
             return []
         text_lower = text.lower()
@@ -5834,49 +5834,20 @@ class LexiconsView(TemplateView):
                 filtered.append(m)
         return filtered
 
-    def _background_process_afro_xlmr(self, post_ids):
-        """
-        Background thread: Processes remaining posts with AFRO-XLMR and caches results.
-        This prevents page-load lag while ensuring all posts eventually get analyzed.
-        """
-        try:
-            from .utils.hate_speech_detector import get_hate_speech_detector
-            from .models import ProcessedPost
-            
-            detector = get_hate_speech_detector()
-            if not detector:
-                return
-                
-            posts = ProcessedPost.objects.filter(id__in=post_ids)
-            for post in posts:
-                cache_key = f"afro_xlmr_{post.id}"
-                # Skip if already cached
-                if cache.get(cache_key):
-                    continue
-                
-                if post.original_text and len(post.original_text) > 10:
-                    try:
-                        result = detector.detect(post.original_text)
-                        # Cache for 24 hours
-                        cache.set(cache_key, result, 86400)
-                    except Exception as e:
-                        logger.warning(f"Background AFRO-XLMR failed for post {post.id}: {e}")
-        except Exception as e:
-            logger.error(f"Background AFRO-XLMR thread crashed: {e}")
-
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # ─ 1. URL params ─────────────────────────────────────────────────
+        # ── 1. URL params ─────────────────────────────────────────────────
         selected_category = self.request.GET.get('category', '').strip()
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
 
-        # ── 2. Cache (overview only, keyed to date range) ────────────────
-        cache_key = f"lexicon_dashboard_v4_{req_start}_{req_end}_{view_all}"
+        # ── 2. Cache (overview only, keyed to date range) ─────────────────
+        # INCREASED CACHE: 4 hours instead of 1 hour
+        cache_key = f"lexicon_dashboard_v5_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
-
+        
         if cached_data and not selected_category:
             context.update(cached_data)
             context['ai_insights']  = cache.get("lexicons_ai_insights_v1")
@@ -5897,12 +5868,12 @@ class LexiconsView(TemplateView):
         except Exception as e:
             logger.error(f"LexiconsView: error fetching posts: {e}")
             context.update({
-                'active_tab': 'lexicons', 'top_terms': [], 'category_counts': {}, 
-                'severity_counts': {}, 'total_matches': 0, 'posts_scanned': 0, 
+                'active_tab': 'lexicons', 'top_terms': [], 'category_counts': {},
+                'severity_counts': {}, 'total_matches': 0, 'posts_scanned': 0,
                 'total_posts': 0, 'wordcloud_base64': None, 'targeted_entities': [],
                 'ai_insights': None, 'ai_is_running': False,
                 'lexicon_term_count': self._get_lexicon_term_count(),
-                'selected_category': selected_category, 'category_terms': [], 
+                'selected_category': selected_category, 'category_terms': [],
                 'posts_with_terms': [],
             })
             return context
@@ -5910,12 +5881,11 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
 
-        # ─ 4a. CATEGORY VIEW ──────────────────────────────────────────────
+        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         category_terms  = []
         posts_with_terms = []
         all_matches     = []
         posts_scanned   = 0
-        posts_for_background = [] # Collect IDs for background processing
 
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category}")
@@ -5929,7 +5899,8 @@ class LexiconsView(TemplateView):
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
-                for post in filtered_posts.iterator(chunk_size=500):
+                # REDUCED: Only scan first 500 posts for category view (fast)
+                for post in filtered_posts.iterator(chunk_size=200):
                     if not post.original_text:
                         continue
                     text       = post.original_text
@@ -5946,26 +5917,7 @@ class LexiconsView(TemplateView):
                     if matched_terms:
                         posts_scanned += 1
                         
-                        # ── HYBRID MODEL DETECTION (Cache + Sampling + Background) ─
-                        cache_key_post = f"afro_xlmr_{post.id}"
-                        model_info = cache.get(cache_key_post)
-                        
-                        # 1. Smart Sampling: Run synchronously for the first 10 posts
-                        if not model_info and posts_scanned <= 10:
-                            try:
-                                from .utils.hate_speech_detector import get_hate_speech_detector
-                                detector = get_hate_speech_detector()
-                                if detector:
-                                    model_info = detector.detect(text)
-                                    cache.set(cache_key_post, model_info, 86400) # Cache 24h
-                            except Exception as e:
-                                logger.warning(f"Sync AFRO-XLMR failed: {e}")
-                        
-                        # 2. Fallback to Lexicon & Queue for Background
-                        if not model_info:
-                            model_info = {'model': 'Lexicon', 'confidence': 1.0, 'category': selected_category, 'severity': 'medium'}
-                            posts_for_background.append(post.id)
-
+                        # NO MODEL DETECTION - Just lexicon data (FAST)
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text[:300],
@@ -5973,28 +5925,21 @@ class LexiconsView(TemplateView):
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
-                            'detected_by':   model_info.get('model', 'Lexicon'),
-                            'confidence':    model_info.get('confidence', 1.0),
-                            'model_category': model_info.get('category', selected_category),
+                            'detected_by':   'Lexicon',  # Always lexicon
+                            'confidence':    1.0,
+                            'model_category': selected_category,
                         })
+                        
+                        # LIMIT: Stop after 100 posts to prevent timeout
+                        if posts_scanned >= 100:
+                            break
 
-                logger.info(f"  Category scan complete: {posts_scanned} posts matched out of {total_posts}")
-                
-                # 3. Trigger Background Thread for the remaining posts
-                if posts_for_background:
-                    logger.info(f"  Queuing {len(posts_for_background)} posts for background AFRO-XLMR analysis...")
-                    t = threading.Thread(
-                        target=self._background_process_afro_xlmr,
-                        args=(posts_for_background,),
-                        daemon=True,
-                    )
-                    t.start()
+                logger.info(f"  Category scan complete: {posts_scanned} posts matched")
 
-                # ── 4. LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
+                # ── LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
                 unique_foreign_terms = set()
                 for p_dict in posts_with_terms:
                     for term in p_dict.get('matched_terms', []):
-                        # Check if term contains non-ASCII characters (Amharic/Oromo/Tigrinya)
                         if re.search(r'[^\x00-\x7F]', term):
                             unique_foreign_terms.add(term)
                 
@@ -6012,6 +5957,7 @@ class LexiconsView(TemplateView):
 
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
+            # Trigger background AI analysis if not already running
             cache_key_ai  = "lexicons_ai_insights_v1"
             ai_insights   = cache.get(cache_key_ai)
             ai_is_running = cache.get("lexicons_ai_running")
@@ -6024,7 +5970,9 @@ class LexiconsView(TemplateView):
                 t.start()
                 logger.info("LexiconsView: background AI analysis triggered")
 
-            for post in filtered_posts.iterator(chunk_size=1000):
+            # REDUCED: Only scan first 1000 posts for overview (fast)
+            posts_to_scan = filtered_posts[:1000]
+            for post in posts_to_scan.iterator(chunk_size=200):
                 if not post.original_text:
                     continue
                 try:
@@ -6063,7 +6011,7 @@ class LexiconsView(TemplateView):
             category_counts     = Counter()
             severity_counts     = Counter()
 
-        # ── 6. Word cloud & 7. Targeted entities ──────────────────────────
+        # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
@@ -6077,7 +6025,7 @@ class LexiconsView(TemplateView):
             try:
                 entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b', r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b', r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}']
                 entities_found = Counter()
-                for post in filtered_posts.iterator(chunk_size=500):
+                for post in filtered_posts.iterator(chunk_size=200):
                     if not post.original_text: continue
                     for pattern in entity_patterns:
                         for match in re.findall(pattern, post.original_text, re.IGNORECASE):
@@ -6099,7 +6047,8 @@ class LexiconsView(TemplateView):
         if not selected_category:
             shared['wordcloud_base64']  = wordcloud_base64
             shared['targeted_entities'] = targeted_entities
-            cache.set(cache_key, shared, 3600)
+            # INCREASED CACHE: 4 hours instead of 1 hour
+            cache.set(cache_key, shared, 14400)
         else:
             shared['wordcloud_base64']  = None
             shared['targeted_entities'] = []
@@ -6132,10 +6081,10 @@ class LexiconsView(TemplateView):
             total_analyzed  = 0
             
             afro_severity_map = {
-                'Violence': 'critical', 'Inciteful': 'critical', 'Call for action': 'critical', 
-                'Dehumanization': 'critical', 'Extremism': 'high', 'Ethnic slur': 'high', 
+                'Violence': 'critical', 'Inciteful': 'critical', 'Call for action': 'critical',
+                'Dehumanization': 'critical', 'Extremism': 'high', 'Ethnic slur': 'high',
                 'Slur': 'high', 'Misognistic': 'high', 'Deragatory': 'medium',
-                'Inflammatory': 'high', 'Gender disinformation': 'high', 'Stereotype': 'high', 
+                'Inflammatory': 'high', 'Gender disinformation': 'high', 'Stereotype': 'high',
                 'Homophobic': 'high', 'Ethnicity': 'high', 'Xenophobia': 'high', 'Religion': 'high',
                 'Ancestry': 'medium', 'Class': 'low', 'Stractural': 'low',
             }
@@ -6156,6 +6105,7 @@ class LexiconsView(TemplateView):
             total_hateful = sum(category_counts.values())
             ai_results = [{'category': cat.replace('_', ' ').title(), 'count': count, 'percentage': round(count / total_analyzed * 100, 1) if total_analyzed else 0, 'severity': afro_severity_map.get(cat, 'medium')} for cat, count in category_counts.most_common(5)]
             
+            # INCREASED CACHE: 24 hours for AI insights
             cache.set(cache_key, {'results': ai_results, 'total_analyzed': total_analyzed, 'total_hateful': total_hateful}, 86400)
             logger.info(f"Background analysis COMPLETE: {total_hateful} hateful / {total_analyzed} analysed.")
         except Exception as e:
@@ -6163,7 +6113,7 @@ class LexiconsView(TemplateView):
             logger.error(traceback.format_exc())
             cache.set(cache_key, {'results': [], 'total_analyzed': 0, 'total_hateful': 0, 'error': str(e)}, 3600)
         finally:
-            cache.delete("lexicons_analysis_running")
+            cache.delete("lexicons_ai_running")
             logger.info("Background thread finished and cleaned up.")
 
 class PEPsHubView(TemplateView):
@@ -6418,97 +6368,47 @@ class NetworksView(TemplateView):
         
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Load lexicon terms from DB, excluding single characters
+        # Load lexicon terms from DB
         lexicon_terms = LexiconTerm.objects.filter(
             is_election_related=True
         ).exclude(
             term__regex=r'^.$'
         ).order_by('category', 'severity')
-
-        # If DB is empty, seed from CONFIG (one-time migration)
-        if not lexicon_terms.exists():
-            for category, terms in CONFIG['lexicon'].items():
-                for term, metadata in terms.items():
-                    if len(term.strip()) > 1:
-                        LexiconTerm.objects.get_or_create(
-                            term=term,
-                            defaults={
-                                'category': category,
-                                'severity': metadata.get('severity', 'medium'),
-                                'target_entity': metadata.get('target_entity', ''),
-                                'language': metadata.get('language', 'english'),
-                                'is_election_related': True
-                            }
-                        )
-            lexicon_terms = LexiconTerm.objects.filter(
-                is_election_related=True
-            ).exclude(
-                term__regex=r'^.$'
-            ).order_by('category', 'severity')
-
-        # RESPECT THE GLOBAL DATE FILTER
-        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-        total_posts_in_filter = filtered_posts.count()
-
-        # Only scan the most recent 3000 posts instead of all
-        posts_to_scan = filtered_posts[:3000]
         
-        all_matches = []
-        posts_scanned = 0
-        
-        # Scan only the limited dataset
-        for post in posts_to_scan.iterator():
-            if post.original_text:
-                try:
-                    matches = scan_text_for_lexicon_terms(post.original_text)
-                    if matches:
-                        all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
-                        posts_scanned += 1
-                except Exception as e:
-                    logger.warning(f"Error scanning post {post.id}: {e}")
-                    continue
-
         # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
-
+        
         # Get scan results from session (if any) and clear immediately
         scan_results = self.request.session.pop('scan_results', None)
-
-        # Determine filter state for the template text
-        view_all = self.request.GET.get('view_all') == 'true'
-        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
-
-        # Count terms from both Database AND CONFIG lexicon
+        
+        # Count terms
         db_count = lexicon_terms.count()
         config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values())
         total_count = db_count + config_count
-
+        
         context.update({
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
             'categories': categories,
-            'total_terms': total_count, 
-            'db_term_count': db_count,   
+            'total_terms': total_count,
+            'db_term_count': db_count,
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
-            'total_matches': len(all_matches),
-            'posts_scanned': posts_scanned,
-            'total_posts': total_posts_in_filter,
-            'view_all': view_all,
-            'has_custom_date_filter': has_custom_date_filter,
-            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
+            # Don't scan posts on page load - only show lexicon management
+            'total_matches': 0,
+            'posts_scanned': 0,
+            'total_posts': 0,
         })
         return context
-
+    
     def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
-
+        
         # Handle Edit Term
         if action == 'edit_term':
             term_id = request.POST.get('term_id')
@@ -6524,12 +6424,11 @@ class LexiconManagementView(TemplateView):
                         obj.language = request.POST.get('language', 'english')
                         obj.save()
                         messages.success(request, "Term updated successfully!")
-                        cache.delete("lexicon_dashboard_data_v2")
                     else:
                         messages.warning(request, "Term must be at least 2 characters long.")
                 except LexiconTerm.DoesNotExist:
                     messages.error(request, "Term not found.")
-
+        
         # Handle Delete Term
         elif action == 'delete_term':
             term_id = request.POST.get('term_id')
@@ -6537,10 +6436,9 @@ class LexiconManagementView(TemplateView):
                 try:
                     LexiconTerm.objects.filter(id=term_id).delete()
                     messages.success(request, "Term deleted successfully.")
-                    cache.delete("lexicon_dashboard_data_v2")
                 except Exception as e:
                     messages.error(request, f"Error: {e}")
-
+        
         # Handle Add Term
         elif action == 'add_term':
             term = request.POST.get('term', '').strip()
@@ -6556,25 +6454,21 @@ class LexiconManagementView(TemplateView):
                     }
                 )
                 messages.success(request, "Term added successfully!")
-                cache.delete("lexicon_dashboard_data_v2")
             else:
-                messages.warning(request, "Term must be at least 2 characters long. Single characters are skipped.")
-
-        # Handle Scan Text
+                messages.warning(request, "Term must be at least 2 characters long.")
+        
+        # Handle Scan Text (only when user submits the scan form)
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
             if text:
                 # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
-
-                # 2. ENHANCED LLM-based detection with category
+                
+                # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm_enhanced(text)
-
-                # 3. Extract NEW trigger terms not in lexicon
-                new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
-
-                # 4. AFRO-XLMR Model detection (specialized for Ethiopian languages)
+                
+                # 3. AFRO-XLMR detection
                 try:
                     afro_result = detect_hate_speech_afro_xlmr(text)
                 except Exception as e:
@@ -6584,167 +6478,46 @@ class LexiconManagementView(TemplateView):
                         'confidence': 0.0,
                         'category': 'error',
                         'severity': 'low',
-                        'language_detected': 'unknown',
-                        'error': 'AFRO-XLMR model not loaded'
+                        'error': 'Model not loaded'
                     }
-
-                # 5. Determine final verdict - AFRO-XLMR HAS HIGHEST PRIORITY (Ethiopian languages)
+                
+                # Determine verdict
                 is_hate_speech = False
-                overall_severity_num = 1
-                explanation = ""
-                model_used = ""
-
-                # AFRO-XLMR results
-                afro_is_hate = afro_result.get('is_hate_speech', False)
-                afro_confidence = afro_result.get('confidence', 0)
-                afro_category = afro_result.get('category', 'neutral')
-                afro_severity = afro_result.get('severity', 'low')
-                afro_language = afro_result.get('language_detected', 'unknown')
+                overall_severity = 'low'
+                model_used = "None"
                 
-                # LLM results 
-                llm_is_hate = llm_result.get('is_hate_speech', False)
-                llm_confidence = llm_result.get('confidence', 0)
-                llm_category = llm_result.get('category', 'uncategorized')  # LLM category
-                llm_explanation = llm_result.get('explanation', '')
-                llm_severity = llm_result.get('severity', 'low')
-                llm_target_group = llm_result.get('target_group', '')
-                llm_harmful_elements = llm_result.get('harmful_elements', [])
-                
-                # PRIORITY 1: AFRO-XLMR (specialized for Ethiopian languages)
-                if afro_is_hate and afro_confidence >= 0.6:
+                if afro_result.get('is_hate_speech') and afro_result.get('confidence', 0) >= 0.6:
                     is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_severity, 2)
+                    overall_severity = afro_result.get('severity', 'medium')
                     model_used = "AFRO-XLMR"
-                # PRIORITY 2: LLM says hate speech
-                elif llm_is_hate and llm_confidence >= 0.6:
+                elif llm_result.get('is_hate_speech') and llm_result.get('confidence', 0) >= 0.6:
                     is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_severity, 2)
+                    overall_severity = llm_result.get('severity', 'medium')
                     model_used = "LLM"
-                # PRIORITY 3: Lexicon finds high-risk terms
-                elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
+                elif lexicon_risk.get('score', 0) > 3:
                     is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
+                    overall_severity = lexicon_risk.get('level', 'medium')
                     model_used = "Lexicon"
-                # PRIORITY 4: Default to not hate speech
-                else:
-                    is_hate_speech = False
-                    overall_severity_num = 1
-                    if lexicon_matches:
-                        explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
-                    else:
-                        explanation = "No hate speech detected by any method."
-                    model_used = "None"
-                
-                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
-                
-                # Create ENHANCED combined analysis
-                analysis_parts = []
-                
-                # AFRO-XLMR analysis
-                if afro_result.get('category') != 'error':
-                    analysis_parts.append(
-                        f"AFRO-XLMR ({afro_language}): Category='{afro_category}' ({afro_confidence*100:.0f}% confidence)"
-                    )
-                
-                # LLM analysis with category
-                if llm_explanation:
-                    analysis_parts.append(
-                        f"LLM Analysis: Category='{llm_category}' - {llm_explanation}"
-                    )
-                
-                # Lexicon matches
-                if lexicon_matches:
-                    terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
-                    analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
-                
-                combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
-
-                # AUTO-SAVE NEW TRIGGER TERMS TO DATABASE
-                auto_saved_count = 0
-                if new_terms:
-                    for term_data in new_terms:
-                        # Normalize language
-                        detected_language = term_data.get('language', 'english').lower().strip()
-                        language_map = {
-                            'amharic': 'amharic', 'oromo': 'oromo', 'tigrinya': 'tigrinya',
-                            'english': 'english', 'somali': 'somali'
-                        }
-                        normalized_language = language_map.get(detected_language, 'english')
-                        
-                        # Auto-save to database (get_or_create prevents duplicates)
-                        obj, created = LexiconTerm.objects.get_or_create(
-                            term=term_data['term'],
-                            defaults={
-                                'category': term_data['category'],
-                                'severity': term_data['severity'],
-                                'target_entity': term_data.get('target_entity', ''),
-                                'language': normalized_language,
-                                'is_election_related': True,
-                                'is_active': True
-                            }
-                        )
-                        if created:
-                            auto_saved_count += 1
-                            logger.info(f"✅ Auto-saved new term: '{term_data['term']}' ({term_data['category']})")
                 
                 # Save to session
                 request.session['scan_results'] = {
-                    'text': text[:200] + '...' if len(text) > 200 else text,
+                    'text': text[:200],
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
-                    'llm_result': llm_result,  # Now includes category, target_group, harmful_elements
+                    'llm_result': llm_result,
                     'afro_xlmr_result': afro_result,
                     'is_hate_speech': is_hate_speech,
-                    'overall_severity': severity_map[overall_severity_num],
-                    'overall_confidence': max(afro_confidence, llm_confidence),
-                    'overall_confidence_pct': f"{round(max(afro_confidence, llm_confidence) * 100)}%",
-                    'all_categories': list(set([m['category'] for m in lexicon_matches] + [llm_category, afro_category])),
-                    'targeted_groups': [llm_target_group] if llm_target_group else llm_result.get('targeted_groups', []),
-                    'explanation': combined_analysis,
-                    'analysis': combined_analysis,
-                    'has_lexicon_matches': len(lexicon_matches) > 0,
-                    'new_trigger_terms': new_terms,
-                    'has_new_terms': len(new_terms) > 0,
+                    'overall_severity': overall_severity,
                     'model_used': model_used,
-                    'afro_language_detected': afro_language,
-                    # NEW FIELDS
-                    'llm_category': llm_category,
-                    'llm_target_group': llm_target_group,
-                    'llm_harmful_elements': llm_harmful_elements,
                 }
                 
                 if is_hate_speech:
-                    messages.warning(
-                        request, 
-                        f"🚨 Potential hate speech detected by {model_used}! "
-                        f"Severity: {severity_map[overall_severity_num].upper()} "
-                        f"(Confidence: {max(afro_confidence, llm_confidence)*100:.0f}%)"
-                    )
-                    
-                    if new_terms:
-                        if auto_saved_count > 0:
-                            messages.success(
-                                request, 
-                                f"✅ {auto_saved_count} new trigger term(s) automatically saved to database! "
-                                f"Use the 'Download All Terms (CSV)' button to export your lexicon."
-                            )
-                        else:
-                            messages.info(
-                                request, 
-                                f"ℹ️ {len(new_terms)} new trigger term(s) detected (already in database)."
-                            )
+                    messages.warning(request, f"⚠️ Potential hate speech detected by {model_used}!")
                 else:
-                    if lexicon_matches:
-                        messages.info(
-                            request, 
-                            f"✅ No hate speech detected. "
-                            f"(Note: {len(lexicon_matches)} sensitive term(s) found, but context appears neutral)."
-                        )
-                    else:
-                        messages.success(request, "✅ No hate speech detected.")
+                    messages.success(request, "✅ No hate speech detected.")
             else:
-                messages.warning(request, "⚠️ Please enter text to scan")
-
+                messages.warning(request, "Please enter text to scan")
+        
         return redirect('lexicon_management')
            
 class UploadDataView(TemplateView):
