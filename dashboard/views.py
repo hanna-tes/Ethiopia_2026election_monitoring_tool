@@ -5609,7 +5609,19 @@ class HomeView(BaseTabMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
         
+        cache_key = f"home_dashboard_v1_{req_start}_{req_end}_{view_all}"
+        cached_data = cache.get(cache_key)
+        
+        if cached_data:
+            logger.info("✅ HomeView: Serving from cache")
+            return cached_data
+        
+        context = super().get_context_data(**kwargs)
         # 1. GET FILTERED QUERYSET (now defaults to 3 months)
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
@@ -5760,12 +5772,28 @@ class HomeView(BaseTabMixin, TemplateView):
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
+        # ── SAVE TO CACHE (30 minutes) ────────────────────────────
+        cache.set(cache_key, context, 1800)
+        logger.info(f"💾 HomeView: Cached for 30 minutes")
         return context     
         
 class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
 
     def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # ── CHECK CACHE FIRST ──────────────────────────────────────
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
+        
+        cache_key = f"narratives_view_v1_{req_start}_{req_end}_{view_all}"
+        cached_data = cache.get(cache_key)
+        
+        if cached_data:
+            logger.info("✅ NarrativesView: Serving from cache")
+            return cached_data
+        
         context = super().get_context_data(**kwargs)
 
         # Reuse date filtering helper
@@ -5796,7 +5824,10 @@ class NarrativesView(TemplateView):
             .all()
             .order_by('-uploaded_at')[:12]
         )
-
+        # ── SAVE TO CACHE (1 hour) ────────────────────────────────
+        cache.set(cache_key, context, 3600)
+        logger.info(f"💾 NarrativesView: Cached for 1 hour")
+        
         return context
 
 class LexiconsView(TemplateView):
@@ -6201,6 +6232,18 @@ class PEPsView(TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
+        
+        cache_key = f"peps_view_v1_{req_start}_{req_end}_{view_all}"
+        cached_data = cache.get(cache_key)
+        
+        if cached_data:
+            logger.info("✅ PEPsView: Serving from cache")
+            return cached_data
+        
+        context = super().get_context_data(**kwargs)
         
         # 1. Force sync standard PEPs if DB is empty (existing logic)
         if not PEP.objects.exists():
@@ -6281,13 +6324,29 @@ class PEPsView(TemplateView):
             'active_tab': 'peps',
             'pep_analysis': pep_analysis_data,  # For the PEPs analysis tab
         })
-        
+        # ── SAVE TO CACHE (20 minutes) ────────────────────────────
+        cache.set(cache_key, context, 1200)
+        logger.info(f"💾 PEPsView: Cached for 20 minutes")
         return context        
         
 class NetworksView(TemplateView):
     template_name = 'dashboard/networks.html'
 
     def get(self, request, *args, **kwargs):
+
+        # ── CHECK CACHE FIRST ──────────────────────────────────────
+        min_connections = int(request.GET.get('min_connections', 3))
+        view_all = request.GET.get('view_all') == 'true'
+        req_start = request.GET.get('start_date', '')
+        req_end = request.GET.get('end_date', '')
+        
+        cache_key = f"networks_view_v1_{min_connections}_{req_start}_{req_end}_{view_all}"
+        cached_data = cache.get(cache_key)
+        
+        if cached_data:
+            logger.info("✅ NetworksView: Serving from cache")
+            return render(request, self.template_name, cached_data)
+            
         # 1. Parse connection limits and parameters
         min_connections = int(request.GET.get('min_connections', 3))
         top_n = int(request.GET.get('top_n', 40))
@@ -6385,12 +6444,28 @@ class NetworksView(TemplateView):
             'total_posts': total_posts_analyzed,
             'ttps': ttps,  
         }
+        # ── SAVE TO CACHE (15 minutes) ────────────────────────────
+        cache.set(cache_key, context, 900)
+        logger.info(f"💾 NetworksView: Cached for 15 minutes")
+        
         return render(request, self.template_name, context)
         
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
     
     def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
+        
+        cache_key = f"lexicon_mgmt_v1_{req_start}_{req_end}_{view_all}"
+        cached_data = cache.get(cache_key)
+        
+        if cached_data:
+            logger.info("✅ LexiconManagementView: Serving from cache")
+            return cached_data
+        
         context = super().get_context_data(**kwargs)
         
         # Load lexicon terms from DB
@@ -6425,6 +6500,9 @@ class LexiconManagementView(TemplateView):
             'posts_scanned': 0,
             'total_posts': 0,
         })
+        # ── SAVE TO CACHE (30 minutes) ────────────────────────────
+        cache.set(cache_key, context, 1800)
+        logger.info(f"💾 LexiconManagementView: Cached for 30 minutes")
         return context
     
     def post(self, request, *args, **kwargs):
@@ -6556,6 +6634,7 @@ class UploadDataView(TemplateView):
         import os
         import uuid
         from django.utils import timezone
+        from django.core.cache import cache
         
         logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
         logger.info(f"📁 FILES: {list(request.FILES.keys())}")
@@ -6613,6 +6692,24 @@ class UploadDataView(TemplateView):
                 logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
                 results.append((uploaded_file.name, False, str(e), 0))
         
+        # 🚨 CLEAR CACHE AFTER SUCCESSFUL UPLOAD
+        total_saved = sum(c for _, s, _, c in results if s and c > 0)
+        if total_saved > 0:
+            try:
+                # Try Redis-style pattern deletion first
+                cache.delete_pattern("home_dashboard_*")
+                cache.delete_pattern("narratives_view_*")
+                cache.delete_pattern("peps_view_*")
+                cache.delete_pattern("networks_view_*")
+                cache.delete_pattern("lexicon_mgmt_*")
+                cache.delete_pattern("lexicon_dashboard_*")
+                cache.delete_pattern("trend_analysis_*")
+                logger.info(f"✅ Cleared all dashboard caches after uploading {total_saved} posts")
+            except AttributeError:
+                # Fallback: Clear all cache if delete_pattern not available
+                cache.clear()
+                logger.info(f"✅ Cleared entire cache after uploading {total_saved} posts")
+        
         # Show summary in UI
         success_count = sum(1 for _, s, _, _ in results if s)
         if success_count == len(uploaded_files):
@@ -6631,6 +6728,7 @@ class ProcessUploadView(View):
         import uuid
         import hashlib
         from django.utils import timezone
+        from django.core.cache import cache
         
         logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
         logger.info(f"📁 FILES: {list(request.FILES.keys())}")
@@ -6790,6 +6888,21 @@ class ProcessUploadView(View):
         # === SHOW SUMMARY ===
         success_count = sum(1 for _, s, _, c in results if s and c > 0)
         total_saved = sum(c for _, s, _, c in results if s)
+        
+        # 🚨 CLEAR CACHE AFTER SUCCESSFUL UPLOAD
+        if total_saved > 0:
+            try:
+                # Clear all dashboard caches so users see fresh data
+                cache.delete_pattern("lexicon_dashboard_*")
+                cache.delete_pattern("trend_analysis_*")
+                cache.delete("lexicons_ai_insights_v1")
+                cache.delete("lexicons_ai_running")
+                cache.delete("lexicon_dashboard_data_v2")
+                logger.info(f"✅ Cleared all dashboard caches after uploading {total_saved} posts")
+            except AttributeError:
+                # Fallback: Clear all cache if delete_pattern not available
+                cache.clear()
+                logger.info(f"✅ Cleared entire cache after uploading {total_saved} posts")
         
         if total_saved > 0:
             if success_count == len([r for r in results if r[1]]):
