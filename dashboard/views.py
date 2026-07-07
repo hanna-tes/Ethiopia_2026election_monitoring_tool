@@ -6513,22 +6513,29 @@ class LexiconManagementView(TemplateView):
         config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values()) if 'CONFIG' in globals() else 0
         total_count = db_count + config_count
         
-        # 4. OPTIMIZED BULK REAL-TIME DATABASE SCAN (No Slow Loops!)
+        # 4. FULL REAL-TIME DATABASE SCAN (DB Terms + CONFIG Dict Terms Combined)
         total_matches = 0
-        if total_posts_count > 0 and db_count > 0:
-            # Build an aggregated database OR query matching any terms in one single pass
-            terms_list = list(lexicon_terms.values_list('term', flat=True))
-            word_conditions = Q()
-            for term in terms_list:
-                # Direct substring check for Ge'ez/Ethiopic scripts vs English word boundaries
-                if re.search(r'[^\x00-\x7F]', term):
-                    word_conditions |= Q(original_text__icontains=term)
-                else:
-                    word_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
-            
-            # Count exactly how many of these 3,000 recent posts match your active terms
-            post_ids = list(recent_posts.values_list('id', flat=True))
-            total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(word_conditions).count()
+        if total_posts_count > 0:
+            # Gather terms from both DB and CONFIG dictionary to avoid missing anything
+            combined_terms = set(lexicon_terms.values_list('term', flat=True))
+            if 'CONFIG' in globals():
+                for cat, terms in CONFIG.get('lexicon', {}).items():
+                    for t in terms:
+                        if len(t) > 1:
+                            combined_terms.add(t)
+
+            if combined_terms:
+                word_conditions = Q()
+                for term in combined_terms:
+                    # Direct substring check for Ge'ez/Ethiopic scripts vs English word boundaries
+                    if re.search(r'[^\x00-\x7F]', term):
+                        word_conditions |= Q(original_text__icontains=term)
+                    else:
+                        word_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
+                
+                # Extract targeted slice IDs and perform the single-pass query count
+                post_ids = list(recent_posts.values_list('id', flat=True))
+                total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(word_conditions).count()
 
         # 5. Populate Context to Update UI Statistics From 0
         context.update({
