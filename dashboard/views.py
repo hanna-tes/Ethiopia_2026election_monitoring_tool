@@ -192,6 +192,8 @@ def detect_hate_speech_afro_xlmr(text: str) -> dict:
     Separate from Gemma model to avoid confusion
     """
     try:
+        from .utils.afro_xlmr_detector import get_detector
+
         detector = get_detector()
         return detector.detect(text)
     except Exception as e:
@@ -7407,9 +7409,9 @@ class ProcessUploadView(View):
                 ext = os.path.splitext(original_name)[1]
                 unique_filename = f"{name_without_ext}_{timestamp}_{unique_id}{ext}"
                 
-                # Save file
+                # Save file to the configured storage backend, then read it back
+                # through storage so local files and S3-compatible stores both work.
                 file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
-                full_path = os.path.join(settings.MEDIA_ROOT, file_path)
                 logger.info(f"🔄 Processing: {original_name} -> {unique_filename} ({uploaded_file.size / 1024 / 1024:.2f} MB)")
                 
                 # Create upload record
@@ -7420,13 +7422,17 @@ class ProcessUploadView(View):
                     data_type=data_type,
                     status='processing'
                 )
-                
-                # Use robust inline processing instead of the black-box process_uploaded_csv
-                if data_type == 'brandwatch':
-                    df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore', skiprows=6)
-                else:
-                    df = load_data_robustly(full_path)
-                
+
+                # === STREAMLIT-STYLE DATA PROCESSING ===
+                data_type = upload.data_type
+
+                # === LOAD CSV WITH APPROPRIATE HANDLING ===
+                with default_storage.open(file_path, 'rb') as stored_file:
+                    if data_type == 'brandwatch':
+                        df = pd.read_csv(stored_file, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore', skiprows=6)
+                    else:
+                        df = load_data_robustly(stored_file, original_name=original_name)
+
                 logger.info(f"📊 Initial CSV Shape: {df.shape} | Columns: {list(df.columns)}")
                 
                 if df.empty:
