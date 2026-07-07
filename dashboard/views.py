@@ -6482,37 +6482,55 @@ class LexiconManagementView(TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        #view_all = self.request.GET.get('view_all') == 'true'
-        #req_start = self.request.GET.get('start_date', '')
-        #req_end = self.request.GET.get('end_date', '')
         
-        #cache_key = f"lexicon_mgmt_v1_{req_start}_{req_end}_{view_all}"
-        #cached_data = cache.get(cache_key)
+        # 1. Grab Active User Date Filters
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
         
-        #if cached_data:
-         #   logger.info("✅ LexiconManagementView: Serving from cache")
-         #   return cached_data
+        # Build base queryset for processed posts
+        posts_qs = ProcessedPost.objects.all()
+        if req_start:
+            posts_qs = posts_qs.filter(timestamp_share__gte=req_start)
+        if req_end:
+            posts_qs = posts_qs.filter(timestamp_share__lte=req_end)
+            
+        # Limit to the 3,000 most recent posts based on active filters
+        recent_posts = posts_qs.order_by('-timestamp_share')[:3000]
+        total_posts_count = recent_posts.count()
         
-        #context = super().get_context_data(**kwargs)
-        
-        # Load lexicon terms from DB
+        # 2. Load Lexicon Terms from Database
         lexicon_terms = LexiconTerm.objects.filter(
             is_election_related=True
         ).exclude(
             term__regex=r'^.$'
         ).order_by('category', 'severity')
         
-        # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
-        
-        # Get scan results from session (if any) and clear immediately
         scan_results = self.request.session.pop('scan_results', None)
         
-        # Count terms
+        # 3. Calculate Global Lexicon Term Counts
         db_count = lexicon_terms.count()
-        config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values())
+        config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values()) if 'CONFIG' in globals() else 0
         total_count = db_count + config_count
         
+        # 4. OPTIMIZED BULK REAL-TIME DATABASE SCAN (No Slow Loops!)
+        total_matches = 0
+        if total_posts_count > 0 and db_count > 0:
+            # Build an aggregated database OR query matching any terms in one single pass
+            terms_list = list(lexicon_terms.values_list('term', flat=True))
+            word_conditions = Q()
+            for term in terms_list:
+                # Direct substring check for Ge'ez/Ethiopic scripts vs English word boundaries
+                if re.search(r'[^\x00-\x7F]', term):
+                    word_conditions |= Q(original_text__icontains=term)
+                else:
+                    word_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
+            
+            # Count exactly how many of these 3,000 recent posts match your active terms
+            post_ids = list(recent_posts.values_list('id', flat=True))
+            total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(word_conditions).count()
+
+        # 5. Populate Context to Update UI Statistics From 0
         context.update({
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
@@ -6522,14 +6540,12 @@ class LexiconManagementView(TemplateView):
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
-            # Don't scan posts on page load - only show lexicon management
-            'total_matches': 0,
-            'posts_scanned': 0,
-            'total_posts': 0,
+            
+            # --- FIXED AND POPULATED DYNAMICALLY ---
+            'total_matches': total_matches,
+            'posts_scanned': total_posts_count,
+            'total_posts': total_posts_count,
         })
-        # ── SAVE TO CACHE (30 minutes) ────────────────────────────
-        #cache.set(cache_key, context, 1800)
-        #logger.info(f"💾 LexiconManagementView: Cached for 30 minutes")
         return context
     
     def post(self, request, *args, **kwargs):
