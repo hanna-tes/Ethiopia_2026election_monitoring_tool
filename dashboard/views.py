@@ -5802,6 +5802,12 @@ class NarrativesView(TemplateView):
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
+    # ── CONFIGURATION ──────────────────────────────────────────────────────
+    SCAN_LIMIT = 5000           # Scan up to 5000 posts
+    TIMEOUT_SECONDS = 90        # Hard stop after 90 seconds (leaves buffer for 100s Cloudflare limit)
+    CHUNK_SIZE = 1000           # Process posts in larger chunks
+    CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
+    
     def _get_lexicon_term_count(self):
         """Count total terms in CONFIG lexicon + Database."""
         try:
@@ -5826,34 +5832,18 @@ class LexiconsView(TemplateView):
                 filtered.append(m)
         return filtered
     
-    def _background_process_afro_xlmr(self, post_ids):
-        """
-        Background thread: Processes remaining posts with AFRO-XLMR and caches results.
-        This prevents page-load lag while ensuring all posts eventually get analyzed.
-        """
-        try:
-            from .utils.hate_speech_detector import get_hate_speech_detector
-            from .models import ProcessedPost
-            detector = get_hate_speech_detector()
-            if not detector:
-                return
-            posts = ProcessedPost.objects.filter(id__in=post_ids)
-            for post in posts:
-                cache_key = f"afro_xlmr_{post.id}"
-                # Skip if already cached
-                if cache.get(cache_key):
-                    continue
-                if post.original_text and len(post.original_text) > 10:
-                    try:
-                        result = detector.detect(post.original_text)
-                        # Cache for 24 hours
-                        cache.set(cache_key, result, 86400)
-                    except Exception as e:
-                        logger.warning(f"Background AFRO-XLMR failed for post {post.id}: {e}")
-        except Exception as e:
-            logger.error(f"Background AFRO-XLMR thread crashed: {e}")
+    def _check_timeout(self, start_time):
+        """Check if we're approaching the timeout limit."""
+        import time
+        elapsed = time.time() - start_time
+        if elapsed >= self.TIMEOUT_SECONDS:
+            logger.warning(f"⏰ TIMEOUT: Scan stopped after {elapsed:.1f}s (limit: {self.TIMEOUT_SECONDS}s)")
+            return True
+        return False
     
     def get_context_data(self, **kwargs):
+        import time
+        start_time = time.time()
         context = super().get_context_data(**kwargs)
         
         # ── 1. URL params ─────────────────────────────────────────────────
@@ -5862,18 +5852,18 @@ class LexiconsView(TemplateView):
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
         
-        # ── 2. Cache (overview only, keyed to date range) ────────────────
-        cache_key = f"lexicon_dashboard_v5_{req_start}_{req_end}_{view_all}"
+        # ── 2. Cache (overview only, keyed to date range) ─────────────────
+        cache_key = f"lexicon_dashboard_v6_{req_start}_{req_end}_{view_all}_{selected_category}"
         cached_data = cache.get(cache_key)
         
         if cached_data and not selected_category:
+            logger.info("✅ LexiconsView: Serving from cache (instant load)")
             context.update(cached_data)
-            context['ai_insights']  = cache.get("lexicons_ai_insights_v1")
-            context['ai_is_running'] = cache.get("lexicons_ai_running")
             context['lexicon_term_count'] = self._get_lexicon_term_count()
             context['selected_category'] = ''
             context['category_terms']    = []
             context['posts_with_terms']  = []
+            context['scan_timed_out']    = False
             return context
         
         # ── 3. Fetch posts ─────────────────────────────────────────────────
@@ -5889,10 +5879,9 @@ class LexiconsView(TemplateView):
                 'active_tab': 'lexicons', 'top_terms': [], 'category_counts': {},
                 'severity_counts': {}, 'total_matches': 0, 'posts_scanned': 0,
                 'total_posts': 0, 'wordcloud_base64': None, 'targeted_entities': [],
-                'ai_insights': None, 'ai_is_running': False,
                 'lexicon_term_count': self._get_lexicon_term_count(),
                 'selected_category': selected_category, 'category_terms': [],
-                'posts_with_terms': [],
+                'posts_with_terms': [], 'scan_timed_out': False,
             })
             return context
         
@@ -5904,13 +5893,10 @@ class LexiconsView(TemplateView):
         posts_with_terms = []
         all_matches     = []
         posts_scanned   = 0
-        posts_for_background = []  # Collect IDs for background processing
-        
-        # INCREASED SCAN LIMIT: 5000 posts minimum
-        SCAN_LIMIT = 5000
+        scan_timed_out  = False
         
         if selected_category:
-            logger.info(f"LexiconsView: category view → {selected_category}")
+            logger.info(f"LexiconsView: category view → {selected_category} (limit: {self.SCAN_LIMIT} posts)")
             
             db_terms = LexiconTerm.objects.filter(category=selected_category).exclude(severity='low')
             if db_terms.exists():
@@ -5921,8 +5907,13 @@ class LexiconsView(TemplateView):
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
-                # Scan posts with increased limit
-                for post in filtered_posts.iterator(chunk_size=1000):
+                # Scan posts with TIMEOUT PROTECTION
+                for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
+                    # ── TIMEOUT CHECK ──
+                    if self._check_timeout(start_time):
+                        scan_timed_out = True
+                        break
+                    
                     if not post.original_text:
                         continue
                     
@@ -5940,26 +5931,6 @@ class LexiconsView(TemplateView):
                     if matched_terms:
                         posts_scanned += 1
                         
-                        # ── HYBRID MODEL DETECTION (Cache + Sampling + Background) ─
-                        cache_key_post = f"afro_xlmr_{post.id}"
-                        model_info = cache.get(cache_key_post)
-                        
-                        # 1. Smart Sampling: Run synchronously for the first 50 posts
-                        if not model_info and posts_scanned <= 50:
-                            try:
-                                from .utils.hate_speech_detector import get_hate_speech_detector
-                                detector = get_hate_speech_detector()
-                                if detector:
-                                    model_info = detector.detect(text)
-                                    cache.set(cache_key_post, model_info, 86400)  # Cache 24h
-                            except Exception as e:
-                                logger.warning(f"Sync AFRO-XLMR failed: {e}")
-                        
-                        # 2. Fallback to Lexicon & Queue for Background
-                        if not model_info:
-                            model_info = {'model': 'Lexicon', 'confidence': 1.0, 'category': selected_category, 'severity': 'medium'}
-                            posts_for_background.append(post.id)
-                        
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text[:300],
@@ -5967,33 +5938,23 @@ class LexiconsView(TemplateView):
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
                             'matched_terms': list(set(matched_terms))[:5],
-                            'detected_by':   model_info.get('model', 'Lexicon'),
-                            'confidence':    model_info.get('confidence', 1.0),
-                            'model_category': model_info.get('category', selected_category),
+                            'detected_by':   'Lexicon',
+                            'confidence':    1.0,
+                            'model_category': selected_category,
                         })
                         
-                        # INCREASED LIMIT: Stop after 5000 posts instead of 100
-                        if posts_scanned >= SCAN_LIMIT:
-                            logger.info(f"Reached scan limit of {SCAN_LIMIT} posts with matches")
+                        # STOP after reaching limit
+                        if posts_scanned >= self.SCAN_LIMIT:
+                            logger.info(f"✅ Reached scan limit of {self.SCAN_LIMIT} posts")
                             break
                 
-                logger.info(f"  Category scan complete: {posts_scanned} posts matched out of {total_posts}")
+                elapsed = time.time() - start_time
+                logger.info(f"  Category scan complete: {posts_scanned} posts matched in {elapsed:.1f}s (timed out: {scan_timed_out})")
                 
-                # 3. Trigger Background Thread for the remaining posts
-                if posts_for_background:
-                    logger.info(f"  Queuing {len(posts_for_background)} posts for background AFRO-XLMR analysis...")
-                    t = threading.Thread(
-                        target=self._background_process_afro_xlmr,
-                        args=(posts_for_background,),
-                        daemon=True,
-                    )
-                    t.start()
-                
-                # ── 4. LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
+                # ── LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
                 unique_foreign_terms = set()
                 for p_dict in posts_with_terms:
                     for term in p_dict.get('matched_terms', []):
-                        # Check if term contains non-ASCII characters (Amharic/Oromo/Tigrinya)
                         if re.search(r'[^\x00-\x7F]', term):
                             unique_foreign_terms.add(term)
                 
@@ -6011,20 +5972,15 @@ class LexiconsView(TemplateView):
         
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
-            cache_key_ai  = "lexicons_ai_insights_v1"
-            ai_insights   = cache.get(cache_key_ai)
-            ai_is_running = cache.get("lexicons_ai_running")
+            logger.info(f"LexiconsView: overview scan (limit: {self.SCAN_LIMIT} posts)")
             
-            if not ai_insights and not ai_is_running and total_posts > 10:
-                cache.set("lexicons_ai_running", True, 300)
-                post_ids    = list(filtered_posts.values_list('id', flat=True)[:1000])
-                sample_ids  = random.sample(post_ids, min(50, len(post_ids)))
-                t = threading.Thread(target=self._run_ai_analysis_background, args=(sample_ids, cache_key_ai), daemon=True)
-                t.start()
-                logger.info("LexiconsView: background AI analysis triggered")
-            
-            # INCREASED: Scan more posts in overview mode
-            for post in filtered_posts.iterator(chunk_size=1000):
+            # Scan with TIMEOUT PROTECTION
+            for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
+                # ── TIMEOUT CHECK ──
+                if self._check_timeout(start_time):
+                    scan_timed_out = True
+                    break
+                
                 if not post.original_text:
                     continue
                 try:
@@ -6033,13 +5989,21 @@ class LexiconsView(TemplateView):
                         all_matches.extend(matches)
                         posts_scanned += 1
                         
-                        # INCREASED LIMIT for overview
-                        if posts_scanned >= SCAN_LIMIT:
-                            logger.info(f"Reached overview scan limit of {SCAN_LIMIT} posts")
+                        # Log progress every 500 posts
+                        if posts_scanned % 500 == 0:
+                            elapsed = time.time() - start_time
+                            logger.info(f"  Progress: {posts_scanned} posts scanned in {elapsed:.1f}s")
+                        
+                        # STOP after reaching limit
+                        if posts_scanned >= self.SCAN_LIMIT:
+                            logger.info(f"✅ Reached overview scan limit of {self.SCAN_LIMIT} posts")
                             break
                 except Exception as e:
                     logger.warning(f"Scan error post {post.id}: {e}")
                     continue
+        
+        elapsed = time.time() - start_time
+        logger.info(f"📊 LexiconsView: Total scan time: {elapsed:.1f}s | Posts scanned: {posts_scanned} | Matches: {len(all_matches)}")
         
         # ── 5. Aggregate analytics ─────────────────────────────────────────
         try:
@@ -6068,7 +6032,7 @@ class LexiconsView(TemplateView):
             category_counts     = Counter()
             severity_counts     = Counter()
         
-        # ── 6. Word cloud & 7. Targeted entities ──────────────────────────
+        # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
@@ -6082,7 +6046,7 @@ class LexiconsView(TemplateView):
             try:
                 entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b', r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b', r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}']
                 entities_found = Counter()
-                for post in filtered_posts.iterator(chunk_size=500):
+                for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
                     if not post.original_text: continue
                     for pattern in entity_patterns:
                         for match in re.findall(pattern, post.original_text, re.IGNORECASE):
@@ -6099,25 +6063,26 @@ class LexiconsView(TemplateView):
             'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
             'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
+            'scan_timed_out': scan_timed_out,  # NEW: Flag for UI to show timeout warning
         }
         
         if not selected_category:
             shared['wordcloud_base64']  = wordcloud_base64
             shared['targeted_entities'] = targeted_entities
-            cache.set(cache_key, shared, 3600)
+            # Cache for 2 hours (increased from 1 hour)
+            cache.set(cache_key, shared, self.CACHE_DURATION)
+            logger.info(f"💾 Cached results for {self.CACHE_DURATION}s")
         else:
             shared['wordcloud_base64']  = None
             shared['targeted_entities'] = []
         
         context.update(shared)
-        context['ai_insights']     = cache.get("lexicons_ai_insights_v1")
-        context['ai_is_running']   = (cache.get("lexicons_ai_running") and not context.get('ai_insights'))
         context['selected_category'] = selected_category
         context['category_terms']    = category_terms
         context['posts_with_terms']  = posts_with_terms[:100]
         
         return context
-    
+        
     @staticmethod
     def _run_ai_analysis_background(post_ids, cache_key):
         """Runs AFRO-XLMR model in background thread and saves results to cache."""
