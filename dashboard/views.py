@@ -6483,6 +6483,10 @@ class LexiconManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
+        # Make sure Django's Q object is locally available to avoid NameErrors
+        from django.db.models import Q
+        import re
+        
         # 1. Grab Active User Date Filters
         req_start = self.request.GET.get('start_date', '')
         req_end = self.request.GET.get('end_date', '')
@@ -6508,9 +6512,21 @@ class LexiconManagementView(TemplateView):
         categories = lexicon_terms.values_list('category', flat=True).distinct()
         scan_results = self.request.session.pop('scan_results', None)
         
-        # 3. Calculate Global Lexicon Term Counts
+        # 3. Safely Calculate Global Lexicon Term Counts (Fallback if CONFIG isn't global)
         db_count = lexicon_terms.count()
-        config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values()) if 'CONFIG' in globals() else 0
+        
+        # Look for CONFIG globally, or check inside django settings, or default to empty dict
+        active_config = {}
+        if 'CONFIG' in globals():
+            active_config = globals()['CONFIG']
+        else:
+            try:
+                from django.conf import settings
+                active_config = getattr(settings, 'CONFIG', {})
+            except Exception:
+                pass
+                
+        config_count = sum(len(terms) for terms in active_config.get('lexicon', {}).values()) if active_config else 0
         total_count = db_count + config_count
         
         # 4. MULTI-ENGINE REAL-TIME MONITORING (Keywords + AFRO-XLMR + LLM)
@@ -6518,8 +6534,7 @@ class LexiconManagementView(TemplateView):
         if total_posts_count > 0:
             post_ids = list(recent_posts.values_list('id', flat=True))
             
-            # --- ENGINE A: AI Model Flag Checks (AFRO-XLMR or LLM flags already on the records) ---
-            # This looks for context-based matches that don't necessarily contain a specific keyword
+            # --- ENGINE A: AI Model Flag Checks ---
             ai_and_llm_conditions = (
                 Q(is_hate_speech=True) | 
                 Q(predicted_label_afro__icontains="hate") | 
@@ -6528,8 +6543,8 @@ class LexiconManagementView(TemplateView):
             
             # --- ENGINE B: Hardcoded Keyword Patterns ---
             combined_terms = set(lexicon_terms.values_list('term', flat=True))
-            if 'CONFIG' in globals():
-                for cat, terms in CONFIG.get('lexicon', {}).items():
+            if active_config:
+                for cat, terms in active_config.get('lexicon', {}).items():
                     for t in terms:
                         if len(t) > 1:
                             combined_terms.add(t)
@@ -6542,7 +6557,7 @@ class LexiconManagementView(TemplateView):
                     else:  # English Word Bounds Protection
                         keyword_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
 
-            # --- COMBINE BOTH ENGINE OUTPUTS TOGETHER (Union Filter) ---
+            # --- COMBINE BOTH ENGINE OUTPUTS TOGETHER ---
             total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(
                 ai_and_llm_conditions | keyword_conditions
             ).distinct().count()
@@ -6557,8 +6572,6 @@ class LexiconManagementView(TemplateView):
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
-            
-            # --- POPULATED VIA MULTI-ENGINE AGGREGATION ---
             'total_matches': total_matches,
             'posts_scanned': total_posts_count,
             'total_posts': total_posts_count,
@@ -6616,22 +6629,17 @@ class LexiconManagementView(TemplateView):
             else:
                 messages.warning(request, "Term must be at least 2 characters long.")
         
-        # Handle Scan Text (only when user submits the scan form)
+        # Handle Scan Text
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
             if text:
-                # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
-                
-                # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm_enhanced(text)
                 
-                # 3. AFRO-XLMR detection
                 try:
                     afro_result = detect_hate_speech_afro_xlmr(text)
                 except Exception as e:
-                    logger.error(f"AFRO-XLMR detection failed: {e}")
                     afro_result = {
                         'is_hate_speech': False,
                         'confidence': 0.0,
@@ -6640,7 +6648,6 @@ class LexiconManagementView(TemplateView):
                         'error': 'Model not loaded'
                     }
                 
-                # Determine verdict
                 is_hate_speech = False
                 overall_severity = 'low'
                 model_used = "None"
@@ -6658,9 +6665,8 @@ class LexiconManagementView(TemplateView):
                     overall_severity = lexicon_risk.get('level', 'medium')
                     model_used = "Lexicon"
                 
-                # Save to session
                 request.session['scan_results'] = {
-                    'text': text[:200],
+                    'text': text[:300],
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
