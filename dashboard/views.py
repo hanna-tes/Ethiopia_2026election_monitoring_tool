@@ -5924,12 +5924,20 @@ class LexiconsView(TemplateView):
             context['scan_timed_out']    = False
             return context
         
-        # ── 3. Fetch posts ─────────────────────────────────────────────────
+        # ── 3. Fetch posts (SCAN ALL POSTS BY DATE RANGE, NO ELECTION SILO) ──
         try:
-            filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-            filtered_posts = (filtered_posts
-                              .exclude(platform__icontains='media')
-                              .exclude(platform__icontains='news'))
+            # We call this to cleanly extract global dashboard date ranges
+            _, start_date, end_date = get_election_posts_queryset(self.request)
+            
+            # Query ALL processed posts within the date filter window
+            filtered_posts = ProcessedPost.objects.filter(
+                timestamp_share__range=(start_date, end_date)
+            ).exclude(
+                platform__icontains='media'
+            ).exclude(
+                platform__icontains='news'
+            ).order_by('-timestamp_share')
+            
             total_posts = filtered_posts.count()
         except Exception as e:
             logger.error(f"LexiconsView: error fetching posts: {e}")
@@ -5956,6 +5964,7 @@ class LexiconsView(TemplateView):
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category} (limit: {self.SCAN_LIMIT} posts)")
             
+            # Exclude low severity items here as requested for optimization
             db_terms = LexiconTerm.objects.filter(category=selected_category).exclude(severity='low')
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
@@ -6007,7 +6016,7 @@ class LexiconsView(TemplateView):
                             break
                 
                 elapsed = time.time() - start_time
-                logger.info(f"  Category scan complete: {posts_scanned} posts matched in {elapsed:.1f}s (timed out: {scan_timed_out})")
+                logger.info(f"   Category scan complete: {posts_scanned} posts matched in {elapsed:.1f}s (timed out: {scan_timed_out})")
                 
                 # ── LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
                 unique_foreign_terms = set()
@@ -6050,7 +6059,7 @@ class LexiconsView(TemplateView):
                         # Log progress every 500 posts
                         if posts_scanned % 500 == 0:
                             elapsed = time.time() - start_time
-                            logger.info(f"  Progress: {posts_scanned} posts scanned in {elapsed:.1f}s")
+                            logger.info(f"   Progress: {posts_scanned} posts scanned in {elapsed:.1f}s")
                         
                         # STOP after reaching limit
                         if posts_scanned >= self.SCAN_LIMIT:
@@ -6121,13 +6130,12 @@ class LexiconsView(TemplateView):
             'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
             'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
-            'scan_timed_out': scan_timed_out,  # NEW: Flag for UI to show timeout warning
+            'scan_timed_out': scan_timed_out,
         }
         
         if not selected_category:
             shared['wordcloud_base64']  = wordcloud_base64
             shared['targeted_entities'] = targeted_entities
-            # Cache for 2 hours (increased from 1 hour)
             cache.set(cache_key, shared, self.CACHE_DURATION)
             logger.info(f"💾 Cached results for {self.CACHE_DURATION}s")
         else:
@@ -6484,9 +6492,7 @@ class LexiconManagementView(TemplateView):
         context = super().get_context_data(**kwargs)
         
         # Load lexicon terms from DB, excluding single characters
-        lexicon_terms = LexiconTerm.objects.filter(
-            is_election_related=True
-        ).exclude(
+        lexicon_terms = LexiconTerm.objects.exclude(
             term__regex=r'^.$'
         ).order_by('category', 'severity')
 
@@ -6505,9 +6511,7 @@ class LexiconManagementView(TemplateView):
                                 'is_election_related': True
                             }
                         )
-            lexicon_terms = LexiconTerm.objects.filter(
-                is_election_related=True
-            ).exclude(
+            lexicon_terms = LexiconTerm.objects.exclude(
                 term__regex=r'^.$'
             ).order_by('category', 'severity')
 
