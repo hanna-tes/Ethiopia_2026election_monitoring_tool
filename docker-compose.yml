@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ethiopia_election_db
+      POSTGRES_USER: ethiopia_user
+      POSTGRES_PASSWORD: ethiopia_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ethiopia_user -d ethiopia_election_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/ethiopian-election-monitor-media &&
+      mc anonymous set download local/ethiopian-election-monitor-media
+      "
+
+  web:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      SECRET_KEY: local-dev-secret
+      DEBUG: "1"
+      ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+      CSRF_TRUSTED_ORIGINS: http://localhost,http://127.0.0.1
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ethiopia_election_db
+      DB_USER: ethiopia_user
+      DB_PASSWORD: ethiopia_password
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_STORAGE_BUCKET_NAME: ethiopian-election-monitor-media
+      AWS_S3_ENDPOINT_URL: http://minio:9000
+      AWS_S3_CUSTOM_DOMAIN: localhost:9000/ethiopian-election-monitor-media
+      AWS_S3_REGION_NAME: eu-west-1
+      AWS_S3_ADDRESSING_STYLE: path
+      AWS_QUERYSTRING_AUTH: "0"
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres-data:
+  minio-data:
