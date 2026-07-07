@@ -6513,10 +6513,20 @@ class LexiconManagementView(TemplateView):
         config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values()) if 'CONFIG' in globals() else 0
         total_count = db_count + config_count
         
-        # 4. FULL REAL-TIME DATABASE SCAN (DB Terms + CONFIG Dict Terms Combined)
+        # 4. MULTI-ENGINE REAL-TIME MONITORING (Keywords + AFRO-XLMR + LLM)
         total_matches = 0
         if total_posts_count > 0:
-            # Gather terms from both DB and CONFIG dictionary to avoid missing anything
+            post_ids = list(recent_posts.values_list('id', flat=True))
+            
+            # --- ENGINE A: AI Model Flag Checks (AFRO-XLMR or LLM flags already on the records) ---
+            # This looks for context-based matches that don't necessarily contain a specific keyword
+            ai_and_llm_conditions = (
+                Q(is_hate_speech=True) | 
+                Q(predicted_label_afro__icontains="hate") | 
+                Q(llm_is_hate_speech=True)
+            )
+            
+            # --- ENGINE B: Hardcoded Keyword Patterns ---
             combined_terms = set(lexicon_terms.values_list('term', flat=True))
             if 'CONFIG' in globals():
                 for cat, terms in CONFIG.get('lexicon', {}).items():
@@ -6524,20 +6534,20 @@ class LexiconManagementView(TemplateView):
                         if len(t) > 1:
                             combined_terms.add(t)
 
+            keyword_conditions = Q()
             if combined_terms:
-                word_conditions = Q()
                 for term in combined_terms:
-                    # Direct substring check for Ge'ez/Ethiopic scripts vs English word boundaries
-                    if re.search(r'[^\x00-\x7F]', term):
-                        word_conditions |= Q(original_text__icontains=term)
-                    else:
-                        word_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
-                
-                # Extract targeted slice IDs and perform the single-pass query count
-                post_ids = list(recent_posts.values_list('id', flat=True))
-                total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(word_conditions).count()
+                    if re.search(r'[^\x00-\x7F]', term):  # Ge'ez / Amharic Support
+                        keyword_conditions |= Q(original_text__icontains=term)
+                    else:  # English Word Bounds Protection
+                        keyword_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
 
-        # 5. Populate Context to Update UI Statistics From 0
+            # --- COMBINE BOTH ENGINE OUTPUTS TOGETHER (Union Filter) ---
+            total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(
+                ai_and_llm_conditions | keyword_conditions
+            ).distinct().count()
+
+        # 5. Populate Context to Update UI Statistics
         context.update({
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
@@ -6548,7 +6558,7 @@ class LexiconManagementView(TemplateView):
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
             
-            # --- FIXED AND POPULATED DYNAMICALLY ---
+            # --- POPULATED VIA MULTI-ENGINE AGGREGATION ---
             'total_matches': total_matches,
             'posts_scanned': total_posts_count,
             'total_posts': total_posts_count,
