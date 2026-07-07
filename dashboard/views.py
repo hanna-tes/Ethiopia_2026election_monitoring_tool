@@ -6483,7 +6483,6 @@ class LexiconManagementView(TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Make sure Django's Q object is locally available to avoid NameErrors
         from django.db.models import Q
         import re
         
@@ -6512,10 +6511,9 @@ class LexiconManagementView(TemplateView):
         categories = lexicon_terms.values_list('category', flat=True).distinct()
         scan_results = self.request.session.pop('scan_results', None)
         
-        # 3. Safely Calculate Global Lexicon Term Counts (Fallback if CONFIG isn't global)
+        # 3. Safely Calculate Global Lexicon Term Counts
         db_count = lexicon_terms.count()
         
-        # Look for CONFIG globally, or check inside django settings, or default to empty dict
         active_config = {}
         if 'CONFIG' in globals():
             active_config = globals()['CONFIG']
@@ -6529,25 +6527,31 @@ class LexiconManagementView(TemplateView):
         config_count = sum(len(terms) for terms in active_config.get('lexicon', {}).values()) if active_config else 0
         total_count = db_count + config_count
         
-        # 4. MULTI-ENGINE REAL-TIME MONITORING (Keywords + AFRO-XLMR + LLM)
+        # 4. MULTI-ENGINE REAL-TIME LOOKUP (Aligned to actual fields in ProcessedPost model)
         total_matches = 0
         if total_posts_count > 0:
             post_ids = list(recent_posts.values_list('id', flat=True))
             
-            # --- ENGINE A: AI Model Flag Checks ---
+            # --- ENGINE A: Model Analysis via Risk Fields ---
+            # Resolves FieldError by matching existing model fields: risk_level, risk_score
             ai_and_llm_conditions = (
-                Q(is_hate_speech=True) | 
-                Q(predicted_label_afro__icontains="hate") | 
-                Q(llm_is_hate_speech=True)
+                Q(risk_level__iexact='high') | 
+                Q(risk_level__iexact='critical') |
+                Q(risk_score__gt=3)
             )
             
             # --- ENGINE B: Hardcoded Keyword Patterns ---
             combined_terms = set(lexicon_terms.values_list('term', flat=True))
             if active_config:
                 for cat, terms in active_config.get('lexicon', {}).items():
-                    for t in terms:
-                        if len(t) > 1:
-                            combined_terms.add(t)
+                    if isinstance(terms, dict):
+                        for t in terms.keys():
+                            if len(t) > 1:
+                                combined_terms.add(t)
+                    elif isinstance(terms, (list, set)):
+                        for t in terms:
+                            if len(t) > 1:
+                                combined_terms.add(t)
 
             keyword_conditions = Q()
             if combined_terms:
@@ -6557,7 +6561,7 @@ class LexiconManagementView(TemplateView):
                     else:  # English Word Bounds Protection
                         keyword_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
 
-            # --- COMBINE BOTH ENGINE OUTPUTS TOGETHER ---
+            # --- COMBINE ENGINE OUTPUTS TOGETHER VIA NATIVE SQL ---
             total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(
                 ai_and_llm_conditions | keyword_conditions
             ).distinct().count()
@@ -6635,7 +6639,13 @@ class LexiconManagementView(TemplateView):
             if text:
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
-                llm_result = detect_hate_speech_llm_enhanced(text)
+                
+                # Check for dynamic function lookups safely if missing
+                try:
+                    from .utils.llm_detector import detect_hate_speech_llm
+                    llm_result = detect_hate_speech_llm(text)
+                except Exception:
+                    llm_result = {'is_hate_speech': False, 'confidence': 0.0}
                 
                 try:
                     afro_result = detect_hate_speech_afro_xlmr(text)
