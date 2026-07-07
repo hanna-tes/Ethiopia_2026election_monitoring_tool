@@ -5608,8 +5608,7 @@ class HomeView(BaseTabMixin, TemplateView):
     template_name = 'dashboard/home.html'
     
     def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-
+        # ── CHECK CACHE FIRST ──────────────────────────────────────
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end = self.request.GET.get('end_date', '')
@@ -5619,9 +5618,12 @@ class HomeView(BaseTabMixin, TemplateView):
         
         if cached_data:
             logger.info("✅ HomeView: Serving from cache")
-            return cached_data
+            context = super().get_context_data(**kwargs)
+            context.update(cached_data)
+            return context
         
         context = super().get_context_data(**kwargs)
+        
         # 1. GET FILTERED QUERYSET (now defaults to 3 months)
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
@@ -5631,11 +5633,9 @@ class HomeView(BaseTabMixin, TemplateView):
         platform_stats = posts.values('platform').annotate(
             total_count=Count('id')
         ).order_by('-total_count')
-        
         labels = []
         values = []
         colors = []
-        
         color_map = {
             'X': '#1DA1F2',
             'Facebook': '#1877F2',
@@ -5645,11 +5645,9 @@ class HomeView(BaseTabMixin, TemplateView):
             'YouTube': '#FF0000',
             'Instagram': '#E4405F'
         }
-        
         for item in platform_stats:
             p_name = str(item.get('platform') or '').strip()
             p_count = item.get('total_count') or 0
-            
             if p_name and p_count > 0:
                 labels.append(p_name)
                 values.append(int(p_count))
@@ -5657,7 +5655,6 @@ class HomeView(BaseTabMixin, TemplateView):
         
         # Set top platform metrics fallback
         top_platform = labels[0] if labels else "—"
-        
         charts = {}
         
         # 3. CREATE BAR CHART
@@ -5706,7 +5703,6 @@ class HomeView(BaseTabMixin, TemplateView):
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             cleaned_accounts = []
             invalid_accounts = ['twitter', 'source', 'source twitter source', 'nan', 'none', '-', '', 'user', 'author', 'account']
-            
             for acc in top_accounts_raw:
                 name = str(acc['account_id']) if acc['account_id'] else ''
                 name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
@@ -5720,15 +5716,15 @@ class HomeView(BaseTabMixin, TemplateView):
             if cleaned_accounts:
                 df_accounts = pd.DataFrame(cleaned_accounts)
                 fig_accounts = px.bar(df_accounts, x='account_id', y='count', labels={'account_id': 'Account', 'count': 'Posts'},
-                                      color='count', color_continuous_scale='Viridis', title='Top 10 Accounts by Activity')
+                                    color='count', color_continuous_scale='Viridis', title='Top 10 Accounts by Activity')
                 fig_accounts.update_layout(xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400)
                 charts['accounts'] = fig_accounts.to_json()
-
+            
             # Risk Distribution
             risk_dist = posts.values('risk_level').annotate(count=Count('id')).order_by('risk_level')
             if risk_dist:
                 fig_risk = px.pie(risk_dist, names='risk_level', values='count', title='Risk Level Distribution',
-                                  color='risk_level', color_discrete_map={'low': '#22c55e', 'medium': '#eab308', 'high': '#f97316', 'critical': '#dc2626'})
+                                color='risk_level', color_discrete_map={'low': '#22c55e', 'medium': '#eab308', 'high': '#f97316', 'critical': '#dc2626'})
                 charts['risk'] = fig_risk.to_json()
             
             # Daily Volume
@@ -5737,7 +5733,7 @@ class HomeView(BaseTabMixin, TemplateView):
                 daily_data = list(daily_posts)
                 if daily_data:
                     fig_daily = px.line(daily_data, x='day', y='count', labels={'day': 'Date', 'count': 'Posts'},
-                                        title='Daily Post Volume', markers=True)
+                                      title='Daily Post Volume', markers=True)
                     fig_daily.update_layout(xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400)
                     charts['daily'] = fig_daily.to_json()
         
@@ -5745,10 +5741,11 @@ class HomeView(BaseTabMixin, TemplateView):
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
         upload_summary = {
             'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
-            'files': recent_uploads,
+            'files': recent_uploads,  # <-- This contains model instances with file fields!
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
-        # 7. TREND ANALYSIS - Track weaponized language categories over time
+        
+        # 7. TREND ANALYSIS
         start_str = start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date)
         end_str = end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date)
         trend_analysis = get_category_trend_analysis(posts, days_back=90, cache_suffix=f"{start_str}_{end_str}")
@@ -5772,9 +5769,38 @@ class HomeView(BaseTabMixin, TemplateView):
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
+        
         # ── SAVE TO CACHE (30 minutes) ────────────────────────────
-        cache.set(cache_key, context, 1800)
+        # Create a cacheable copy without unpicklable objects
+        cacheable_context = {
+            'metrics': context['metrics'],
+            'charts': context['charts'],
+            'risk_actors': context['risk_actors'],
+            'top_hashtags': context['top_hashtags'],
+            'trend_analysis': context['trend_analysis'],
+            'start_date': context['start_date'],
+            'end_date': context['end_date'],
+            # Convert upload_summary to serializable format
+            'upload_summary': {
+                'show': upload_summary['show'],
+                'total_records': upload_summary['total_records'],
+                # Convert model instances to dictionaries
+                'files': [
+                    {
+                        'id': u.id,
+                        'original_filename': u.original_filename,
+                        'uploaded_at': u.uploaded_at.isoformat() if u.uploaded_at else None,
+                        'records_processed': u.records_processed,
+                        'status': u.status,
+                    }
+                    for u in recent_uploads
+                ]
+            }
+        }
+        
+        cache.set(cache_key, cacheable_context, 1800)
         logger.info(f"💾 HomeView: Cached for 30 minutes")
+        
         return context     
         
 class NarrativesView(TemplateView):
