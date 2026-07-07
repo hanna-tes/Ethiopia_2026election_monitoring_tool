@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+from django.db.models import Q
 import requests
 import threading 
 import random
