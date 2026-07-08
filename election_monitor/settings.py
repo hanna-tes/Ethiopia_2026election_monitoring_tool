@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'huey.contrib.djhuey',
+    'django_q',
     
     # Third-party
     'rest_framework',
@@ -147,6 +149,25 @@ REST_FRAMEWORK = {
 
 # CORS
 CORS_ALLOW_ALL_ORIGINS = True
+
+# Django-Q2 Configuration using Redis Broker
+Q_CLUSTER = {
+    'name': 'ethiopia_monitor_cluster',
+    'workers': 2,                # Number of parallel worker processes
+    'recycle': 500,              # Restart workers after 500 tasks to prevent memory leaks
+    'timeout': 600,              # Automatically time out a task if it takes more than 10 mins
+    'retry': 700,                # Retry time slightly higher than timeout
+    'django_redis': 'default',   # Tells Django-Q to use your existing Redis cache config
+}
+
+# Add this to your settings.py
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1", # Using DB 1 so it doesn't conflict with Django-Q on DB 0
+    }
+}
+
 
 # Groq API
 GROQ_API_KEY = env('GROQ_API_KEY', default='')
