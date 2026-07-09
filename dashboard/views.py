@@ -2369,8 +2369,10 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
     """
-    DEPOSIT READY: Injects a structural root post for the extracted text source author.
-    Ensures the source node is generated, sized, colored blue, and visible to frontend engines.
+    FINAL PRODUCTION VERSION: 
+    - Fixes case-sensitivity mismatched IDs preventing Source nodes from rendering.
+    - Prevents dead-end edge lines by ensuring targets exist inside the graph map.
+    - Forces tight link metrics directly into the frontend config to eliminate cutoff text.
     """
     import re
     import numpy as np
@@ -2455,11 +2457,9 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     # Build coordination results
     for group_indices in similarity_groups[:max_groups]:
         group_posts = [posts_data[valid_indices[idx]] for idx in group_indices]
-        
-        # Sort group posts chronologically
         sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
         
-        # 1. Extract the primary text source node via RT text patterns
+        # 1. Extract and standardize Source node using regex matching
         source_account = "Unknown"
         text_sample_raw = ""
         for post in sorted_group_posts:
@@ -2468,53 +2468,36 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 text_sample_raw = text_content
             rt_match = re.search(r'(?:RT|via)\s+@(\w+)', text_content, re.IGNORECASE)
             if rt_match:
-                source_account = clean_username(rt_match.group(1))
+                # Force exact normalization pass
+                source_account = clean_username(rt_match.group(1).strip())
                 break
         
-        # Fallback to oldest post if no RT handle is found
         if source_account == "Unknown" and sorted_group_posts:
             source_account = clean_username(sorted_group_posts[0].get('account_id'))
             
-        # 2. SEED THE MISSING SOURCE NODE EXPLICITLY INTO THE DATA ARRAYS
-        # This forces the template lists and graph matrices to process it natively
-        if source_account != "Unknown":
-            source_skeleton = {
-                'id': 0,
-                'account_id': source_account,
-                'original_text': text_sample_raw or "[Original Content Node]",
-                'platform': sorted_group_posts[0].get('platform', 'Twitter'),
-                'url': None,
-                'timestamp_share': (sorted_group_posts[0].get('timestamp_share') or datetime.now()),
-                'risk_level': 'low',
-                'is_injected_source': True
-            }
-            # Insert at position 0 to make it the root node
-            sorted_group_posts.insert(0, source_skeleton)
-            if source_skeleton not in group_posts:
-                group_posts.insert(0, source_skeleton)
-
-        # 3. Gather unique accounts preserving order (Source always index 0)
-        ordered_accounts_set = []
-        for p in sorted_group_posts:
-            cleaned = clean_username(p['account_id'])
-            if cleaned and cleaned not in ordered_accounts_set and cleaned != "Unknown":
-                ordered_accounts_set.append(cleaned)
-        
-        amplifiers_list = [acc for acc in ordered_accounts_set if acc != source_account]
+        # 2. Extract amplifiers ensuring no case duplicate collisions
+        amplifiers_set = set()
+        for post in sorted_group_posts:
+            acct = clean_username(post.get('account_id'))
+            if acct and acct != "Unknown" and acct.lower() != source_account.lower():
+                amplifiers_set.add(acct)
+                
+        amplifiers_list = list(amplifiers_set)
         sources_list = [source_account] if source_account != "Unknown" else []
+        ordered_accounts_set = sources_list + amplifiers_list
         
         if len(ordered_accounts_set) < min_accounts:
             continue
             
-        # Bot detection metrics (Exclude the injected source account from bot score)
-        real_posts_for_bot_check = [p for p in group_posts if not p.get('is_injected_source')]
+        # Bot metrics computation
+        real_posts_for_bot_check = [p for p in group_posts if p.get('account_id') != source_account]
         bot_data = identify_bot_accounts(real_posts_for_bot_check)
         bot_accounts = list(bot_data.keys())
         bot_count = len(bot_accounts)
         bot_percentage = (bot_count / len(amplifiers_list) * 100) if amplifiers_list else 0
         coordination_type = determine_coordination_type(real_posts_for_bot_check, bot_count)
         
-        # 4. COMPILER SAMPLES (Source is locked into index 0 position)
+        # 3. Match Sample data rows safely
         sample_posts_with_urls = []
         all_platforms = set()
         all_hashtags = []
@@ -2541,39 +2524,52 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 'is_bot': raw_account in bot_accounts,
                 'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
                 'risk_level': post.get('risk_level', 'unknown'),
-                'is_source': username_clean == source_account
+                'is_source': username_clean.lower() == source_account.lower()
             })
         
-        # 5. GENERATE STRUCTURAL EDGES AND FORCED VISUAL COLOR ASSIGNMENTS
+        # 4. Generate Node/Link configurations with layout overrides
         graph_nodes = []
         graph_links = []
+        existing_nodes = set()
         
         if source_account != "Unknown":
+            source_key = source_account  # Exact ID binding
             graph_nodes.append({
-                'id': source_account, 
-                'label': source_account, 
+                'id': source_key, 
+                'label': source_key, 
                 'type': 'source', 
                 'group': 'source',
-                'color': '#1e90ff',  # Bright Blue
+                'color': '#1e90ff',  # Force Blue
                 'size': 28,
-                'level': 0
+                'borderWidth': 3,
+                'shape': 'dot'
             })
+            existing_nodes.add(source_key.lower())
             
         for amp in amplifiers_list:
-            graph_nodes.append({
-                'id': amp, 
-                'label': amp, 
-                'type': 'amplifier', 
-                'group': 'amplifier',
-                'color': '#e67e22',  # Orange
-                'size': 14,
-                'level': 1
-            })
-            if source_account != "Unknown":
+            amp_key = amp
+            # Prevent double generation
+            if amp_key.lower() not in existing_nodes:
+                graph_nodes.append({
+                    'id': amp_key, 
+                    'label': amp_key, 
+                    'type': 'amplifier', 
+                    'group': 'amplifier',
+                    'color': '#e67e22',  # Force Orange
+                    'size': 14,
+                    'shape': 'dot'
+                })
+                existing_nodes.add(amp_key.lower())
+            
+            # Gated check: Only link if the origin is inside the existing nodes layout
+            if source_account != "Unknown" and source_key.lower() in existing_nodes:
                 graph_links.append({
-                    'source': source_account, 
-                    'target': amp, 
-                    'value': 1
+                    'from': source_key,     # Vis.js standard mapping parameter names
+                    'to': amp_key,
+                    'source': source_key,   # Fallback matching parameter name
+                    'target': amp_key,
+                    'length': 60,           # Pulls layout inside boundaries to stop clipping
+                    'width': 1.5
                 })
         
         unique_urls = list(set(p['url'] for p in real_posts_for_bot_check if p.get('url') and str(p['url']).startswith('http')))[:5]
