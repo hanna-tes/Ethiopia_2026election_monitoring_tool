@@ -2369,13 +2369,16 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
     """
-    OPTIMIZED: Uses vectorized sparse matrix operations instead of O(n²) Python loops.
-    Processes data in chunks to avoid memory issues and outputs explicit Node/Link structure.
+    OPTIMIZED: 
+    1. Extracts source node from 'RT @username' text patterns.
+    2. Guarantees 'sample_posts_with_urls' is completely populated.
+    3. Positions the source node as the first element in the accounts array so the frontend recognizes it.
     """
     import re
     import numpy as np
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
+    from datetime import datetime
     
     coordination = []
     
@@ -2407,7 +2410,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     if len(valid_texts) < 2:
         return []
     
-    # Vectorized TF-IDF + batch cosine similarity
+    # Vectorized TF-IDF
     vectorizer = TfidfVectorizer(
         max_features=2000,
         stop_words='english',
@@ -2454,63 +2457,125 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     # Build coordination results
     for group_indices in similarity_groups[:max_groups]:
         group_posts = [posts_data[valid_indices[idx]] for idx in group_indices]
+        
+        # Sort group posts chronologically
         sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
         
-        # 1. Determine Source Node via RT pattern matching
-        extracted_source = None
+        # 1. Extract the primary text source node via RT text patterns
+        source_account = "Unknown"
         for post in sorted_group_posts:
             text_content = str(post.get('original_text', ''))
             rt_match = re.search(r'(?:RT|via)\s+@(\w+)', text_content, re.IGNORECASE)
             if rt_match:
-                extracted_source = clean_username(rt_match.group(1))
+                source_account = clean_username(rt_match.group(1))
                 break
         
-        if extracted_source and extracted_source != "Unknown":
-            source_account = extracted_source
-        elif sorted_group_posts:
+        # Fallback to oldest post if no RT handle is found
+        if source_account == "Unknown" and sorted_group_posts:
             source_account = clean_username(sorted_group_posts[0].get('account_id'))
-        else:
-            source_account = "Unknown"
             
-        # 2. Divide distinct arrays
-        sources_set = {source_account} if source_account != "Unknown" else set()
+        # 2. Gather unique amplifiers
         amplifiers_set = set()
-        
         for post in sorted_group_posts:
             acct = clean_username(post.get('account_id'))
             if acct and acct != "Unknown" and acct != source_account:
                 amplifiers_set.add(acct)
-        
-        sources_list = list(sources_set)
+                
         amplifiers_list = list(amplifiers_set)
-        all_unique_accounts = list(sources_set.union(amplifiers_set))
+        sources_list = [source_account] if source_account != "Unknown" else []
         
-        if len(all_unique_accounts) < min_accounts and not extracted_source:
+        # Order accounts array with Source explicitly FIRST, followed by amplifiers
+        ordered_accounts = sources_list + amplifiers_list
+        
+        if len(ordered_accounts) < min_accounts:
             continue
             
-        # 3. Build an explicit structural node-link topology format 
+        # Bot detection metrics
+        bot_data = identify_bot_accounts(group_posts)
+        bot_accounts = list(bot_data.keys())
+        bot_count = len(bot_accounts)
+        bot_percentage = (bot_count / len(ordered_accounts) * 100) if ordered_accounts else 0
+        coordination_type = determine_coordination_type(group_posts, bot_count)
+        
+        # 3. POPULATE SAMPLES (Matches original format perfectly)
+        sample_posts_with_urls = []
+        all_platforms = set()
+        all_hashtags = []
+        
+        for post in group_posts[:15]:
+            if post.get('platform'):
+                all_platforms.add(post['platform'])
+            
+            text = str(post.get('original_text', '')).strip()
+            found = re.findall(r'#(\w+)', text, re.IGNORECASE)
+            all_hashtags.extend([h.lower() for h in found])
+            
+            if len(sample_posts_with_urls) < 10:
+                ts = post.get('timestamp_share')
+                account_id = post.get('account_id')
+                bot_reasons = bot_data.get(account_id, [])
+                
+                sample_posts_with_urls.append({
+                    'username': clean_username(account_id),
+                    'platform': post.get('platform', ''),
+                    'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
+                    'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
+                    'text_preview': text[:150] + '...' if text else '',
+                    'is_bot': account_id in bot_accounts,
+                    'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
+                    'risk_level': post.get('risk_level', 'unknown')
+                })
+        
+        # 4. Create Node/Link data configuration with forced colors for layout tools
         graph_nodes = []
         graph_links = []
         
         if source_account != "Unknown":
-            graph_nodes.append({'id': source_account, 'label': source_account, 'type': 'source', 'group': 'source'})
+            graph_nodes.append({
+                'id': source_account, 
+                'label': source_account, 
+                'type': 'source', 
+                'group': 'source',
+                'color': '#1e90ff',  
+                'size': 25
+            })
             
         for amp in amplifiers_list:
-            graph_nodes.append({'id': amp, 'label': amp, 'type': 'amplifier', 'group': 'amplifier'})
+            graph_nodes.append({
+                'id': amp, 
+                'label': amp, 
+                'type': 'amplifier', 
+                'group': 'amplifier',
+                'color': '#e67e22',  
+                'size': 14
+            })
             if source_account != "Unknown":
-                graph_links.append({'source': source_account, 'target': amp, 'value': 1})
+                graph_links.append({
+                    'source': source_account, 
+                    'target': amp, 
+                    'value': 1
+                })
         
         unique_urls = list(set(p['url'] for p in group_posts if p.get('url') and str(p['url']).startswith('http')))[:5]
         text_sample = str(group_posts[0].get('original_text', ''))[:200] if group_posts else '[Similar content]'
         
         coordination.append({
             'id': len(coordination) + 1,
-            'accounts': all_unique_accounts[:15],
-            'account_count': len(all_unique_accounts),
+            'accounts': ordered_accounts[:15],  # Contains source node at index 0!
+            'account_count': len(ordered_accounts),
             'post_count': len(group_posts),
+            'bot_count': bot_count,
+            'bot_percentage': round(bot_percentage, 1),
             'text_sample': text_sample,
+            'sample_posts_with_urls': sample_posts_with_urls,  # Fully restored
             'unique_urls': unique_urls,
-            'source_node': source_account,  # Primary key for direct frontend identification matching
+            'platforms': sorted(list(all_platforms)),
+            'coordination_type': coordination_type,
+            'similarity_score': f'≥{int(similarity_threshold*100)}%',
+            'sub_narrative': extract_sub_narrative(text_sample),
+            'hashtags': list(set(all_hashtags))[:10],
+            'primary_type': 'amplification_network' if bot_percentage >= 50 else 'coordination',
+            'source_node': source_account,  
             'sources': sources_list,
             'amplifiers': amplifiers_list,
             'source_count': len(sources_list),
@@ -2519,6 +2584,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'links': graph_links,
         })
     
+    coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
     return coordination[:max_groups]
 
 def identify_bot_accounts(posts):
