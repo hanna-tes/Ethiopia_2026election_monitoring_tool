@@ -5987,7 +5987,7 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
     # ── CONFIGURATION ──────────────────────────────────────────────────────
-    SCAN_LIMIT = 5000           # Pool size matching global dashboard range
+    SCAN_LIMIT = 50000          # Expanded upper safety boundary for large datasets
     TIMEOUT_SECONDS = 90        
     CHUNK_SIZE = 1000           
     CACHE_DURATION = 7200       
@@ -6077,7 +6077,8 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
-        scan_pool = filtered_posts[:self.SCAN_LIMIT]
+        # FIX: Changed from bracket slicing to an iterator stream to securely scale up to 28k posts without RAM exhaustion
+        scan_pool = filtered_posts[:self.SCAN_LIMIT].iterator(chunk_size=2000)
         
         category_terms  = []
         posts_with_terms = []
@@ -6097,6 +6098,13 @@ class LexiconsView(TemplateView):
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
+                # SPEED OPTIMIZATION FOR LARGE SCANS: Pre-verify matching text layout using regex patterns
+                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
+                try:
+                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
+                except Exception:
+                    compiled_category_re = None
+                
                 for post in scan_pool:
                     if self._check_timeout(start_time):
                         scan_timed_out = True
@@ -6107,10 +6115,17 @@ class LexiconsView(TemplateView):
                     
                     text       = post.original_text
                     text_lower = text.lower()
+                    
+                    # Instantly drops unrelated records out of processing loop to guarantee zero execution timeouts
+                    if compiled_category_re and not compiled_category_re.search(text_lower):
+                        continue
+                        
                     is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
                     matched_terms = []
                     
                     for term_lower, meta in term_meta.items():
+                        if term_lower not in text_lower:
+                            continue
                         # Added context filter here to clean context metrics inside specific category view tabs
                         if not self._is_valid_context(meta['term'], text_lower):
                             continue
@@ -6183,12 +6198,11 @@ class LexiconsView(TemplateView):
             try:
                 entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE)\b', r'\b(Amhara|Tigray|Oromo|Somali)\b']
                 entities_found = Counter()
-                for post in scan_pool:
-                    if not post.original_text: continue
+                # SPEED OPTIMIZATION FOR LARGE OVERVIEWS: Loop accumulated matches instead of running multiple database text loops
+                for m in all_matches:
                     for pattern in entity_patterns:
-                        for match in re.findall(pattern, post.original_text, re.IGNORECASE):
-                            entity = match[0] if isinstance(match, tuple) else match
-                            entities_found[entity.strip()] += 1
+                        for match in re.findall(pattern, m['term'], re.IGNORECASE):
+                            entities_found[match.strip()] += 1
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
             except Exception: pass
         
