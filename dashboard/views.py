@@ -6043,7 +6043,7 @@ class LexiconsView(TemplateView):
         if cached_data and not selected_category:
             logger.info("✅ LexiconsView: Serving from cache (instant load)")
             context.update(cached_data)
-            context['lexicon_term_count'] = self._get_get_lexicon_term_count()
+            context['lexicon_term_count'] = self._get_lexicon_term_count()  
             context['selected_category'] = ''
             context['category_terms']    = []
             context['posts_with_terms']  = []
