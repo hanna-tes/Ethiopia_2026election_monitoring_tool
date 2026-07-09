@@ -5987,13 +5987,18 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
     # ── CONFIGURATION ──────────────────────────────────────────────────────
-    SCAN_LIMIT = 5000           # Limit evaluation pool to the 5000 most recent posts in date range
-    TIMEOUT_SECONDS = 90        # Hard stop after 90 seconds (leaves buffer for 100s Cloudflare limit)
-    CHUNK_SIZE = 1000           # Process posts in larger chunks
-    CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
+    SCAN_LIMIT = 5000           # Pool size matching global dashboard range
+    TIMEOUT_SECONDS = 90        
+    CHUNK_SIZE = 1000           
+    CACHE_DURATION = 7200       
     
+    # Words that are too generic on their own and require secondary context markers
+    GENERIC_TERMS_CONTEXT_MAP = {
+        'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
+        'ውጭ': ['ጣልቃ', 'ተጽዕኖ', 'ገንዘብ', 'ምርጫ', 'ሴራ', 'እጅ']
+    }
+
     def _get_lexicon_term_count(self):
-        """Count total terms in CONFIG lexicon + Database."""
         try:
             total = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values())
             total += LexiconTerm.objects.count()
@@ -6001,8 +6006,17 @@ class LexiconsView(TemplateView):
         except Exception:
             return "1000+"
     
+    def _is_valid_context(self, term: str, text_lower: str) -> bool:
+        """Enforces that ultra-generic words must appear alongside a secondary context word."""
+        term_clean = term.strip().lower()
+        if term_clean in self.GENERIC_TERMS_CONTEXT_MAP:
+            required_contexts = self.GENERIC_TERMS_CONTEXT_MAP[term_clean]
+            # Verify if at least one context-strengthening word is present
+            if not any(context in text_lower for context in required_contexts):
+                return False
+        return True
+
     def _scan_post(self, text: str, category_filter=None):
-        """Scan one post's text using lexicon."""
         if not text or len(text.strip()) < 10:
             return []
         text_lower = text.lower()
@@ -6012,16 +6026,18 @@ class LexiconsView(TemplateView):
         for m in raw_matches:
             if len(m['term'].strip()) <= 1:
                 continue
+            # Context Check: filter out generic keywords lacking supporting intent context
+            if not self._is_valid_context(m['term'], text_lower):
+                continue
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
                 filtered.append(m)
         return filtered
     
     def _check_timeout(self, start_time):
-        """Check if we're approaching the timeout limit."""
         import time
         elapsed = time.time() - start_time
         if elapsed >= self.TIMEOUT_SECONDS:
-            logger.warning(f"⏰ TIMEOUT: Scan stopped after {elapsed:.1f}s (limit: {self.TIMEOUT_SECONDS}s)")
+            logger.warning(f"⏰ TIMEOUT: Scan stopped after {elapsed:.1f}s")
             return True
         return False
     
@@ -6030,88 +6046,64 @@ class LexiconsView(TemplateView):
         start_time = time.time()
         context = super().get_context_data(**kwargs)
         
-        # ── 1. URL params ─────────────────────────────────────────────────
         selected_category = self.request.GET.get('category', '').strip()
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
         
-        # ── 2. Cache (overview only, keyed to date range) ─────────────────
-        cache_key = f"lexicon_dashboard_v6_{req_start}_{req_end}_{view_all}_{selected_category}"
+        cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
         cached_data = cache.get(cache_key)
         
         if cached_data and not selected_category:
-            logger.info("✅ LexiconsView: Serving from cache (instant load)")
             context.update(cached_data)
-            context['lexicon_term_count'] = self._get_lexicon_term_count()  
+            context['lexicon_term_count'] = self._get_lexicon_term_count()
             context['selected_category'] = ''
             context['category_terms']    = []
             context['posts_with_terms']  = []
             context['scan_timed_out']    = False
             return context
         
-        # ── 3. Fetch posts (SCAN ALL POSTS BY DATE RANGE, NO ELECTION SILO) ──
         try:
-            # We call this to cleanly extract global dashboard date ranges
             _, start_date, end_date = get_election_posts_queryset(self.request)
-            
-            # Query ALL processed posts within the date filter window
             filtered_posts = ProcessedPost.objects.filter(
                 timestamp_share__range=(start_date, end_date)
-            ).exclude(
-                platform__icontains='media'
-            ).exclude(
-                platform__icontains='news'
-            ).order_by('-timestamp_share')
+            ).exclude(platform__icontains='media').exclude(platform__icontains='news').order_by('-timestamp_share')
             
             total_posts = filtered_posts.count()
         except Exception as e:
-            logger.error(f"LexiconsView: error fetching posts: {e}")
-            context.update({
-                'active_tab': 'lexicons', 'top_terms': [], 'category_counts': {},
-                'severity_counts': {}, 'total_matches': 0, 'posts_scanned': 0,
-                'total_posts': 0, 'wordcloud_base64': None, 'targeted_entities': [],
-                'lexicon_term_count': self._get_lexicon_term_count(),
-                'selected_category': selected_category, 'category_terms': [],
-                'posts_with_terms': [], 'scan_timed_out': False,
-            })
+            logger.error(f"LexiconsView error: {e}")
             return context
         
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
-        # Slice to the most recent 5000 posts in the filtered date range to ensure zero timeouts
         scan_pool = filtered_posts[:self.SCAN_LIMIT]
         
-        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         category_terms  = []
         posts_with_terms = []
         all_matches     = []
         posts_scanned   = 0
         scan_timed_out  = False
         
+        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
-            logger.info(f"LexiconsView: category view → {selected_category} (evaluating up to {self.SCAN_LIMIT} recent posts)")
             
-            # Exclude low severity items here as requested for optimization
-            db_terms = LexiconTerm.objects.filter(category=selected_category).exclude(severity='low')
+            db_terms = LexiconTerm.objects.filter(category=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             elif selected_category in CONFIG.get('lexicon', {}):
-                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items() if m.get('severity', 'medium') != 'low']
+                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items()]
             
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
-                # Scan targeted slice with TIMEOUT PROTECTION
                 for post in scan_pool:
                     if self._check_timeout(start_time):
                         scan_timed_out = True
                         break
                     
                     posts_scanned += 1
-                    if not post.original_text:
-                        continue
+                    if not post.original_text: continue
                     
                     text       = post.original_text
                     text_lower = text.lower()
@@ -6119,6 +6111,9 @@ class LexiconsView(TemplateView):
                     matched_terms = []
                     
                     for term_lower, meta in term_meta.items():
+                        # Added context filter here to clean context metrics inside specific category view tabs
+                        if not self._is_valid_context(meta['term'], text_lower):
+                            continue
                         if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
                             continue
                         matched_terms.append(meta['term'])
@@ -6127,7 +6122,7 @@ class LexiconsView(TemplateView):
                     if matched_terms:
                         posts_with_terms.append({
                             'id':            post.id,
-                            'text':          text[:300],
+                            'text':          text,  # Kept full context available for tooltips or templates
                             'platform':      post.platform,
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
@@ -6137,134 +6132,80 @@ class LexiconsView(TemplateView):
                             'model_category': selected_category,
                         })
                 
-                elapsed = time.time() - start_time
-                logger.info(f"   Category scan complete: {len(posts_with_terms)} matched out of {posts_scanned} scanned in {elapsed:.1f}s")
-                
-                # ── LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
-                unique_foreign_terms = set()
-                for p_dict in posts_with_terms:
-                    for term in p_dict.get('matched_terms', []):
-                        if re.search(r'[^\x00-\x7F]', term):
-                            unique_foreign_terms.add(term)
-                
-                translations_map = {}
+                # LLM translations block
+                unique_foreign_terms = {t for p in posts_with_terms for t in p.get('matched_terms', []) if re.search(r'[^\x00-\x7F]', t)}
                 if unique_foreign_terms:
                     translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
-                
-                # Inject translations into each post dictionary
-                for p_dict in posts_with_terms:
-                    term_translations = []
-                    for term in p_dict.get('matched_terms', []):
-                        if term in translations_map:
-                            term_translations.append(f"{term}: {translations_map[term]}")
-                    p_dict['english_translations'] = term_translations
+                    for p_dict in posts_with_terms:
+                        p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
         
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
-            logger.info(f"LexiconsView: overview scan (evaluating up to {self.SCAN_LIMIT} recent posts)")
-            
-            # Scan targeted slice with TIMEOUT PROTECTION
             for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
                     break
-                
                 posts_scanned += 1
-                if not post.original_text:
-                    continue
+                if not post.original_text: continue
                 try:
                     matches = self._scan_post(post.original_text)
-                    if matches:
-                        all_matches.extend(matches)
-                        
-                        # Log progress every 500 posts evaluated
-                        if posts_scanned % 500 == 0:
-                            elapsed = time.time() - start_time
-                            logger.info(f"   Progress: {posts_scanned} posts evaluated in {elapsed:.1f}s")
-                except Exception as e:
-                    logger.warning(f"Scan error post {post.id}: {e}")
-                    continue
+                    if matches: all_matches.extend(matches)
+                except Exception as e: continue
         
-        elapsed = time.time() - start_time
-        logger.info(f"📊 LexiconsView: Total scan time: {elapsed:.1f}s | Posts evaluated: {posts_scanned} | Total Matches: {len(all_matches)}")
+        # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
+        term_counts     = Counter([m['term']     for m in all_matches])
+        category_counts = Counter([m['category'] for m in all_matches])
+        severity_counts = Counter([m['severity'] for m in all_matches])
         
-        # ── 5. Aggregate analytics ─────────────────────────────────────────
-        try:
-            term_counts     = Counter([m['term']     for m in all_matches])
-            category_counts = Counter([m['category'] for m in all_matches])
-            severity_counts = Counter([m['severity'] for m in all_matches])
-            
-            if selected_category and category_terms:
-                top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
-            else:
-                top_terms_with_meta = []
-                for term, count in term_counts.most_common(15):
-                    if len(term.strip()) <= 1: continue
-                    metadata = {}
-                    for cat, terms in CONFIG.get('lexicon', {}).items():
-                        if term in terms:
-                            metadata = terms[term]
-                            break
-                    if not metadata:
-                        db_t = LexiconTerm.objects.filter(term=term).first()
-                        if db_t: metadata = {'severity': db_t.severity, 'target_entity': db_t.target_entity, 'language': db_t.language}
-                    top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
-        except Exception as e:
-            logger.error(f"LexiconsView: aggregation error: {e}")
+        if selected_category and category_terms:
+            top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
+        else:
             top_terms_with_meta = []
-            category_counts     = Counter()
-            severity_counts     = Counter()
+            for term, count in term_counts.most_common(15):
+                metadata = {}
+                for cat, terms in CONFIG.get('lexicon', {}).items():
+                    if term in terms: metadata = terms[term]; break
+                if not metadata:
+                    db_t = LexiconTerm.objects.filter(term=term).first()
+                    if db_t: metadata = {'severity': db_t.severity, 'target_entity': db_t.target_entity, 'language': db_t.language}
+                top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
         
-        # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
                 valid_terms = [{'term': t, 'count': c} for t, c in term_counts.most_common(50) if len(t.strip()) > 1]
                 wc = generate_trigger_wordcloud({'top_terms': valid_terms})
                 if wc: wordcloud_base64 = wordcloud_to_base64(wc)
-            except Exception as e: logger.warning(f"Word cloud error: {e}")
-        
+            except Exception: pass
+            
         targeted_entities = []
         if not selected_category:
             try:
-                entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b', r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b', r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}']
+                entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE)\b', r'\b(Amhara|Tigray|Oromo|Somali)\b']
                 entities_found = Counter()
-                
-                # Use the exact same slice to run entity extraction so metrics match and remain fast
                 for post in scan_pool:
                     if not post.original_text: continue
                     for pattern in entity_patterns:
                         for match in re.findall(pattern, post.original_text, re.IGNORECASE):
                             entity = match[0] if isinstance(match, tuple) else match
-                            if len(entity.strip()) >= 3: entities_found[entity.strip()] += 1
+                            entities_found[entity.strip()] += 1
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
-            except Exception as e: logger.error(f"Entity extraction error: {e}")
+            except Exception: pass
         
-        # ── 8. Build context ───────────────────────────────────────────────
         shared = {
             'active_tab': 'lexicons', 'top_terms': top_terms_with_meta,
             'category_counts': dict(category_counts), 'severity_counts': dict(severity_counts),
             'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
             'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
-            'scan_timed_out': scan_timed_out,
+            'scan_timed_out': scan_timed_out, 'wordcloud_base64': wordcloud_base64,
+            'targeted_entities': targeted_entities
         }
         
         if not selected_category:
-            shared['wordcloud_base64'] = wordcloud_base64
-            shared['targeted_entities'] = targeted_entities
-        else:
-            shared['wordcloud_base64'] = None
-            shared['targeted_entities'] = []
-        
-        # ── CACHE (only simple data, no model instances) ───────
-        if not selected_category:
-            try:
-                cache.set(cache_key, shared, 7200)  # 2 hours
-                logger.info(f"💾 LexiconsView cached for 2 hours")
-            except Exception as e:
-                logger.warning(f"Cache save failed: {e}")
-        
+            try: cache.set(cache_key, shared, 7200)
+            except Exception: pass
+            
         context.update(shared)
         context['selected_category'] = selected_category
         context['category_terms'] = category_terms
