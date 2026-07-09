@@ -2369,8 +2369,11 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
     """
-    PRODUCTION HARDENED: Handles self-referential RT text patterns (e.g., @shabait posting "RT @shabait")
-    to prevent empty amplifier lists and broken layout dangling edges.
+    COMPLETE PRODUCTION COHERENT VERSION:
+    - Automatically parses text structures to isolate real source nodes via RT regex patterns.
+    - Preserves post lists and formatting safely.
+    - Prevents empty networks by checking self-referential retweeters (e.g. @shabait posting @shabait).
+    - Hardens Vis.js physics and blocks detached dangling edges to eliminate layout clipping.
     """
     import re
     import numpy as np
@@ -2380,7 +2383,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     
     coordination = []
     
-    # Pre-fetch data
+    # Pre-fetch ALL data in ONE query
     posts_data = list(
         posts_queryset
         .exclude(platform__iexact='TikTok')
@@ -2396,6 +2399,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     if len(posts_data) < min_accounts:
         return []
     
+    # Filter valid texts
     valid_indices = []
     valid_texts = []
     for i, p in enumerate(posts_data):
@@ -2407,7 +2411,14 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     if len(valid_texts) < 2:
         return []
         
-    vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1, 2), min_df=2, max_df=0.9)
+    # Vectorized TF-IDF Calculation
+    vectorizer = TfidfVectorizer(
+        max_features=2000, 
+        stop_words='english', 
+        ngram_range=(1, 2), 
+        min_df=2, 
+        max_df=0.9
+    )
     tfidf_matrix = vectorizer.fit_transform(valid_texts)
     
     chunk_size = 500
@@ -2435,11 +2446,12 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 if len(group_accounts) >= min_accounts:
                     similarity_groups.append(similar_indices)
                     
+    # Compile each valid coordination group
     for group_indices in similarity_groups[:max_groups]:
         group_posts = [posts_data[valid_indices[idx]] for idx in group_indices]
         sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
         
-        # 1. Parse RT Source
+        # 1. Parse out primary original creator text source node
         source_account = "Unknown"
         text_sample_raw = ""
         for post in sorted_group_posts:
@@ -2454,7 +2466,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         if source_account == "Unknown" and sorted_group_posts:
             source_account = clean_username(sorted_group_posts[0].get('account_id'))
             
-        # 2. Extract Amplifiers safely with a self-referential safeguard
+        # 2. Extract amplifiers safely with a self-referential fallback check
         amplifiers_set = set()
         raw_group_accounts = set()
         
@@ -2462,23 +2474,21 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             acct = clean_username(post.get('account_id'))
             if acct and acct != "Unknown":
                 raw_group_accounts.add(acct)
-                # Safeguard: Only exclude if there are actually OTHER accounts in this cluster block
                 if acct.lower() != source_account.lower():
                     amplifiers_set.add(acct)
                     
-        # CRITICAL FIX: If filtering out the source completely empties the list (like group #12), 
-        # keep all accounts as active amplifiers so the graph canvas can build layout structures.
+        # Safeguard: If filtering out source yields an empty list, preserve all elements as nodes
         if not amplifiers_set:
             amplifiers_set = raw_group_accounts
             
         amplifiers_list = list(amplifiers_set)
         sources_list = [source_account] if source_account != "Unknown" else []
-        ordered_accounts_set = list(dict.fromkeys(sources_list + amplifiers_list)) # preserve insertion order
+        ordered_accounts_set = list(dict.fromkeys(sources_list + amplifiers_list))
         
         if len(ordered_accounts_set) < min_accounts:
             continue
             
-        # Bot metrics computation
+        # Bot metrics configuration
         real_posts_for_bot_check = [p for p in group_posts if p.get('account_id') != source_account]
         if not real_posts_for_bot_check: 
             real_posts_for_bot_check = group_posts
@@ -2489,7 +2499,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         bot_percentage = (bot_count / len(amplifiers_list) * 100) if amplifiers_list else 0
         coordination_type = determine_coordination_type(real_posts_for_bot_check, bot_count)
         
-        # 3. Match Sample data rows safely
+        # 3. Match Sample post logs for template rendering
         sample_posts_with_urls = []
         all_platforms = set()
         all_hashtags = []
@@ -2518,44 +2528,57 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 'is_source': username_clean.lower() == source_account.lower()
             })
             
-        # 4. Generate Node/Link graphs mapping parameters 
+        # 4. Generate Graph Topology Networks With Link Validation Guards
         graph_nodes = []
         graph_links = []
         existing_nodes = set()
         
+        # Injects the true text origin blue source node
         if source_account != "Unknown":
+            source_key = str(source_account).strip()
             graph_nodes.append({
-                'id': source_account, 
-                'label': source_account, 
+                'id': source_key, 
+                'label': source_key, 
                 'type': 'source', 
                 'group': 'source',
-                'color': '#1e90ff',  
-                'size': 28,
-                'shape': 'dot'
+                'color': '#1e90ff',  # Force True Blue
+                'size': 26,
+                'shape': 'dot',
+                'physics': True
             })
-            existing_nodes.add(source_account.lower())
+            existing_nodes.add(source_key.lower())
             
+        # Injects the orange amplifier spokes safely
         for amp in amplifiers_list:
-            if amp.lower() not in existing_nodes:
+            amp_key = str(amp).strip()
+            if amp_key.lower() not in existing_nodes:
                 graph_nodes.append({
-                    'id': amp, 
-                    'label': amp, 
+                    'id': amp_key, 
+                    'label': amp_key, 
                     'type': 'amplifier', 
                     'group': 'amplifier',
-                    'color': '#e67e22',  
+                    'color': '#e67e22',  # Force Orange
                     'size': 14,
-                    'shape': 'dot'
+                    'shape': 'dot',
+                    'physics': True
                 })
-                existing_nodes.add(amp.lower())
+                existing_nodes.add(amp_key.lower())
                 
-            if source_account != "Unknown" and amp.lower() != source_account.lower():
-                graph_links.append({
-                    'from': source_account,     
-                    'to': amp,
-                    'source': source_account,   
-                    'target': amp,
-                    'length': 60
-                })
+            # Intersection Protection Check: Blocks dangled unfinished loose edge lines
+            if source_account != "Unknown":
+                s_id = str(source_account).strip()
+                t_id = str(amp_key).strip()
+                
+                if s_id.lower() in existing_nodes and t_id.lower() in existing_nodes and s_id.lower() != t_id.lower():
+                    graph_links.append({
+                        'from': s_id,       # Vis.js format mapping parameter
+                        'to': t_id,         # Vis.js format mapping parameter
+                        'source': s_id,     # Fallback D3 parsing parameters
+                        'target': t_id,     # Fallback D3 parsing parameters
+                        'length': 80,       # Sets tight canvas constraints to prevent cutoffs
+                        'arrows': 'to',     # Shows information flow direction clearly
+                        'width': 1.5
+                    })
                 
         unique_urls = list(set(p['url'] for p in real_posts_for_bot_check if p.get('url') and str(p['url']).startswith('http')))[:5]
         text_sample = str(text_sample_raw)[:200] if text_sample_raw else '[Similar content]'
