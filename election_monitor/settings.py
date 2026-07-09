@@ -160,14 +160,18 @@ Q_CLUSTER = {
     'django_redis': 'default',   # Tells Django-Q to use your existing Redis cache config
 }
 
-# Add this to your settings.py
+# ── REDIS CACHE ──────────────────────────────────────────────
 CACHES = {
     "default": {
-        "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1", # Using DB 1 so it doesn't conflict with Django-Q on DB 0
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+        }
     }
 }
-
 
 # Groq API
 GROQ_API_KEY = env('GROQ_API_KEY', default='')
