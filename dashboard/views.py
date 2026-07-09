@@ -2463,16 +2463,49 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     # Build coordination results using pre-fetched data (no DB queries)
     for group_indices in similarity_groups[:max_groups]:
         group_posts = [posts_data[valid_indices[idx]] for idx in group_indices]
-        accounts = list(set(clean_username(p['account_id']) for p in group_posts if p.get('account_id')))
         
-        if len(accounts) < min_accounts:
+        # Sort group posts chronologically
+        sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
+        
+        # 1. Determine the Source Node (Look for RT handle first, fallback to oldest post)
+        extracted_source = None
+        for post in sorted_group_posts:
+            text_content = str(post.get('original_text', ''))
+            rt_match = re.search(r'(?:RT|via)\s+@(\w+)', text_content, re.IGNORECASE)
+            if rt_match:
+                extracted_source = clean_username(rt_match.group(1))
+                break
+        
+        if extracted_source and extracted_source != "Unknown":
+            source_account = extracted_source
+        elif sorted_group_posts:
+            source_account = clean_username(sorted_group_posts[0].get('account_id'))
+        else:
+            source_account = "Unknown"
+            
+        # 2. Separate into Sources vs Amplifiers sets
+        sources_set = {source_account} if source_account != "Unknown" else set()
+        amplifiers_set = set()
+        
+        for post in sorted_group_posts:
+            acct = clean_username(post.get('account_id'))
+            if acct and acct != "Unknown" and acct != source_account:
+                amplifiers_set.add(acct)
+        
+        sources_list = list(sources_set)
+        amplifiers_list = list(amplifiers_set)
+        
+        # Merge source back into accounts list to ensure it's rendered as a node
+        all_unique_accounts = list(sources_set.union(amplifiers_set))
+        
+        if len(all_unique_accounts) < min_accounts and not extracted_source:
             continue
         
         # Bot detection (in-memory, no DB)
         bot_data = identify_bot_accounts(group_posts)
-        bot_accounts = list(bot_data.keys())  # Extract just the IDs for counting
+        bot_accounts = list(bot_data.keys())
         bot_count = len(bot_accounts)
-        bot_percentage = (bot_count / len(accounts) * 100) if accounts else 0
+        bot_percentage = (bot_count / len(all_unique_accounts) * 100) if all_unique_accounts else 0
         
         # Coordination type
         coordination_type = determine_coordination_type(group_posts, bot_count)
@@ -2494,46 +2527,41 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 ts = post.get('timestamp_share')
                 account_id = post.get('account_id')
                 bot_reasons = bot_data.get(account_id, [])
+                username_clean = clean_username(account_id)
                 
                 sample_posts_with_urls.append({
-                    'username': clean_username(account_id),
+                    'username': username_clean,
                     'platform': post.get('platform', ''),
                     'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
                     'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
                     'text_preview': text[:150] + '...' if text else '',
                     'is_bot': account_id in bot_accounts,
                     'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
-                    'risk_level': post.get('risk_level', 'unknown')
+                    'risk_level': post.get('risk_level', 'unknown'),
+                    'is_source': username_clean == source_account
                 })
         
-        # Sort group posts chronologically to extract source vs amplifiers
-        sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
+        # 3. Build an explicit Nodes and Links graph structure for frontend engines
+        graph_nodes = []
+        graph_links = []
         
-        sources_set = set()
-        amplifiers_set = set()
-        
-        if sorted_group_posts:
-            # First clean username chronologically is the network source
-            first_account = clean_username(sorted_group_posts[0].get('account_id'))
-            if first_account and first_account != "Unknown":
-                sources_set.add(first_account)
+        # Add source node explicitly
+        if source_account != "Unknown":
+            graph_nodes.append({'id': source_account, 'label': source_account, 'type': 'source', 'group': 'source'})
             
-            # The remaining unique usernames become the amplifiers
-            for post in sorted_group_posts[1:]:
-                amp_account = clean_username(post.get('account_id'))
-                if amp_account and amp_account != "Unknown" and amp_account != first_account:
-                    amplifiers_set.add(amp_account)
-                    
-        sources_list = list(sources_set)
-        amplifiers_list = list(amplifiers_set)
+        # Add amplifier nodes and connect them to the source
+        for amp in amplifiers_list:
+            graph_nodes.append({'id': amp, 'label': amp, 'type': 'amplifier', 'group': 'amplifier'})
+            if source_account != "Unknown":
+                graph_links.append({'source': source_account, 'target': amp, 'value': 1})
         
         unique_urls = list(set(p['url'] for p in group_posts if p.get('url') and str(p['url']).startswith('http')))[:5]
         text_sample = str(group_posts[0].get('original_text', ''))[:200] if group_posts else '[Similar content]'
         
         coordination.append({
             'id': len(coordination) + 1,
-            'accounts': accounts[:10],
-            'account_count': len(accounts),
+            'accounts': all_unique_accounts[:15],
+            'account_count': len(all_unique_accounts),
             'post_count': len(group_posts),
             'bot_count': bot_count,
             'bot_percentage': round(bot_percentage, 1),
@@ -2546,10 +2574,14 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'sub_narrative': extract_sub_narrative(text_sample),
             'hashtags': list(set(all_hashtags))[:10],
             'primary_type': 'amplification_network' if bot_percentage >= 50 else 'coordination',
+            # Key targets for frontend classification mapping
             'sources': sources_list,
             'amplifiers': amplifiers_list,
             'source_count': len(sources_list),
             'amplifier_count': len(amplifiers_list),
+            # Standard structural fallback fields
+            'nodes': graph_nodes,
+            'links': graph_links,
         })
     
     coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
