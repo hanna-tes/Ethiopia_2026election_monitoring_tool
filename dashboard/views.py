@@ -5987,7 +5987,7 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
     # ── CONFIGURATION ──────────────────────────────────────────────────────
-    SCAN_LIMIT = 50000          # Expanded upper safety boundary for large datasets
+    SCAN_LIMIT = 5000          # Baseline limit for regular queries
     TIMEOUT_SECONDS = 90        
     CHUNK_SIZE = 1000           
     CACHE_DURATION = 7200       
@@ -6056,7 +6056,7 @@ class LexiconsView(TemplateView):
         
         if cached_data and not selected_category:
             context.update(cached_data)
-            context['lexicon_term_count'] = self._get_lexicon_term_count()
+            context['lexicon_term_count'] = self._get_get_lexicon_term_count() if hasattr(self, '_get_get_lexicon_term_count') else self._get_lexicon_term_count()
             context['selected_category'] = ''
             context['category_terms']    = []
             context['posts_with_terms']  = []
@@ -6077,8 +6077,9 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
-        # FIX: Changed from bracket slicing to an iterator stream to securely scale up to 28k posts without RAM exhaustion
-        scan_pool = filtered_posts[:self.SCAN_LIMIT].iterator(chunk_size=2000)
+        # FIX: If view_all is triggered, expand the scan limit so it processes everything up to 100,000 items seamlessly.
+        effective_limit = 100000 if view_all else self.SCAN_LIMIT
+        scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
         
         category_terms  = []
         posts_with_terms = []
@@ -6198,13 +6199,12 @@ class LexiconsView(TemplateView):
             try:
                 entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE)\b', r'\b(Amhara|Tigray|Oromo|Somali)\b']
                 entities_found = Counter()
-                # SPEED OPTIMIZATION FOR LARGE OVERVIEWS: Loop accumulated matches instead of running multiple database text loops
                 for m in all_matches:
                     for pattern in entity_patterns:
                         for match in re.findall(pattern, m['term'], re.IGNORECASE):
                             entities_found[match.strip()] += 1
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
-            except Exception: pass
+            except Exception as e: pass
         
         shared = {
             'active_tab': 'lexicons', 'top_terms': top_terms_with_meta,
