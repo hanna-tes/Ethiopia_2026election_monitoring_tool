@@ -6418,6 +6418,54 @@ class NetworksView(TemplateView):
             try:
                 G = nx.Graph()
                 active_groups_subset = coordination_groups[:top_n]
+                
+                # ── Build a proper source→amplifier map ──────────────────
+                # For each group, find the account with the OLDEST timestamp
+                # that is NOT retweeting someone else. That's the source.
+                group_sources = {}  # group_id -> source_account
+                for group in active_groups_subset:
+                    source_account = None
+                    earliest_ts = None
+                    sample_posts = group.get('sample_posts_with_urls', [])
+                    
+                    for post in sample_posts:
+                        username = post.get('username', '')
+                        timestamp_str = post.get('timestamp', '')
+                        text = post.get('text_preview', '')
+                        
+                        # Skip if this post is clearly an RT/QT of someone else
+                        if text and re.match(r'^(RT|QT|repost)\s+@\w+', text.strip(), re.IGNORECASE):
+                            continue
+                        
+                        # Parse timestamp
+                        ts = None
+                        if timestamp_str and timestamp_str != 'N/A':
+                            try:
+                                ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
+                            except:
+                                try:
+                                    ts = datetime.fromisoformat(timestamp_str)
+                                except:
+                                    ts = None
+                        
+                        if ts is None:
+                            continue
+                        
+                        if earliest_ts is None or ts < earliest_ts:
+                            earliest_ts = ts
+                            source_account = username
+                    
+                    if source_account:
+                        group_sources[group['id']] = source_account
+                    elif sample_posts:
+                        # Fallback: use first non-RT account
+                        for post in sample_posts:
+                            text = post.get('text_preview', '')
+                            if not re.match(r'^(RT|QT|repost)\s+@\w+', text.strip(), re.IGNORECASE):
+                                group_sources[group['id']] = post.get('username', '')
+                                break
+                
+                # ─ Build graph edges ──────────────────────────────────────────
                 for group in active_groups_subset:
                     accounts = group.get('accounts', [])
                     weight = group.get('post_count', 1)
@@ -6430,6 +6478,7 @@ class NetworksView(TemplateView):
                             else:
                                 G.add_edge(node_a, node_b, weight=weight)
                 
+                # ── Layout ────────────────────────────────────────────────────
                 if layout_style == 'circular':
                     pos = nx.circular_layout(G)
                 elif layout_style == 'kamada_kawai':
@@ -6437,12 +6486,18 @@ class NetworksView(TemplateView):
                 else:
                     pos = nx.spring_layout(G, k=0.4, iterations=30)
                 
+                # ── FIX: Mark nodes as source or amplifier ─────────────────────
+                # An account is a "source" if it's the originator in ANY group
+                source_accounts = set(group_sources.values())
+                
                 nodes_list = []
                 for node in G.nodes():
-                    is_source = any(g.get('accounts', []) and str(g.get('accounts', [])[0]) == str(node) for g in active_groups_subset)
+                    is_source = node in source_accounts
                     nodes_list.append({
-                        'id': node, 'label': str(node)[:15],
-                        'x': float(pos[node][0]), 'y': float(pos[node][1]),
+                        'id': node,
+                        'label': str(node)[:15],
+                        'x': float(pos[node][0]),
+                        'y': float(pos[node][1]),
                         'type': 'source' if is_source else 'amplifier',
                         'size': int(G.degree(node))
                     })
@@ -6455,10 +6510,10 @@ class NetworksView(TemplateView):
                         'target_x': float(pos[v][0]), 'target_y': float(pos[v][1]),
                         'weight': int(data.get('weight', 1))
                     })
+                
                 network_graph_json = json.dumps({'nodes': nodes_list, 'edges': edges_list})
             except Exception as e:
                 logger.error(f"Error drawing network: {e}")
-
         # 4. ACTUAL TTP ANALYSIS (Replaces the broken static reference loop)
         # This analyzes your coordination_groups to find the 12 TTPs and attaches real evidence posts
         ttps = analyze_ttps(coordination_groups, posts_qs)
