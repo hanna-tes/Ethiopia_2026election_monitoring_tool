@@ -2369,10 +2369,8 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
     """
-    FINAL PRODUCTION VERSION: 
-    - Fixes case-sensitivity mismatched IDs preventing Source nodes from rendering.
-    - Prevents dead-end edge lines by ensuring targets exist inside the graph map.
-    - Forces tight link metrics directly into the frontend config to eliminate cutoff text.
+    PRODUCTION HARDENED: Handles self-referential RT text patterns (e.g., @shabait posting "RT @shabait")
+    to prevent empty amplifier lists and broken layout dangling edges.
     """
     import re
     import numpy as np
@@ -2382,7 +2380,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     
     coordination = []
     
-    # Pre-fetch ALL data in ONE query
+    # Pre-fetch data
     posts_data = list(
         posts_queryset
         .exclude(platform__iexact='TikTok')
@@ -2398,7 +2396,6 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     if len(posts_data) < min_accounts:
         return []
     
-    # Filter valid texts
     valid_indices = []
     valid_texts = []
     for i, p in enumerate(posts_data):
@@ -2406,18 +2403,11 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         if text and len(str(text)) > 20:
             valid_indices.append(i)
             valid_texts.append(str(text))
-    
+            
     if len(valid_texts) < 2:
         return []
-    
-    # Vectorized TF-IDF
-    vectorizer = TfidfVectorizer(
-        max_features=2000,
-        stop_words='english',
-        ngram_range=(1, 2),
-        min_df=2,  
-        max_df=0.9  
-    )
+        
+    vectorizer = TfidfVectorizer(max_features=2000, stop_words='english', ngram_range=(1, 2), min_df=2, max_df=0.9)
     tfidf_matrix = vectorizer.fit_transform(valid_texts)
     
     chunk_size = 500
@@ -2432,34 +2422,24 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         for local_i, global_i in enumerate(range(chunk_start, chunk_end)):
             if global_i in processed_indices:
                 continue
-            
             similar_indices = [global_i]
-            similarities = chunk_similarities[local_i]
-            above_threshold = np.where(similarities >= similarity_threshold)[0]
-            
+            above_threshold = np.where(chunk_similarities[local_i] >= similarity_threshold)[0]
             for j in above_threshold:
                 if j != global_i and j not in processed_indices:
                     similar_indices.append(int(j))
                     processed_indices.add(int(j))
-            
             processed_indices.add(global_i)
             
             if len(similar_indices) >= min_accounts:
-                group_accounts = set()
-                for idx in similar_indices:
-                    acc = posts_data[valid_indices[idx]].get('account_id')
-                    if acc:
-                        group_accounts.add(acc)
-                
+                group_accounts = set(posts_data[valid_indices[idx]].get('account_id') for idx in similar_indices if posts_data[valid_indices[idx]].get('account_id'))
                 if len(group_accounts) >= min_accounts:
                     similarity_groups.append(similar_indices)
-    
-    # Build coordination results
+                    
     for group_indices in similarity_groups[:max_groups]:
         group_posts = [posts_data[valid_indices[idx]] for idx in group_indices]
         sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
         
-        # 1. Extract and standardize Source node using regex matching
+        # 1. Parse RT Source
         source_account = "Unknown"
         text_sample_raw = ""
         for post in sorted_group_posts:
@@ -2468,29 +2448,41 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 text_sample_raw = text_content
             rt_match = re.search(r'(?:RT|via)\s+@(\w+)', text_content, re.IGNORECASE)
             if rt_match:
-                # Force exact normalization pass
                 source_account = clean_username(rt_match.group(1).strip())
                 break
-        
+                
         if source_account == "Unknown" and sorted_group_posts:
             source_account = clean_username(sorted_group_posts[0].get('account_id'))
             
-        # 2. Extract amplifiers ensuring no case duplicate collisions
+        # 2. Extract Amplifiers safely with a self-referential safeguard
         amplifiers_set = set()
+        raw_group_accounts = set()
+        
         for post in sorted_group_posts:
             acct = clean_username(post.get('account_id'))
-            if acct and acct != "Unknown" and acct.lower() != source_account.lower():
-                amplifiers_set.add(acct)
-                
+            if acct and acct != "Unknown":
+                raw_group_accounts.add(acct)
+                # Safeguard: Only exclude if there are actually OTHER accounts in this cluster block
+                if acct.lower() != source_account.lower():
+                    amplifiers_set.add(acct)
+                    
+        # CRITICAL FIX: If filtering out the source completely empties the list (like group #12), 
+        # keep all accounts as active amplifiers so the graph canvas can build layout structures.
+        if not amplifiers_set:
+            amplifiers_set = raw_group_accounts
+            
         amplifiers_list = list(amplifiers_set)
         sources_list = [source_account] if source_account != "Unknown" else []
-        ordered_accounts_set = sources_list + amplifiers_list
+        ordered_accounts_set = list(dict.fromkeys(sources_list + amplifiers_list)) # preserve insertion order
         
         if len(ordered_accounts_set) < min_accounts:
             continue
             
         # Bot metrics computation
         real_posts_for_bot_check = [p for p in group_posts if p.get('account_id') != source_account]
+        if not real_posts_for_bot_check: 
+            real_posts_for_bot_check = group_posts
+            
         bot_data = identify_bot_accounts(real_posts_for_bot_check)
         bot_accounts = list(bot_data.keys())
         bot_count = len(bot_accounts)
@@ -2505,7 +2497,6 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         for post in sorted_group_posts[:15]:
             if post.get('platform'):
                 all_platforms.add(post['platform'])
-            
             text = str(post.get('original_text', '')).strip()
             found = re.findall(r'#(\w+)', text, re.IGNORECASE)
             all_hashtags.extend([h.lower() for h in found])
@@ -2526,52 +2517,46 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 'risk_level': post.get('risk_level', 'unknown'),
                 'is_source': username_clean.lower() == source_account.lower()
             })
-        
-        # 4. Generate Node/Link configurations with layout overrides
+            
+        # 4. Generate Node/Link graphs mapping parameters 
         graph_nodes = []
         graph_links = []
         existing_nodes = set()
         
         if source_account != "Unknown":
-            source_key = source_account  # Exact ID binding
             graph_nodes.append({
-                'id': source_key, 
-                'label': source_key, 
+                'id': source_account, 
+                'label': source_account, 
                 'type': 'source', 
                 'group': 'source',
-                'color': '#1e90ff',  # Force Blue
+                'color': '#1e90ff',  
                 'size': 28,
-                'borderWidth': 3,
                 'shape': 'dot'
             })
-            existing_nodes.add(source_key.lower())
+            existing_nodes.add(source_account.lower())
             
         for amp in amplifiers_list:
-            amp_key = amp
-            # Prevent double generation
-            if amp_key.lower() not in existing_nodes:
+            if amp.lower() not in existing_nodes:
                 graph_nodes.append({
-                    'id': amp_key, 
-                    'label': amp_key, 
+                    'id': amp, 
+                    'label': amp, 
                     'type': 'amplifier', 
                     'group': 'amplifier',
-                    'color': '#e67e22',  # Force Orange
+                    'color': '#e67e22',  
                     'size': 14,
                     'shape': 'dot'
                 })
-                existing_nodes.add(amp_key.lower())
-            
-            # Gated check: Only link if the origin is inside the existing nodes layout
-            if source_account != "Unknown" and source_key.lower() in existing_nodes:
+                existing_nodes.add(amp.lower())
+                
+            if source_account != "Unknown" and amp.lower() != source_account.lower():
                 graph_links.append({
-                    'from': source_key,     # Vis.js standard mapping parameter names
-                    'to': amp_key,
-                    'source': source_key,   # Fallback matching parameter name
-                    'target': amp_key,
-                    'length': 60,           # Pulls layout inside boundaries to stop clipping
-                    'width': 1.5
+                    'from': source_account,     
+                    'to': amp,
+                    'source': source_account,   
+                    'target': amp,
+                    'length': 60
                 })
-        
+                
         unique_urls = list(set(p['url'] for p in real_posts_for_bot_check if p.get('url') and str(p['url']).startswith('http')))[:5]
         text_sample = str(text_sample_raw)[:200] if text_sample_raw else '[Similar content]'
         
@@ -2599,10 +2584,10 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'nodes': graph_nodes,
             'links': graph_links,
         })
-    
+        
     coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
     return coordination[:max_groups]
-
+    
 def identify_bot_accounts(posts):
     """
     Enhanced bot detection with timestamp analysis and behavioral patterns.
