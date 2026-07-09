@@ -6056,7 +6056,7 @@ class LexiconsView(TemplateView):
         
         if cached_data and not selected_category:
             context.update(cached_data)
-            context['lexicon_term_count'] = self._get_get_lexicon_term_count() if hasattr(self, '_get_get_lexicon_term_count') else self._get_lexicon_term_count()
+            context['lexicon_term_count'] = self._get_lexicon_term_count()
             context['selected_category'] = ''
             context['category_terms']    = []
             context['posts_with_terms']  = []
@@ -6065,8 +6065,16 @@ class LexiconsView(TemplateView):
         
         try:
             _, start_date, end_date = get_election_posts_queryset(self.request)
+            
+            # Build database conditions dynamically
+            query_filters = {}
+            
+            #  Drop strict date window filter entirely when view_all is active to read older history
+            if not view_all:
+                query_filters['timestamp_share__range'] = (start_date, end_date)
+                
             filtered_posts = ProcessedPost.objects.filter(
-                timestamp_share__range=(start_date, end_date)
+                **query_filters
             ).exclude(platform__icontains='media').exclude(platform__icontains='news').order_by('-timestamp_share')
             
             total_posts = filtered_posts.count()
@@ -6077,7 +6085,7 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
-        # FIX: If view_all is triggered, expand the scan limit so it processes everything up to 100,000 items seamlessly.
+        # Expand limits to 100k records safely streamed via iterator during "View All" actions
         effective_limit = 100000 if view_all else self.SCAN_LIMIT
         scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
         
