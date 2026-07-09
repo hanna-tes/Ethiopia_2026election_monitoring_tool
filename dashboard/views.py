@@ -2370,8 +2370,13 @@ def is_primarily_ethiopia_related(text: str) -> bool:
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
     """
     OPTIMIZED: Uses vectorized sparse matrix operations instead of O(n²) Python loops.
-    Processes data in chunks to avoid memory issues.
+    Processes data in chunks to avoid memory issues and outputs explicit Node/Link structure.
     """
+    import re
+    import numpy as np
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    
     coordination = []
     
     # Pre-fetch ALL data in ONE query
@@ -2384,7 +2389,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'id', 'account_id', 'original_text', 'platform',
             'url', 'timestamp_share', 'risk_level'
         )
-        .order_by('-timestamp_share')[:5000]  # Increased limit for fast processing
+        .order_by('-timestamp_share')[:5000]
     )
     
     if len(posts_data) < min_accounts:
@@ -2403,20 +2408,15 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         return []
     
     # Vectorized TF-IDF + batch cosine similarity
-    logger.info(f"🔍 Computing TF-IDF for {len(valid_texts)} posts...")
     vectorizer = TfidfVectorizer(
         max_features=2000,
         stop_words='english',
         ngram_range=(1, 2),
-        min_df=2,  # Ignore rare words (speeds up significantly)
-        max_df=0.9  # Ignore overly common words
+        min_df=2,  
+        max_df=0.9  
     )
     tfidf_matrix = vectorizer.fit_transform(valid_texts)
     
-    # Compute ALL similarities at once using sparse matrix operations
-    logger.info(f"🔍 Computing cosine similarity matrix ({tfidf_matrix.shape[0]}x{tfidf_matrix.shape[0]})...")
-    
-    # Process in chunks to avoid memory explosion on large datasets
     chunk_size = 500
     similarity_groups = []
     processed_indices = set()
@@ -2424,8 +2424,6 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     for chunk_start in range(0, len(valid_texts), chunk_size):
         chunk_end = min(chunk_start + chunk_size, len(valid_texts))
         chunk_matrix = tfidf_matrix[chunk_start:chunk_end]
-        
-        # computes similarity between chunk and ALL posts at once
         chunk_similarities = cosine_similarity(chunk_matrix, tfidf_matrix)
         
         for local_i, global_i in enumerate(range(chunk_start, chunk_end)):
@@ -2433,11 +2431,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 continue
             
             similar_indices = [global_i]
-            
-            # Check similarities for this post against all others
             similarities = chunk_similarities[local_i]
-            
-            # Use numpy vectorized threshold instead of Python loop
             above_threshold = np.where(similarities >= similarity_threshold)[0]
             
             for j in above_threshold:
@@ -2448,7 +2442,6 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             processed_indices.add(global_i)
             
             if len(similar_indices) >= min_accounts:
-                # Verify unique accounts
                 group_accounts = set()
                 for idx in similar_indices:
                     acc = posts_data[valid_indices[idx]].get('account_id')
@@ -2458,16 +2451,12 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 if len(group_accounts) >= min_accounts:
                     similarity_groups.append(similar_indices)
     
-    logger.info(f"✅ Found {len(similarity_groups)} coordination groups")
-    
-    # Build coordination results using pre-fetched data (no DB queries)
+    # Build coordination results
     for group_indices in similarity_groups[:max_groups]:
         group_posts = [posts_data[valid_indices[idx]] for idx in group_indices]
-        
-        # Sort group posts chronologically
         sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
         
-        # 1. Determine the Source Node (Look for RT handle first, fallback to oldest post)
+        # 1. Determine Source Node via RT pattern matching
         extracted_source = None
         for post in sorted_group_posts:
             text_content = str(post.get('original_text', ''))
@@ -2483,7 +2472,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         else:
             source_account = "Unknown"
             
-        # 2. Separate into Sources vs Amplifiers sets
+        # 2. Divide distinct arrays
         sources_set = {source_account} if source_account != "Unknown" else set()
         amplifiers_set = set()
         
@@ -2494,62 +2483,18 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         
         sources_list = list(sources_set)
         amplifiers_list = list(amplifiers_set)
-        
-        # Merge source back into accounts list to ensure it's rendered as a node
         all_unique_accounts = list(sources_set.union(amplifiers_set))
         
         if len(all_unique_accounts) < min_accounts and not extracted_source:
             continue
-        
-        # Bot detection (in-memory, no DB)
-        bot_data = identify_bot_accounts(group_posts)
-        bot_accounts = list(bot_data.keys())
-        bot_count = len(bot_accounts)
-        bot_percentage = (bot_count / len(all_unique_accounts) * 100) if all_unique_accounts else 0
-        
-        # Coordination type
-        coordination_type = determine_coordination_type(group_posts, bot_count)
-        
-        # Build sample posts (in-memory)
-        sample_posts_with_urls = []
-        all_platforms = set()
-        all_hashtags = []
-        
-        for post in group_posts[:15]:
-            if post.get('platform'):
-                all_platforms.add(post['platform'])
             
-            text = str(post.get('original_text', '')).strip()
-            found = re.findall(r'#(\w+)', text, re.IGNORECASE)
-            all_hashtags.extend([h.lower() for h in found])
-            
-            if len(sample_posts_with_urls) < 10:
-                ts = post.get('timestamp_share')
-                account_id = post.get('account_id')
-                bot_reasons = bot_data.get(account_id, [])
-                username_clean = clean_username(account_id)
-                
-                sample_posts_with_urls.append({
-                    'username': username_clean,
-                    'platform': post.get('platform', ''),
-                    'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
-                    'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
-                    'text_preview': text[:150] + '...' if text else '',
-                    'is_bot': account_id in bot_accounts,
-                    'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
-                    'risk_level': post.get('risk_level', 'unknown'),
-                    'is_source': username_clean == source_account
-                })
-        
-        # 3. Build an explicit Nodes and Links graph structure for frontend engines
+        # 3. Build an explicit structural node-link topology format 
         graph_nodes = []
         graph_links = []
         
-        # Add source node explicitly
         if source_account != "Unknown":
             graph_nodes.append({'id': source_account, 'label': source_account, 'type': 'source', 'group': 'source'})
             
-        # Add amplifier nodes and connect them to the source
         for amp in amplifiers_list:
             graph_nodes.append({'id': amp, 'label': amp, 'type': 'amplifier', 'group': 'amplifier'})
             if source_account != "Unknown":
@@ -2563,28 +2508,17 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'accounts': all_unique_accounts[:15],
             'account_count': len(all_unique_accounts),
             'post_count': len(group_posts),
-            'bot_count': bot_count,
-            'bot_percentage': round(bot_percentage, 1),
             'text_sample': text_sample,
-            'sample_posts_with_urls': sample_posts_with_urls,
             'unique_urls': unique_urls,
-            'platforms': sorted(list(all_platforms)),
-            'coordination_type': coordination_type,
-            'similarity_score': f'≥{int(similarity_threshold*100)}%',
-            'sub_narrative': extract_sub_narrative(text_sample),
-            'hashtags': list(set(all_hashtags))[:10],
-            'primary_type': 'amplification_network' if bot_percentage >= 50 else 'coordination',
-            # Key targets for frontend classification mapping
+            'source_node': source_account,  # Primary key for direct frontend identification matching
             'sources': sources_list,
             'amplifiers': amplifiers_list,
             'source_count': len(sources_list),
             'amplifier_count': len(amplifiers_list),
-            # Standard structural fallback fields
             'nodes': graph_nodes,
             'links': graph_links,
         })
     
-    coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
     return coordination[:max_groups]
 
 def identify_bot_accounts(posts):
