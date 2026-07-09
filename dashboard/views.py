@@ -5987,7 +5987,7 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
     # ── CONFIGURATION ──────────────────────────────────────────────────────
-    SCAN_LIMIT = 5000           # Scan up to 5000 posts
+    SCAN_LIMIT = 5000           # Limit evaluation pool to the 5000 most recent posts in date range
     TIMEOUT_SECONDS = 90        # Hard stop after 90 seconds (leaves buffer for 100s Cloudflare limit)
     CHUNK_SIZE = 1000           # Process posts in larger chunks
     CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
@@ -6043,7 +6043,7 @@ class LexiconsView(TemplateView):
         if cached_data and not selected_category:
             logger.info("✅ LexiconsView: Serving from cache (instant load)")
             context.update(cached_data)
-            context['lexicon_term_count'] = self._get_lexicon_term_count()
+            context['lexicon_term_count'] = self._get_get_lexicon_term_count()
             context['selected_category'] = ''
             context['category_terms']    = []
             context['posts_with_terms']  = []
@@ -6080,6 +6080,9 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
+        # Slice to the most recent 5000 posts in the filtered date range to ensure zero timeouts
+        scan_pool = filtered_posts[:self.SCAN_LIMIT]
+        
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         category_terms  = []
         posts_with_terms = []
@@ -6088,7 +6091,7 @@ class LexiconsView(TemplateView):
         scan_timed_out  = False
         
         if selected_category:
-            logger.info(f"LexiconsView: category view → {selected_category} (limit: {self.SCAN_LIMIT} posts)")
+            logger.info(f"LexiconsView: category view → {selected_category} (evaluating up to {self.SCAN_LIMIT} recent posts)")
             
             # Exclude low severity items here as requested for optimization
             db_terms = LexiconTerm.objects.filter(category=selected_category).exclude(severity='low')
@@ -6100,13 +6103,13 @@ class LexiconsView(TemplateView):
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
-                # Scan posts with TIMEOUT PROTECTION
-                for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
-                    # ── TIMEOUT CHECK ──
+                # Scan targeted slice with TIMEOUT PROTECTION
+                for post in scan_pool:
                     if self._check_timeout(start_time):
                         scan_timed_out = True
                         break
                     
+                    posts_scanned += 1
                     if not post.original_text:
                         continue
                     
@@ -6118,12 +6121,10 @@ class LexiconsView(TemplateView):
                     for term_lower, meta in term_meta.items():
                         if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
                             continue
-                        matched_terms.append(term_lower)
+                        matched_terms.append(meta['term'])
                         all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
                     
                     if matched_terms:
-                        posts_scanned += 1
-                        
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text[:300],
@@ -6135,14 +6136,9 @@ class LexiconsView(TemplateView):
                             'confidence':    1.0,
                             'model_category': selected_category,
                         })
-                        
-                        # STOP after reaching limit
-                        if posts_scanned >= self.SCAN_LIMIT:
-                            logger.info(f"✅ Reached scan limit of {self.SCAN_LIMIT} posts")
-                            break
                 
                 elapsed = time.time() - start_time
-                logger.info(f"   Category scan complete: {posts_scanned} posts matched in {elapsed:.1f}s (timed out: {scan_timed_out})")
+                logger.info(f"   Category scan complete: {len(posts_with_terms)} matched out of {posts_scanned} scanned in {elapsed:.1f}s")
                 
                 # ── LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
                 unique_foreign_terms = set()
@@ -6165,38 +6161,32 @@ class LexiconsView(TemplateView):
         
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
-            logger.info(f"LexiconsView: overview scan (limit: {self.SCAN_LIMIT} posts)")
+            logger.info(f"LexiconsView: overview scan (evaluating up to {self.SCAN_LIMIT} recent posts)")
             
-            # Scan with TIMEOUT PROTECTION
-            for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
-                # ── TIMEOUT CHECK ──
+            # Scan targeted slice with TIMEOUT PROTECTION
+            for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
                     break
                 
+                posts_scanned += 1
                 if not post.original_text:
                     continue
                 try:
                     matches = self._scan_post(post.original_text)
                     if matches:
                         all_matches.extend(matches)
-                        posts_scanned += 1
                         
-                        # Log progress every 500 posts
+                        # Log progress every 500 posts evaluated
                         if posts_scanned % 500 == 0:
                             elapsed = time.time() - start_time
-                            logger.info(f"   Progress: {posts_scanned} posts scanned in {elapsed:.1f}s")
-                        
-                        # STOP after reaching limit
-                        if posts_scanned >= self.SCAN_LIMIT:
-                            logger.info(f"✅ Reached overview scan limit of {self.SCAN_LIMIT} posts")
-                            break
+                            logger.info(f"   Progress: {posts_scanned} posts evaluated in {elapsed:.1f}s")
                 except Exception as e:
                     logger.warning(f"Scan error post {post.id}: {e}")
                     continue
         
         elapsed = time.time() - start_time
-        logger.info(f"📊 LexiconsView: Total scan time: {elapsed:.1f}s | Posts scanned: {posts_scanned} | Matches: {len(all_matches)}")
+        logger.info(f"📊 LexiconsView: Total scan time: {elapsed:.1f}s | Posts evaluated: {posts_scanned} | Total Matches: {len(all_matches)}")
         
         # ── 5. Aggregate analytics ─────────────────────────────────────────
         try:
@@ -6239,13 +6229,14 @@ class LexiconsView(TemplateView):
             try:
                 entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b', r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b', r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}']
                 entities_found = Counter()
-                for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
+                
+                # Use the exact same slice to run entity extraction so metrics match and remain fast
+                for post in scan_pool:
                     if not post.original_text: continue
                     for pattern in entity_patterns:
                         for match in re.findall(pattern, post.original_text, re.IGNORECASE):
                             entity = match[0] if isinstance(match, tuple) else match
                             if len(entity.strip()) >= 3: entities_found[entity.strip()] += 1
-                    if sum(entities_found.values()) > 50000: break
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
             except Exception as e: logger.error(f"Entity extraction error: {e}")
         
@@ -6334,7 +6325,7 @@ class LexiconsView(TemplateView):
         finally:
             cache.delete("lexicons_analysis_running")
             logger.info("Background thread finished and cleaned up.")
-
+            
 class PEPsHubView(TemplateView):
     template_name = 'dashboard/peps_hub.html'
     
