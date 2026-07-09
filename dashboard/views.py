@@ -6134,18 +6134,24 @@ class LexiconsView(TemplateView):
         }
         
         if not selected_category:
-            shared['wordcloud_base64']  = wordcloud_base64
+            shared['wordcloud_base64'] = wordcloud_base64
             shared['targeted_entities'] = targeted_entities
-            cache.set(cache_key, shared, self.CACHE_DURATION)
-            logger.info(f"💾 Cached results for {self.CACHE_DURATION}s")
         else:
-            shared['wordcloud_base64']  = None
+            shared['wordcloud_base64'] = None
             shared['targeted_entities'] = []
+        
+        # ── CACHE (only simple data, no model instances) ───────
+        if not selected_category:
+            try:
+                cache.set(cache_key, shared, 7200)  # 2 hours
+                logger.info(f"💾 LexiconsView cached for 2 hours")
+            except Exception as e:
+                logger.warning(f"Cache save failed: {e}")
         
         context.update(shared)
         context['selected_category'] = selected_category
-        context['category_terms']    = category_terms
-        context['posts_with_terms']  = posts_with_terms[:100]
+        context['category_terms'] = category_terms
+        context['posts_with_terms'] = posts_with_terms[:100]
         
         return context
         
