@@ -2486,13 +2486,12 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             if post.get('platform'):
                 all_platforms.add(post['platform'])
             
-            text = str(post.get('original_text', ''))
+            text = str(post.get('original_text', '')).strip()
             found = re.findall(r'#(\w+)', text, re.IGNORECASE)
             all_hashtags.extend([h.lower() for h in found])
             
             if len(sample_posts_with_urls) < 10:
                 ts = post.get('timestamp_share')
-                # Get bot reasons for this specific account
                 account_id = post.get('account_id')
                 bot_reasons = bot_data.get(account_id, [])
                 
@@ -2506,6 +2505,27 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                     'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
                     'risk_level': post.get('risk_level', 'unknown')
                 })
+        
+        # Sort group posts chronologically to extract source vs amplifiers
+        sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
+        
+        sources_set = set()
+        amplifiers_set = set()
+        
+        if sorted_group_posts:
+            # First clean username chronologically is the network source
+            first_account = clean_username(sorted_group_posts[0].get('account_id'))
+            if first_account and first_account != "Unknown":
+                sources_set.add(first_account)
+            
+            # The remaining unique usernames become the amplifiers
+            for post in sorted_group_posts[1:]:
+                amp_account = clean_username(post.get('account_id'))
+                if amp_account and amp_account != "Unknown" and amp_account != first_account:
+                    amplifiers_set.add(amp_account)
+                    
+        sources_list = list(sources_set)
+        amplifiers_list = list(amplifiers_set)
         
         unique_urls = list(set(p['url'] for p in group_posts if p.get('url') and str(p['url']).startswith('http')))[:5]
         text_sample = str(group_posts[0].get('original_text', ''))[:200] if group_posts else '[Similar content]'
@@ -2526,10 +2546,10 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'sub_narrative': extract_sub_narrative(text_sample),
             'hashtags': list(set(all_hashtags))[:10],
             'primary_type': 'amplification_network' if bot_percentage >= 50 else 'coordination',
-            'sources': [],
-            'amplifiers': [],
-            'source_count': 0,
-            'amplifier_count': 0,
+            'sources': sources_list,
+            'amplifiers': amplifiers_list,
+            'source_count': len(sources_list),
+            'amplifier_count': len(amplifiers_list),
         })
     
     coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
