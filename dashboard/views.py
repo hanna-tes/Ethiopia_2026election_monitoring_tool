@@ -5609,31 +5609,33 @@ class HomeView(BaseTabMixin, TemplateView):
     template_name = 'dashboard/home.html'
     
     def get_context_data(self, **kwargs):
-        # ── CHECK CACHE FIRST ──────────────────────────────────────
-        #view_all = self.request.GET.get('view_all') == 'true'
-        #req_start = self.request.GET.get('start_date', '')
-        #req_end = self.request.GET.get('end_date', '')
+        # ── 1. CHECK CACHE FIRST ──────────────────────────────────────
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
         
-        #cache_key = f"home_dashboard_v1_{req_start}_{req_end}_{view_all}"
-        #cached_data = cache.get(cache_key)
+        # Use v2 to invalidate any old broken caches
+        cache_key = f"home_dashboard_v2_{req_start}_{req_end}_{view_all}"
+        cached_data = cache.get(cache_key)
         
-        #if cached_data:
-         #   logger.info("✅ HomeView: Serving from cache")
-         #   context = super().get_context_data(**kwargs)
-         #   context.update(cached_data)
-          #  return context
+        if cached_data:
+            logger.info("✅ HomeView: Serving from cache")
+            context = super().get_context_data(**kwargs)
+            context.update(cached_data)
+            return context
         
         context = super().get_context_data(**kwargs)
         
-        # 1. GET FILTERED QUERYSET (now defaults to 3 months)
+        # ── 2. GET FILTERED QUERYSET (now defaults to 3 months) ───────
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
         total_posts = posts.count()
         
-        # 2. PLATFORM DISTRIBUTION - Direct aggregation extraction
+        # ── 3. PLATFORM DISTRIBUTION ──────────────────────────────────
         platform_stats = posts.values('platform').annotate(
             total_count=Count('id')
         ).order_by('-total_count')
+        
         labels = []
         values = []
         colors = []
@@ -5646,6 +5648,7 @@ class HomeView(BaseTabMixin, TemplateView):
             'YouTube': '#FF0000',
             'Instagram': '#E4405F'
         }
+        
         for item in platform_stats:
             p_name = str(item.get('platform') or '').strip()
             p_count = item.get('total_count') or 0
@@ -5654,11 +5657,10 @@ class HomeView(BaseTabMixin, TemplateView):
                 values.append(int(p_count))
                 colors.append(color_map.get(p_name, '#6B7280'))
         
-        # Set top platform metrics fallback
         top_platform = labels[0] if labels else "—"
         charts = {}
         
-        # 3. CREATE BAR CHART
+        # ── 4. CREATE BAR CHART ───────────────────────────────────────
         if labels:
             total_sum = sum(values)
             raw_chart_dict = {
@@ -5678,32 +5680,27 @@ class HomeView(BaseTabMixin, TemplateView):
                     "title": f'Post Distribution by Platform (Total: {total_sum:,} posts)',
                     "margin": {"b": 40, "t": 50, "l": 50, "r": 20},
                     "height": 400,
-                    "xaxis": {
-                        "title": "Platform",
-                        "tickmode": "array"
-                    },
-                    "yaxis": {
-                        "title": "Number of Posts",
-                        "gridcolor": "#E5E7EB"
-                    },
+                    "xaxis": {"title": "Platform", "tickmode": "array"},
+                    "yaxis": {"title": "Number of Posts", "gridcolor": "#E5E7EB"},
                     "plot_bgcolor": "#ffffff"
                 }
             }
             charts['platform'] = json.dumps(raw_chart_dict)
         
-        # 4. METRICS
+        # ── 5. METRICS ────────────────────────────────────────────────
         unique_accounts = posts.values('account_id').distinct().count()
         high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
         alert_level = '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low'
         peps_tracked = PEP.objects.filter(is_active=True).count()
         last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
         
-        # 5. OTHER CHARTS
+        # ── 6. OTHER CHARTS ───────────────────────────────────────────
         if posts.exists():
             # Top Accounts
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             cleaned_accounts = []
             invalid_accounts = ['twitter', 'source', 'source twitter source', 'nan', 'none', '-', '', 'user', 'author', 'account']
+            
             for acc in top_accounts_raw:
                 name = str(acc['account_id']) if acc['account_id'] else ''
                 name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
@@ -5711,6 +5708,7 @@ class HomeView(BaseTabMixin, TemplateView):
                 name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)
                 name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)
                 name = re.sub(r'\s+', ' ', name).strip()
+                
                 if name.lower() not in invalid_accounts and name and name not in ['-', 'nan', 'None', '']:
                     cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
             
@@ -5738,20 +5736,20 @@ class HomeView(BaseTabMixin, TemplateView):
                     fig_daily.update_layout(xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400)
                     charts['daily'] = fig_daily.to_json()
         
-        # 6. UPLOAD SUMMARY
+        # ── 7. UPLOAD SUMMARY ─────────────────────────────────────────
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
         upload_summary = {
             'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
-            'files': recent_uploads,  # <-- This contains model instances with file fields!
+            'files': recent_uploads,  # Contains model instances for template rendering
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         
-        # 7. TREND ANALYSIS
+        # ── 8. TREND ANALYSIS ─────────────────────────────────────────
         start_str = start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date)
         end_str = end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date)
         trend_analysis = get_category_trend_analysis(posts, days_back=90, cache_suffix=f"{start_str}_{end_str}")
         
-        # 8. BUILD CONTEXT
+        # ── 9. BUILD CONTEXT ──────────────────────────────────────────
         context.update({
             'active_tab': 'home',
             'metrics': {
@@ -5767,12 +5765,12 @@ class HomeView(BaseTabMixin, TemplateView):
             'risk_actors': get_risk_actors_insight(posts),
             'top_hashtags': get_top_hashtags(posts),
             'trend_analysis': trend_analysis,
-            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
+            'start_date': start_str,
+            'end_date': end_str,
         })
         
-        # ── SAVE TO CACHE (30 minutes) ────────────────────────────
-        # Create a cacheable copy without unpicklable objects
+        # ── 10. SAVE TO CACHE (30 minutes) ────────────────────────────
+        # Create a cacheable copy without unpicklable objects (like Django model instances)
         cacheable_context = {
             'metrics': context['metrics'],
             'charts': context['charts'],
@@ -5781,11 +5779,10 @@ class HomeView(BaseTabMixin, TemplateView):
             'trend_analysis': context['trend_analysis'],
             'start_date': context['start_date'],
             'end_date': context['end_date'],
-            # Convert upload_summary to serializable format
             'upload_summary': {
                 'show': upload_summary['show'],
                 'total_records': upload_summary['total_records'],
-                # Convert model instances to dictionaries
+                # Convert model instances to dictionaries to prevent pickle errors
                 'files': [
                     {
                         'id': u.id,
@@ -5799,8 +5796,11 @@ class HomeView(BaseTabMixin, TemplateView):
             }
         }
         
-        #cache.set(cache_key, cacheable_context, 1800)
-        #logger.info(f"💾 HomeView: Cached for 30 minutes")
+        try:
+            cache.set(cache_key, cacheable_context, 1800)
+            logger.info(f"💾 HomeView: Cached for 30 minutes (key: {cache_key})")
+        except Exception as e:
+            logger.warning(f"⚠️ HomeView: Failed to save to cache: {e}")
         
         return context     
         
