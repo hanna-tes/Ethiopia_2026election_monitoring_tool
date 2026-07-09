@@ -2369,10 +2369,8 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
 def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
     """
-    OPTIMIZED: 
-    1. Extracts source node from 'RT @username' text patterns.
-    2. Guarantees 'sample_posts_with_urls' is completely populated.
-    3. Positions the source node as the first element in the accounts array so the frontend recognizes it.
+    DEPOSIT READY: Injects a structural root post for the extracted text source author.
+    Ensures the source node is generated, sized, colored blue, and visible to frontend engines.
     """
     import re
     import numpy as np
@@ -2463,8 +2461,11 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         
         # 1. Extract the primary text source node via RT text patterns
         source_account = "Unknown"
+        text_sample_raw = ""
         for post in sorted_group_posts:
             text_content = str(post.get('original_text', ''))
+            if not text_sample_raw:
+                text_sample_raw = text_content
             rt_match = re.search(r'(?:RT|via)\s+@(\w+)', text_content, re.IGNORECASE)
             if rt_match:
                 source_account = clean_username(rt_match.group(1))
@@ -2474,35 +2475,51 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         if source_account == "Unknown" and sorted_group_posts:
             source_account = clean_username(sorted_group_posts[0].get('account_id'))
             
-        # 2. Gather unique amplifiers
-        amplifiers_set = set()
-        for post in sorted_group_posts:
-            acct = clean_username(post.get('account_id'))
-            if acct and acct != "Unknown" and acct != source_account:
-                amplifiers_set.add(acct)
-                
-        amplifiers_list = list(amplifiers_set)
+        # 2. SEED THE MISSING SOURCE NODE EXPLICITLY INTO THE DATA ARRAYS
+        # This forces the template lists and graph matrices to process it natively
+        if source_account != "Unknown":
+            source_skeleton = {
+                'id': 0,
+                'account_id': source_account,
+                'original_text': text_sample_raw or "[Original Content Node]",
+                'platform': sorted_group_posts[0].get('platform', 'Twitter'),
+                'url': None,
+                'timestamp_share': (sorted_group_posts[0].get('timestamp_share') or datetime.now()),
+                'risk_level': 'low',
+                'is_injected_source': True
+            }
+            # Insert at position 0 to make it the root node
+            sorted_group_posts.insert(0, source_skeleton)
+            if source_skeleton not in group_posts:
+                group_posts.insert(0, source_skeleton)
+
+        # 3. Gather unique accounts preserving order (Source always index 0)
+        ordered_accounts_set = []
+        for p in sorted_group_posts:
+            cleaned = clean_username(p['account_id'])
+            if cleaned and cleaned not in ordered_accounts_set and cleaned != "Unknown":
+                ordered_accounts_set.append(cleaned)
+        
+        amplifiers_list = [acc for acc in ordered_accounts_set if acc != source_account]
         sources_list = [source_account] if source_account != "Unknown" else []
         
-        # Order accounts array with Source explicitly FIRST, followed by amplifiers
-        ordered_accounts = sources_list + amplifiers_list
-        
-        if len(ordered_accounts) < min_accounts:
+        if len(ordered_accounts_set) < min_accounts:
             continue
             
-        # Bot detection metrics
-        bot_data = identify_bot_accounts(group_posts)
+        # Bot detection metrics (Exclude the injected source account from bot score)
+        real_posts_for_bot_check = [p for p in group_posts if not p.get('is_injected_source')]
+        bot_data = identify_bot_accounts(real_posts_for_bot_check)
         bot_accounts = list(bot_data.keys())
         bot_count = len(bot_accounts)
-        bot_percentage = (bot_count / len(ordered_accounts) * 100) if ordered_accounts else 0
-        coordination_type = determine_coordination_type(group_posts, bot_count)
+        bot_percentage = (bot_count / len(amplifiers_list) * 100) if amplifiers_list else 0
+        coordination_type = determine_coordination_type(real_posts_for_bot_check, bot_count)
         
-        # 3. POPULATE SAMPLES (Matches original format perfectly)
+        # 4. COMPILER SAMPLES (Source is locked into index 0 position)
         sample_posts_with_urls = []
         all_platforms = set()
         all_hashtags = []
         
-        for post in group_posts[:15]:
+        for post in sorted_group_posts[:15]:
             if post.get('platform'):
                 all_platforms.add(post['platform'])
             
@@ -2510,23 +2527,24 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             found = re.findall(r'#(\w+)', text, re.IGNORECASE)
             all_hashtags.extend([h.lower() for h in found])
             
-            if len(sample_posts_with_urls) < 10:
-                ts = post.get('timestamp_share')
-                account_id = post.get('account_id')
-                bot_reasons = bot_data.get(account_id, [])
-                
-                sample_posts_with_urls.append({
-                    'username': clean_username(account_id),
-                    'platform': post.get('platform', ''),
-                    'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
-                    'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
-                    'text_preview': text[:150] + '...' if text else '',
-                    'is_bot': account_id in bot_accounts,
-                    'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
-                    'risk_level': post.get('risk_level', 'unknown')
-                })
+            ts = post.get('timestamp_share')
+            raw_account = post.get('account_id')
+            username_clean = clean_username(raw_account)
+            bot_reasons = bot_data.get(raw_account, [])
+            
+            sample_posts_with_urls.append({
+                'username': username_clean,
+                'platform': post.get('platform', ''),
+                'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
+                'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
+                'text_preview': text[:150] + '...' if text else '',
+                'is_bot': raw_account in bot_accounts,
+                'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
+                'risk_level': post.get('risk_level', 'unknown'),
+                'is_source': username_clean == source_account
+            })
         
-        # 4. Create Node/Link data configuration with forced colors for layout tools
+        # 5. GENERATE STRUCTURAL EDGES AND FORCED VISUAL COLOR ASSIGNMENTS
         graph_nodes = []
         graph_links = []
         
@@ -2536,8 +2554,9 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 'label': source_account, 
                 'type': 'source', 
                 'group': 'source',
-                'color': '#1e90ff',  
-                'size': 25
+                'color': '#1e90ff',  # Bright Blue
+                'size': 28,
+                'level': 0
             })
             
         for amp in amplifiers_list:
@@ -2546,8 +2565,9 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 'label': amp, 
                 'type': 'amplifier', 
                 'group': 'amplifier',
-                'color': '#e67e22',  
-                'size': 14
+                'color': '#e67e22',  # Orange
+                'size': 14,
+                'level': 1
             })
             if source_account != "Unknown":
                 graph_links.append({
@@ -2556,18 +2576,18 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                     'value': 1
                 })
         
-        unique_urls = list(set(p['url'] for p in group_posts if p.get('url') and str(p['url']).startswith('http')))[:5]
-        text_sample = str(group_posts[0].get('original_text', ''))[:200] if group_posts else '[Similar content]'
+        unique_urls = list(set(p['url'] for p in real_posts_for_bot_check if p.get('url') and str(p['url']).startswith('http')))[:5]
+        text_sample = str(text_sample_raw)[:200] if text_sample_raw else '[Similar content]'
         
         coordination.append({
             'id': len(coordination) + 1,
-            'accounts': ordered_accounts[:15],  # Contains source node at index 0!
-            'account_count': len(ordered_accounts),
-            'post_count': len(group_posts),
+            'accounts': ordered_accounts_set[:15],  
+            'account_count': len(ordered_accounts_set),
+            'post_count': len(real_posts_for_bot_check),
             'bot_count': bot_count,
             'bot_percentage': round(bot_percentage, 1),
             'text_sample': text_sample,
-            'sample_posts_with_urls': sample_posts_with_urls,  # Fully restored
+            'sample_posts_with_urls': sample_posts_with_urls,  
             'unique_urls': unique_urls,
             'platforms': sorted(list(all_platforms)),
             'coordination_type': coordination_type,
