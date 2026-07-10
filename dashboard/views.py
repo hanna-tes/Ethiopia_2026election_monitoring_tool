@@ -2367,7 +2367,7 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
     return False
     
-def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
+def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85, max_posts=5000):
     """
     COMPLETE PRODUCTION COHERENT VERSION:
     - Automatically parses text structures to isolate real source nodes via RT regex patterns.
@@ -2375,25 +2375,17 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     - Prevents empty networks by checking self-referential retweeters (e.g. @shabait posting @shabait).
     - Hardens Vis.js physics and blocks detached dangling edges to eliminate layout clipping.
     """
-    import re
-    import numpy as np
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    from datetime import datetime
     
     coordination = []
     
-    # Pre-fetch ALL data in ONE query
+    # Pre-fetch data dynamically limited by the max_posts parameter
     posts_data = list(
         posts_queryset
         .exclude(platform__iexact='TikTok')
         .exclude(platform__iexact='Media')
         .exclude(platform__iexact='News')
-        .values(
-            'id', 'account_id', 'original_text', 'platform',
-            'url', 'timestamp_share', 'risk_level'
-        )
-        .order_by('-timestamp_share')[:5000]
+        .values('id', 'account_id', 'original_text', 'platform', 'url', 'timestamp_share', 'risk_level')
+        .order_by('-timestamp_share')[:max_posts] # Dynamic limit 
     )
     
     if len(posts_data) < min_accounts:
