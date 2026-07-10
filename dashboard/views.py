@@ -5979,7 +5979,7 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
     # ── CONFIGURATION ──────────────────────────────────────────────────────
-    SCAN_LIMIT = 5000          # Baseline limit for regular queries
+    SCAN_LIMIT = 10000         # Increased to 10k to catch older/rare terms
     TIMEOUT_SECONDS = 90        
     CHUNK_SIZE = 1000           
     CACHE_DURATION = 7200       
