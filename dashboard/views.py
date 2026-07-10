@@ -2916,34 +2916,30 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
 def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='spring'):
     """
     Build network graph from coordination groups.
-    Properly identify source (originator) vs amplifiers using
-    timestamps AND retweet patterns.
+    FIXED: Properly extracts sources from RT patterns and timestamps.
     """
-    import networkx as nx
-    import re
-    import math
+
+    
     G = nx.Graph()
     account_roles = {}       # username -> 'source' or 'amplifier'
     account_post_counts = {}
     account_platforms = {}
+    account_timestamps = {}  # username -> earliest timestamp (datetime object)
     hub_nodes = set()
     
     # Regex to detect retweets
     rt_pattern = re.compile(r'RT\s+@([A-Za-z0-9_]+)', re.IGNORECASE)
     
-    # ─ PHASE 1: Build graph & classify roles ──────────────────────
-    for group in coordination_groups:
-        group_accounts = group.get('accounts', [])
+    # ─ PHASE 1: Extract ALL accounts and their roles ──────────────────
+    for group_idx, group in enumerate(coordination_groups):
+        group_accounts = set(group.get('accounts', []))
+        sample_posts = group.get('sample_posts_with_urls', [])
+        group_id = group.get('id', f'group_{group_idx}')
+        
         if len(group_accounts) < 2:
             continue
         
-        sample_posts = group.get('sample_posts_with_urls', [])
-        
-        # ── 1a. Collect per-account metadata from sample posts ─────
-        account_timestamps = {}   # username -> earliest timestamp string
-        account_is_rt = {}        # username -> True if ALL their posts are RTs
-        account_rt_targets = {}   # username -> set of accounts they RT'd
-        
+        # ── 1a. Parse timestamps and detect RT patterns ──────────────
         for post in sample_posts:
             username = post.get('username', '')
             if not username:
@@ -2951,158 +2947,112 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             
             # Track post count & platform
             account_post_counts[username] = account_post_counts.get(username, 0) + 1
-            platform = post.get('platform', '')
+            platform = post.get('platform', 'Unknown')
             if platform and platform != 'Unknown':
                 account_platforms[username] = platform
             elif username not in account_platforms:
                 account_platforms[username] = 'Unknown'
             
-            # Track timestamps (keep earliest)
-            timestamp = post.get('timestamp', '')
-            if username and timestamp and timestamp != 'N/A':
-                if username not in account_timestamps or timestamp < account_timestamps[username]:
-                    account_timestamps[username] = timestamp
+            # Parse timestamp
+            timestamp_str = post.get('timestamp', '')
+            if username and timestamp_str and timestamp_str != 'N/A':
+                try:
+                    ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
+                    if username not in account_timestamps or ts < account_timestamps[username]:
+                        account_timestamps[username] = ts
+                except:
+                    pass
             
-            # Track retweet behavior
+            # Detect if this is a retweet
             text = post.get('text_preview', '') or ''
             rt_match = rt_pattern.match(text.strip())
             if rt_match:
-                target = rt_match.group(1)
-                if username not in account_rt_targets:
-                    account_rt_targets[username] = set()
-                account_rt_targets[username].add(target)
-                account_is_rt[username] = True
-            else:
-                # This post is original content
-                account_is_rt[username] = False
+                rt_target = rt_match.group(1).strip()
+                # Add RT target as a SOURCE candidate (even if not in group_accounts)
+                if rt_target and rt_target.lower() not in [acc.lower() for acc in group_accounts]:
+                    group_accounts.add(rt_target)
+                    # RT targets are sources by definition
+                    if rt_target not in account_roles:
+                        account_roles[rt_target] = 'source'
         
-        # ── 1b. Add RT TARGETS as SOURCE nodes ───────────────────
-        # This is the KEY FIX: Extract sources from RT patterns
-        for username, targets in account_rt_targets.items():
-            for target in targets:
-                target_clean = target.strip()
-                if target_clean and target_clean.lower() not in [acc.lower() for acc in group_accounts]:
-                    # Add the RT target as a source node (even if not in group_accounts)
-                    if target_clean not in account_roles:
-                        account_roles[target_clean] = 'source'
-                        account_post_counts[target_clean] = 0  # Source didn't post in this dataset
-                        account_platforms[target_clean] = 'Unknown'
+        # ── 1b. Determine source for this group ───────────────────────
+        # Strategy: Find account with EARLIEST timestamp that didn't RT anyone
+        group_timestamps = {
+            acc: account_timestamps.get(acc) 
+            for acc in group_accounts 
+            if account_timestamps.get(acc)
+        }
         
-        # ── 1c. Determine source vs amplifier for group accounts ───
-        # Ensure ALL accounts in the group have a role
-        for acc in group_accounts:
-            if acc not in account_roles:
-                account_roles[acc] = 'amplifier'  # default
-        
-        # Find candidate sources: accounts that posted ORIGINAL content
-        original_posters = [
-            acc for acc in group_accounts
-            if acc in account_is_rt and account_is_rt[acc] is False
-        ]
-        
-        # If no one posted original content (all RTs), fall back to all accounts
-        if not original_posters:
-            original_posters = group_accounts
-        
-        # Among original posters, find the one with earliest timestamp
-        source_account = None
-        if original_posters:
+        if group_timestamps:
             # Sort by timestamp (earliest first)
-            candidates_with_ts = [
-                (acc, account_timestamps.get(acc, '9999-99-99'))
-                for acc in original_posters
-            ]
-            candidates_with_ts.sort(key=lambda x: x[1])
-            source_account = candidates_with_ts[0][0]
-        
-        # If still no source (no timestamps at all), pick first original poster
-        if not source_account and original_posters:
-            source_account = original_posters[0]
-        
-        # Assign roles
-        if source_account:
-            account_roles[source_account] = 'source'
-            for acc in group_accounts:
-                if acc != source_account and acc not in account_roles:
-                    account_roles[acc] = 'amplifier'
-                elif acc != source_account:
-                    # Keep existing role if already set, but don't override source
-                    if account_roles[acc] != 'source':
+            sorted_accounts = sorted(group_timestamps.items(), key=lambda x: x[1])
+            
+            # Find first account that posted original content (not an RT)
+            source_account = None
+            for acc, ts in sorted_accounts:
+                # Check if this account ever posted original content
+                is_always_rt = False
+                for post in sample_posts:
+                    if post.get('username') == acc:
+                        text = post.get('text_preview', '') or ''
+                        if not rt_pattern.match(text.strip()):
+                            # This account posted original content
+                            source_account = acc
+                            break
+                
+                if source_account:
+                    break
+            
+            # Fallback: if everyone RT'd, use the earliest poster
+            if not source_account and sorted_accounts:
+                source_account = sorted_accounts[0][0]
+            
+            # Assign roles
+            if source_account:
+                account_roles[source_account] = 'source'
+                for acc in group_accounts:
+                    if acc != source_account and acc not in account_roles:
                         account_roles[acc] = 'amplifier'
+    
+    # ── 1c. Build graph edges ───────────────────────────────────────
+    for group in coordination_groups:
+        group_accounts = list(group.get('accounts', []))
+        if len(group_accounts) < 2:
+            continue
         
-        # ── 1d. Connect accounts (edges) ────────────────────────────
-        if len(group_accounts) > 20:
-            # Large group: hub-and-spoke to prevent browser crash
-            hub = source_account if source_account else group_accounts[0]
-            hub_nodes.add(hub)
-            for user in group_accounts:
-                if user == hub:
-                    continue
-                if G.has_edge(hub, user):
-                    G[hub][user]['weight'] += 1
+        weight = group.get('post_count', 1)
+        
+        # Connect all accounts in the group
+        for i in range(len(group_accounts)):
+            for j in range(i + 1, len(group_accounts)):
+                u, v = group_accounts[i], group_accounts[j]
+                if G.has_edge(u, v):
+                    G[u][v]['weight'] += weight
                 else:
-                    G.add_edge(hub, user, weight=1, type='coordination')
-        else:
-            # Small group: full clique
-            for i in range(len(group_accounts)):
-                for j in range(i + 1, len(group_accounts)):
-                    u, v = group_accounts[i], group_accounts[j]
-                    if G.has_edge(u, v):
-                        G[u][v]['weight'] += 1
-                    else:
-                        G.add_edge(u, v, weight=1, type='coordination')
-        
-        # ── 1e. Add edges from RT sources to amplifiers ───────────
-        # Connect RT targets (sources) to the accounts that retweeted them
-        for username, targets in account_rt_targets.items():
-            for target in targets:
-                target_clean = target.strip()
-                if target_clean and target_clean in account_roles:
-                    # Create edge: source (RT target) -> amplifier (retweeter)
-                    if not G.has_edge(target_clean, username):
-                        G.add_edge(target_clean, username, weight=1, type='retweet')
+                    G.add_edge(u, v, weight=1, type='coordination')
     
     if G.number_of_nodes() == 0:
         return {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0, 'density': 0}}
     
-    # ── PHASE 2: Select nodes ────────────────────────────────────
-    nodes_to_include = set(G.nodes())
-    G_final = G.subgraph(nodes_to_include).copy()
+    # ── PHASE 2: Layout computation ───────────────────────────────────
+    G_final = G.copy()
     
-    # ── Layout computation ─────────────────────────────────────────
-    components = list(nx.connected_components(G_final))
-    is_star_shaped = bool(hub_nodes) and all(
-        any(h in comp for h in hub_nodes) for comp in components
-    )
-    
-    if is_star_shaped and len(components) <= 12:
-        pos = {}
-        cols = math.ceil(math.sqrt(len(components)))
-        cell = 4.0
-        for idx, comp in enumerate(components):
-            comp = list(comp)
-            hub = next((h for h in comp if h in hub_nodes), comp[0])
-            spokes = [n for n in comp if n != hub]
-            cx = (idx % cols) * cell
-            cy = (idx // cols) * cell
-            pos[hub] = (cx, cy)
-            n_spokes = max(len(spokes), 1)
-            radius = 1.0 + 0.05 * n_spokes
-            for i, spoke in enumerate(spokes):
-                angle = 2 * math.pi * i / n_spokes
-                pos[spoke] = (cx + radius * math.cos(angle),
-                            cy + radius * math.sin(angle))
-    elif len(G_final.nodes()) > 100:
-        pos = nx.spring_layout(G_final, k=0.6, iterations=20, seed=42)
+    # Use better layout parameters to avoid "chunky" graphs
+    if layout == 'circular':
+        pos = nx.circular_layout(G_final)
+    elif layout == 'kamada_kawai':
+        pos = nx.kamada_kawai_layout(G_final)
     else:
-        if layout == 'circular':
-            pos = nx.circular_layout(G_final)
-        elif layout == 'kamada_kawai':
-            pos = nx.kamada_kawai_layout(G_final)
-        else:
-            pos = nx.spring_layout(G_final, k=0.6, iterations=50, seed=42)
+        # Spring layout with better parameters
+        pos = nx.spring_layout(
+            G_final, 
+            k=0.7,           # Optimal distance between nodes (higher = more spread)
+            iterations=100,  # More iterations for better convergence
+            seed=42,         # Reproducible results
+            scale=2.0        # Scale factor
+        )
     
-    # ── Rescale positions ─────────────────────────────────────────
+    # ── Rescale positions to consistent coordinate space ─────────────
     xs = [p[0] for p in pos.values()]
     ys = [p[1] for p in pos.values()]
     x_min, x_max = min(xs), max(xs)
@@ -3118,26 +3068,23 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
     
     pos = {node: _rescale(*p) for node, p in pos.items()}
     
-    # ── PHASE 3: Build JSON for frontend ───────────────────────────
+    # ── PHASE 3: Build JSON for frontend ──────────────────────────────
     nodes = []
     for node in G_final.nodes():
         degree = G_final.degree(node)
-        node_type = account_roles.get(node, 'amplifier')  # default to amplifier
-        node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'
+        node_type = account_roles.get(node, 'amplifier')  # default
+        node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'  # Blue or Orange
+        
         post_count = account_post_counts.get(node, 0)
         platform = account_platforms.get(node, 'Unknown')
-        is_hub = node in hub_nodes
-        base_size = 28 if is_hub else 18
         
-        # Make source nodes slightly larger for visibility
-        if node_type == 'source':
-            base_size = max(base_size, 24)
-        
+        # Size: sources are larger, scaled by degree
+        base_size = 28 if node_type == 'source' else 18
         size = max(base_size, min(55, base_size + degree * 2))
         
         nodes.append({
             'id': node,
-            'label': node,
+            'label': node[:20],  # Truncate long usernames
             'degree': degree,
             'post_count': post_count,
             'platform': platform,
@@ -3146,42 +3093,35 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             'size': size,
             'color': node_color,
             'type': node_type,
-            'is_hub': is_hub,
         })
     
     edges = []
     for u, v, data in G_final.edges(data=True):
         if u in pos and v in pos:
-            edge_type = data.get('type', 'coordination')
             edges.append({
                 'source': u,
                 'target': v,
                 'weight': data.get('weight', 1),
-                'type': edge_type,
+                'type': data.get('type', 'coordination'),
                 'source_x': float(pos[u][0]),
                 'source_y': float(pos[u][1]),
                 'target_x': float(pos[v][0]),
                 'target_y': float(pos[v][1]),
             })
     
-    # Robust density calculation
+    # Stats
     n_nodes = G_final.number_of_nodes()
     n_edges = G_final.number_of_edges()
-    density = 0.0
-    if n_nodes > 1:
-        max_possible_edges = n_nodes * (n_nodes - 1) / 2
-        if max_possible_edges > 0:
-            density = n_edges / max_possible_edges
+    density = n_edges / (n_nodes * (n_nodes - 1) / 2) if n_nodes > 1 else 0
     
-    # Count sources vs amplifiers for stats
     source_count = sum(1 for role in account_roles.values() if role == 'source')
     amplifier_count = sum(1 for role in account_roles.values() if role == 'amplifier')
     
     return {
         'nodes': nodes,
         'edges': edges,
-        'bounds': {'x_min': -TARGET / 2, 'x_max': TARGET / 2,
-                  'y_min': -TARGET / 2, 'y_max': TARGET / 2},
+        'bounds': {'x_min': -TARGET/2, 'x_max': TARGET/2, 
+                   'y_min': -TARGET/2, 'y_max': TARGET/2},
         'stats': {
             'nodes': n_nodes,
             'edges': n_edges,
@@ -3189,7 +3129,8 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             'sources': source_count,
             'amplifiers': amplifier_count,
         }
-    }   
+    }
+    
 def calculate_ethiopia_relevance(text):
     if not text:
         return 0
