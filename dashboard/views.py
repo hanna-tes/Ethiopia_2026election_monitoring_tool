@@ -2367,24 +2367,25 @@ def is_primarily_ethiopia_related(text: str) -> bool:
     
     return False
     
-def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85):
+def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, similarity_threshold=0.85, max_posts=5000):
     """
-    OPTIMIZED: Uses vectorized sparse matrix operations instead of O(n²) Python loops.
-    Processes data in chunks to avoid memory issues.
+    COMPLETE PRODUCTION COHERENT VERSION:
+    - Automatically parses text structures to isolate real source nodes via RT regex patterns.
+    - Preserves post lists and formatting safely.
+    - Prevents empty networks by checking self-referential retweeters (e.g. @shabait posting @shabait).
+    - Hardens Vis.js physics and blocks detached dangling edges to eliminate layout clipping.
     """
+    
     coordination = []
     
-    # Pre-fetch ALL data in ONE query
+    # Pre-fetch data dynamically limited by the max_posts parameter
     posts_data = list(
         posts_queryset
         .exclude(platform__iexact='TikTok')
         .exclude(platform__iexact='Media')
         .exclude(platform__iexact='News')
-        .values(
-            'id', 'account_id', 'original_text', 'platform',
-            'url', 'timestamp_share', 'risk_level'
-        )
-        .order_by('-timestamp_share')[:5000]  # Increased limit for fast processing
+        .values('id', 'account_id', 'original_text', 'platform', 'url', 'timestamp_share', 'risk_level')
+        .order_by('-timestamp_share')[:max_posts] # Dynamic limit 
     )
     
     if len(posts_data) < min_accounts:
@@ -2398,25 +2399,20 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
         if text and len(str(text)) > 20:
             valid_indices.append(i)
             valid_texts.append(str(text))
-    
+            
     if len(valid_texts) < 2:
         return []
-    
-    # Vectorized TF-IDF + batch cosine similarity
-    logger.info(f"🔍 Computing TF-IDF for {len(valid_texts)} posts...")
+        
+    # Vectorized TF-IDF Calculation
     vectorizer = TfidfVectorizer(
-        max_features=2000,
-        stop_words='english',
-        ngram_range=(1, 2),
-        min_df=2,  # Ignore rare words (speeds up significantly)
-        max_df=0.9  # Ignore overly common words
+        max_features=2000, 
+        stop_words='english', 
+        ngram_range=(1, 2), 
+        min_df=2, 
+        max_df=0.9
     )
     tfidf_matrix = vectorizer.fit_transform(valid_texts)
     
-    # Compute ALL similarities at once using sparse matrix operations
-    logger.info(f"🔍 Computing cosine similarity matrix ({tfidf_matrix.shape[0]}x{tfidf_matrix.shape[0]})...")
-    
-    # Process in chunks to avoid memory explosion on large datasets
     chunk_size = 500
     similarity_groups = []
     processed_indices = set()
@@ -2424,101 +2420,170 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
     for chunk_start in range(0, len(valid_texts), chunk_size):
         chunk_end = min(chunk_start + chunk_size, len(valid_texts))
         chunk_matrix = tfidf_matrix[chunk_start:chunk_end]
-        
-        # computes similarity between chunk and ALL posts at once
         chunk_similarities = cosine_similarity(chunk_matrix, tfidf_matrix)
         
         for local_i, global_i in enumerate(range(chunk_start, chunk_end)):
             if global_i in processed_indices:
                 continue
-            
             similar_indices = [global_i]
-            
-            # Check similarities for this post against all others
-            similarities = chunk_similarities[local_i]
-            
-            # Use numpy vectorized threshold instead of Python loop
-            above_threshold = np.where(similarities >= similarity_threshold)[0]
-            
+            above_threshold = np.where(chunk_similarities[local_i] >= similarity_threshold)[0]
             for j in above_threshold:
                 if j != global_i and j not in processed_indices:
                     similar_indices.append(int(j))
                     processed_indices.add(int(j))
-            
             processed_indices.add(global_i)
             
             if len(similar_indices) >= min_accounts:
-                # Verify unique accounts
-                group_accounts = set()
-                for idx in similar_indices:
-                    acc = posts_data[valid_indices[idx]].get('account_id')
-                    if acc:
-                        group_accounts.add(acc)
-                
+                group_accounts = set(posts_data[valid_indices[idx]].get('account_id') for idx in similar_indices if posts_data[valid_indices[idx]].get('account_id'))
                 if len(group_accounts) >= min_accounts:
                     similarity_groups.append(similar_indices)
-    
-    logger.info(f"✅ Found {len(similarity_groups)} coordination groups")
-    
-    # Build coordination results using pre-fetched data (no DB queries)
+                    
+    # Compile each valid coordination group
     for group_indices in similarity_groups[:max_groups]:
         group_posts = [posts_data[valid_indices[idx]] for idx in group_indices]
-        accounts = list(set(clean_username(p['account_id']) for p in group_posts if p.get('account_id')))
+        sorted_group_posts = sorted(group_posts, key=lambda x: x.get('timestamp_share') or datetime.max)
         
-        if len(accounts) < min_accounts:
+        # 1. Parse out primary original creator text source node
+        source_account = "Unknown"
+        text_sample_raw = ""
+        for post in sorted_group_posts:
+            text_content = str(post.get('original_text', ''))
+            if not text_sample_raw:
+                text_sample_raw = text_content
+            rt_match = re.search(r'(?:RT|via)\s+@(\w+)', text_content, re.IGNORECASE)
+            if rt_match:
+                source_account = clean_username(rt_match.group(1).strip())
+                break
+                
+        if source_account == "Unknown" and sorted_group_posts:
+            source_account = clean_username(sorted_group_posts[0].get('account_id'))
+            
+        # 2. Extract amplifiers safely with a self-referential fallback check
+        amplifiers_set = set()
+        raw_group_accounts = set()
+        
+        for post in sorted_group_posts:
+            acct = clean_username(post.get('account_id'))
+            if acct and acct != "Unknown":
+                raw_group_accounts.add(acct)
+                if acct.lower() != source_account.lower():
+                    amplifiers_set.add(acct)
+                    
+        # Safeguard: If filtering out source yields an empty list, preserve all elements as nodes
+        if not amplifiers_set:
+            amplifiers_set = raw_group_accounts
+            
+        amplifiers_list = list(amplifiers_set)
+        sources_list = [source_account] if source_account != "Unknown" else []
+        ordered_accounts_set = list(dict.fromkeys(sources_list + amplifiers_list))
+        
+        if len(ordered_accounts_set) < min_accounts:
             continue
-        
-        # Bot detection (in-memory, no DB)
-        bot_data = identify_bot_accounts(group_posts)
-        bot_accounts = list(bot_data.keys())  # Extract just the IDs for counting
+            
+        # Bot metrics configuration
+        real_posts_for_bot_check = [p for p in group_posts if p.get('account_id') != source_account]
+        if not real_posts_for_bot_check: 
+            real_posts_for_bot_check = group_posts
+            
+        bot_data = identify_bot_accounts(real_posts_for_bot_check)
+        bot_accounts = list(bot_data.keys())
         bot_count = len(bot_accounts)
-        bot_percentage = (bot_count / len(accounts) * 100) if accounts else 0
+        bot_percentage = (bot_count / len(amplifiers_list) * 100) if amplifiers_list else 0
+        coordination_type = determine_coordination_type(real_posts_for_bot_check, bot_count)
         
-        # Coordination type
-        coordination_type = determine_coordination_type(group_posts, bot_count)
-        
-        # Build sample posts (in-memory)
+        # 3. Match Sample post logs for template rendering
         sample_posts_with_urls = []
         all_platforms = set()
         all_hashtags = []
         
-        for post in group_posts[:15]:
+        for post in sorted_group_posts[:15]:
             if post.get('platform'):
                 all_platforms.add(post['platform'])
-            
-            text = str(post.get('original_text', ''))
+            text = str(post.get('original_text', '')).strip()
             found = re.findall(r'#(\w+)', text, re.IGNORECASE)
             all_hashtags.extend([h.lower() for h in found])
             
-            if len(sample_posts_with_urls) < 10:
-                ts = post.get('timestamp_share')
-                # Get bot reasons for this specific account
-                account_id = post.get('account_id')
-                bot_reasons = bot_data.get(account_id, [])
-                
-                sample_posts_with_urls.append({
-                    'username': clean_username(account_id),
-                    'platform': post.get('platform', ''),
-                    'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
-                    'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
-                    'text_preview': text[:150] + '...' if text else '',
-                    'is_bot': account_id in bot_accounts,
-                    'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
-                    'risk_level': post.get('risk_level', 'unknown')
-                })
+            ts = post.get('timestamp_share')
+            raw_account = post.get('account_id')
+            username_clean = clean_username(raw_account)
+            bot_reasons = bot_data.get(raw_account, [])
+            
+            sample_posts_with_urls.append({
+                'username': username_clean,
+                'platform': post.get('platform', ''),
+                'url': post.get('url') if post.get('url') and str(post['url']).startswith('http') else None,
+                'timestamp': ts.strftime('%Y-%m-%d %H:%M') if ts else 'N/A',
+                'text_preview': text[:150] + '...' if text else '',
+                'is_bot': raw_account in bot_accounts,
+                'bot_reasons': ", ".join(bot_reasons) if bot_reasons else "",
+                'risk_level': post.get('risk_level', 'unknown'),
+                'is_source': username_clean.lower() == source_account.lower()
+            })
+            
+        # 4. Generate Graph Topology Networks With Link Validation Guards
+        graph_nodes = []
+        graph_links = []
+        existing_nodes = set()
         
-        unique_urls = list(set(p['url'] for p in group_posts if p.get('url') and str(p['url']).startswith('http')))[:5]
-        text_sample = str(group_posts[0].get('original_text', ''))[:200] if group_posts else '[Similar content]'
+        # Injects the true text origin blue source node
+        if source_account != "Unknown":
+            source_key = str(source_account).strip()
+            graph_nodes.append({
+                'id': source_key, 
+                'label': source_key, 
+                'type': 'source', 
+                'group': 'source',
+                'color': '#1e90ff',  # Force True Blue
+                'size': 26,
+                'shape': 'dot',
+                'physics': True
+            })
+            existing_nodes.add(source_key.lower())
+            
+        # Injects the orange amplifier spokes safely
+        for amp in amplifiers_list:
+            amp_key = str(amp).strip()
+            if amp_key.lower() not in existing_nodes:
+                graph_nodes.append({
+                    'id': amp_key, 
+                    'label': amp_key, 
+                    'type': 'amplifier', 
+                    'group': 'amplifier',
+                    'color': '#e67e22',  # Force Orange
+                    'size': 14,
+                    'shape': 'dot',
+                    'physics': True
+                })
+                existing_nodes.add(amp_key.lower())
+                
+            # Intersection Protection Check: Blocks dangled unfinished loose edge lines
+            if source_account != "Unknown":
+                s_id = str(source_account).strip()
+                t_id = str(amp_key).strip()
+                
+                if s_id.lower() in existing_nodes and t_id.lower() in existing_nodes and s_id.lower() != t_id.lower():
+                    graph_links.append({
+                        'from': s_id,       # Vis.js format mapping parameter
+                        'to': t_id,         # Vis.js format mapping parameter
+                        'source': s_id,     # Fallback D3 parsing parameters
+                        'target': t_id,     # Fallback D3 parsing parameters
+                        'length': 80,       # Sets tight canvas constraints to prevent cutoffs
+                        'arrows': 'to',     # Shows information flow direction clearly
+                        'width': 1.5
+                    })
+                
+        unique_urls = list(set(p['url'] for p in real_posts_for_bot_check if p.get('url') and str(p['url']).startswith('http')))[:5]
+        text_sample = str(text_sample_raw)[:200] if text_sample_raw else '[Similar content]'
         
         coordination.append({
             'id': len(coordination) + 1,
-            'accounts': accounts[:10],
-            'account_count': len(accounts),
-            'post_count': len(group_posts),
+            'accounts': ordered_accounts_set[:15],  
+            'account_count': len(ordered_accounts_set),
+            'post_count': len(real_posts_for_bot_check),
             'bot_count': bot_count,
             'bot_percentage': round(bot_percentage, 1),
             'text_sample': text_sample,
-            'sample_posts_with_urls': sample_posts_with_urls,
+            'sample_posts_with_urls': sample_posts_with_urls,  
             'unique_urls': unique_urls,
             'platforms': sorted(list(all_platforms)),
             'coordination_type': coordination_type,
@@ -2526,15 +2591,18 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             'sub_narrative': extract_sub_narrative(text_sample),
             'hashtags': list(set(all_hashtags))[:10],
             'primary_type': 'amplification_network' if bot_percentage >= 50 else 'coordination',
-            'sources': [],
-            'amplifiers': [],
-            'source_count': 0,
-            'amplifier_count': 0,
+            'source_node': source_account,  
+            'sources': sources_list,
+            'amplifiers': amplifiers_list,
+            'source_count': len(sources_list),
+            'amplifier_count': len(amplifiers_list),
+            'nodes': graph_nodes,
+            'links': graph_links,
         })
-    
+        
     coordination.sort(key=lambda x: (-x['bot_percentage'], -x['account_count']))
     return coordination[:max_groups]
-
+    
 def identify_bot_accounts(posts):
     """
     Enhanced bot detection with timestamp analysis and behavioral patterns.
@@ -2848,168 +2916,175 @@ def generate_network_graph_data(posts_queryset, min_connections=2, top_n=50, lay
 def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='spring'):
     """
     Build network graph from coordination groups.
+    FIXED: Properly extracts sources from RT patterns and timestamps.
     """
-    import networkx as nx
-    import re
-    import math
 
+    
     G = nx.Graph()
-    account_roles = {}
+    account_roles = {}       # username -> 'source' or 'amplifier'
     account_post_counts = {}
     account_platforms = {}
-    hub_nodes = set()   # accounts that are the hub of a hub-and-spoke group
-
+    account_timestamps = {}  # username -> earliest timestamp (datetime object)
+    hub_nodes = set()
+    
     # Regex to detect retweets
     rt_pattern = re.compile(r'RT\s+@([A-Za-z0-9_]+)', re.IGNORECASE)
-
-    # ─ PHASE 1: Build graph ─────────────────────────────────────
-    for group in coordination_groups:
-        # Use the FULL accounts list from the group
-        group_accounts = group.get('accounts', [])
+    
+    # ─ PHASE 1: Extract ALL accounts and their roles ──────────────────
+    for group_idx, group in enumerate(coordination_groups):
+        group_accounts = set(group.get('accounts', []))
+        sample_posts = group.get('sample_posts_with_urls', [])
+        group_id = group.get('id', f'group_{group_idx}')
+        
         if len(group_accounts) < 2:
             continue
-
-        sample_posts = group.get('sample_posts_with_urls', [])
-
-        # Track metrics from sample posts
+        
+        # ── 1a. Parse timestamps and detect RT patterns ──────────────
         for post in sample_posts:
             username = post.get('username', '')
             if not username:
                 continue
-
+            
+            # Track post count & platform
             account_post_counts[username] = account_post_counts.get(username, 0) + 1
-
-            platform = post.get('platform', '')
+            platform = post.get('platform', 'Unknown')
             if platform and platform != 'Unknown':
                 account_platforms[username] = platform
             elif username not in account_platforms:
                 account_platforms[username] = 'Unknown'
-
-        # Determine source vs amplifier by timestamp from sample posts
-        account_timestamps = {}
-        for post in sample_posts:
-            username = post.get('username', '')
-            timestamp = post.get('timestamp', '')
-            if username and timestamp and timestamp != 'N/A':
-                account_timestamps[username] = timestamp
-
-        if account_timestamps:
-            sorted_accounts = sorted(account_timestamps.items(), key=lambda x: x[1])
-            if sorted_accounts:
+            
+            # Parse timestamp
+            timestamp_str = post.get('timestamp', '')
+            if username and timestamp_str and timestamp_str != 'N/A':
+                try:
+                    ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
+                    if username not in account_timestamps or ts < account_timestamps[username]:
+                        account_timestamps[username] = ts
+                except:
+                    pass
+            
+            # Detect if this is a retweet
+            text = post.get('text_preview', '') or ''
+            rt_match = rt_pattern.match(text.strip())
+            if rt_match:
+                rt_target = rt_match.group(1).strip()
+                # Add RT target as a SOURCE candidate (even if not in group_accounts)
+                if rt_target and rt_target.lower() not in [acc.lower() for acc in group_accounts]:
+                    group_accounts.add(rt_target)
+                    # RT targets are sources by definition
+                    if rt_target not in account_roles:
+                        account_roles[rt_target] = 'source'
+        
+        # ── 1b. Determine source for this group ───────────────────────
+        # Strategy: Find account with EARLIEST timestamp that didn't RT anyone
+        group_timestamps = {
+            acc: account_timestamps.get(acc) 
+            for acc in group_accounts 
+            if account_timestamps.get(acc)
+        }
+        
+        if group_timestamps:
+            # Sort by timestamp (earliest first)
+            sorted_accounts = sorted(group_timestamps.items(), key=lambda x: x[1])
+            
+            # Find first account that posted original content (not an RT)
+            source_account = None
+            for acc, ts in sorted_accounts:
+                # Check if this account ever posted original content
+                is_always_rt = False
+                for post in sample_posts:
+                    if post.get('username') == acc:
+                        text = post.get('text_preview', '') or ''
+                        if not rt_pattern.match(text.strip()):
+                            # This account posted original content
+                            source_account = acc
+                            break
+                
+                if source_account:
+                    break
+            
+            # Fallback: if everyone RT'd, use the earliest poster
+            if not source_account and sorted_accounts:
                 source_account = sorted_accounts[0][0]
+            
+            # Assign roles
+            if source_account:
                 account_roles[source_account] = 'source'
-                for acc, _ in sorted_accounts[1:]:
-                    if acc not in account_roles:
+                for acc in group_accounts:
+                    if acc != source_account and acc not in account_roles:
                         account_roles[acc] = 'amplifier'
-
-        # ── Connect accounts ──────────────────────────────────────
-        # SMART LAYOUT: If group is huge (>20 accounts), use hub-and-spoke
-        # to prevent browser crash. Otherwise, use full clique.
-        if len(group_accounts) > 20:
-            hub = group_accounts[0]
-            hub_nodes.add(hub)
-            for user in group_accounts[1:]:
-                if G.has_edge(hub, user):
-                    G[hub][user]['weight'] += 1
+    
+    # ── 1c. Build graph edges ───────────────────────────────────────
+    for group in coordination_groups:
+        group_accounts = list(group.get('accounts', []))
+        if len(group_accounts) < 2:
+            continue
+        
+        weight = group.get('post_count', 1)
+        
+        # Connect all accounts in the group
+        for i in range(len(group_accounts)):
+            for j in range(i + 1, len(group_accounts)):
+                u, v = group_accounts[i], group_accounts[j]
+                if G.has_edge(u, v):
+                    G[u][v]['weight'] += weight
                 else:
-                    G.add_edge(hub, user, weight=1, type='coordination')
-        else:
-            # Small group: full clique (connect everyone to everyone)
-            for i in range(len(group_accounts)):
-                for j in range(i + 1, len(group_accounts)):
-                    u, v = group_accounts[i], group_accounts[j]
-                    if G.has_edge(u, v):
-                        G[u][v]['weight'] += 1
-                    else:
-                        G.add_edge(u, v, weight=1, type='coordination')
-
+                    G.add_edge(u, v, weight=1, type='coordination')
+    
     if G.number_of_nodes() == 0:
         return {'nodes': [], 'edges': [], 'stats': {'nodes': 0, 'edges': 0, 'density': 0}}
-
-    # ── PHASE 2: Select nodes ─────────────────────────────────────
-    nodes_to_include = set(G.nodes())
-    G_final = G.subgraph(nodes_to_include).copy()
-
-    # ── Layout computation ─────────────────────────────────────────
-    # Networks made of one or more hub-and-spoke stars render poorly under a
-    # generic force-directed layout — spokes tend to bunch up near the hub
-    # instead of fanning out, which is what made small/medium groups look
-    # like a tiny illegible clump. When the graph is (mostly) star-shaped,
-    # lay each hub's spokes out on an explicit circle around it instead.
-    components = list(nx.connected_components(G_final))
-    is_star_shaped = bool(hub_nodes) and all(
-        any(h in comp for h in hub_nodes) for comp in components
-    )
-
-    if is_star_shaped and len(components) <= 12:
-        pos = {}
-        # Arrange multiple star components side-by-side on a grid so they
-        # don't overlap each other.
-        cols = math.ceil(math.sqrt(len(components)))
-        cell = 4.0  # spacing between component centers, in layout units
-        for idx, comp in enumerate(components):
-            comp = list(comp)
-            hub = next((h for h in comp if h in hub_nodes), comp[0])
-            spokes = [n for n in comp if n != hub]
-            cx = (idx % cols) * cell
-            cy = (idx // cols) * cell
-            pos[hub] = (cx, cy)
-            n_spokes = max(len(spokes), 1)
-            radius = 1.0 + 0.05 * n_spokes  # bigger groups get a bit more room
-            for i, spoke in enumerate(spokes):
-                angle = 2 * math.pi * i / n_spokes
-                pos[spoke] = (cx + radius * math.cos(angle),
-                              cy + radius * math.sin(angle))
-    elif len(G_final.nodes()) > 100:
-        pos = nx.spring_layout(G_final, k=0.6, iterations=20, seed=42)
+    
+    # ── PHASE 2: Layout computation ───────────────────────────────────
+    G_final = G.copy()
+    
+    # Use better layout parameters to avoid "chunky" graphs
+    if layout == 'circular':
+        pos = nx.circular_layout(G_final)
+    elif layout == 'kamada_kawai':
+        pos = nx.kamada_kawai_layout(G_final)
     else:
-        if layout == 'circular':
-            pos = nx.circular_layout(G_final)
-        elif layout == 'kamada_kawai':
-            pos = nx.kamada_kawai_layout(G_final)
-        else:
-            pos = nx.spring_layout(G_final, k=0.6, iterations=50, seed=42)
-
-    # ── Rescale positions to a large, predictable coordinate space ────────
-    # Whatever the raw layout produced (often squeezed into roughly -1..1),
-    # stretch it to fill a fixed, generous canvas so the graph always uses
-    # the available drawing area instead of appearing as a tiny dot cluster
-    # in the middle of a mostly-empty viewport. Target: roughly 1000x1000
-    # units, centered at (0, 0), regardless of node count.
+        # Spring layout with better parameters
+        pos = nx.spring_layout(
+            G_final, 
+            k=0.7,           # Optimal distance between nodes (higher = more spread)
+            iterations=100,  # More iterations for better convergence
+            seed=42,         # Reproducible results
+            scale=2.0        # Scale factor
+        )
+    
+    # ── Rescale positions to consistent coordinate space ─────────────
     xs = [p[0] for p in pos.values()]
     ys = [p[1] for p in pos.values()]
     x_min, x_max = min(xs), max(xs)
     y_min, y_max = min(ys), max(ys)
     x_range = (x_max - x_min) or 1.0
     y_range = (y_max - y_min) or 1.0
-    TARGET = 900.0  # final coordinates roughly span -450 .. +450
-
+    TARGET = 900.0
+    
     def _rescale(x, y):
         nx_ = (x - x_min) / x_range * TARGET - TARGET / 2
         ny_ = (y - y_min) / y_range * TARGET - TARGET / 2
         return nx_, ny_
-
+    
     pos = {node: _rescale(*p) for node, p in pos.items()}
-
-    # ─ PHASE 3: Build JSON for frontend ─────────────────────────
+    
+    # ── PHASE 3: Build JSON for frontend ──────────────────────────────
     nodes = []
     for node in G_final.nodes():
         degree = G_final.degree(node)
-        node_type = account_roles.get(node, 'source')
-        node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'
-
+        node_type = account_roles.get(node, 'amplifier')  # default
+        node_color = '#3b82f6' if node_type == 'source' else '#f59e0b'  # Blue or Orange
+        
         post_count = account_post_counts.get(node, 0)
         platform = account_platforms.get(node, 'Unknown')
-
-        # Slightly larger baseline size so leaf/spoke nodes (degree=1 in a
-        # hub-and-spoke layout) are still comfortably visible, not just dots.
-        is_hub = node in hub_nodes
-        base_size = 28 if is_hub else 18
+        
+        # Size: sources are larger, scaled by degree
+        base_size = 28 if node_type == 'source' else 18
         size = max(base_size, min(55, base_size + degree * 2))
-
+        
         nodes.append({
             'id': node,
-            'label': node,
+            'label': node[:20],  # Truncate long usernames
             'degree': degree,
             'post_count': post_count,
             'platform': platform,
@@ -3018,47 +3093,44 @@ def generate_network_graph_from_groups(coordination_groups, top_n=50, layout='sp
             'size': size,
             'color': node_color,
             'type': node_type,
-            'is_hub': is_hub,
         })
-
+    
     edges = []
     for u, v, data in G_final.edges(data=True):
         if u in pos and v in pos:
-            edge_type = data.get('type', 'coordination')
             edges.append({
                 'source': u,
                 'target': v,
                 'weight': data.get('weight', 1),
-                'type': edge_type,
+                'type': data.get('type', 'coordination'),
                 'source_x': float(pos[u][0]),
                 'source_y': float(pos[u][1]),
                 'target_x': float(pos[v][0]),
                 'target_y': float(pos[v][1]),
             })
-
-    # Robust density calculation
+    
+    # Stats
     n_nodes = G_final.number_of_nodes()
     n_edges = G_final.number_of_edges()
-    density = 0.0
-    if n_nodes > 1:
-        max_possible_edges = n_nodes * (n_nodes - 1) / 2
-        if max_possible_edges > 0:
-            density = n_edges / max_possible_edges
-
+    density = n_edges / (n_nodes * (n_nodes - 1) / 2) if n_nodes > 1 else 0
+    
+    source_count = sum(1 for role in account_roles.values() if role == 'source')
+    amplifier_count = sum(1 for role in account_roles.values() if role == 'amplifier')
+    
     return {
         'nodes': nodes,
         'edges': edges,
-        # Tell the frontend exactly what coordinate space to expect so it
-        # can size its viewBox/canvas to match instead of guessing.
-        'bounds': {'x_min': -TARGET / 2, 'x_max': TARGET / 2,
-                   'y_min': -TARGET / 2, 'y_max': TARGET / 2},
+        'bounds': {'x_min': -TARGET/2, 'x_max': TARGET/2, 
+                   'y_min': -TARGET/2, 'y_max': TARGET/2},
         'stats': {
             'nodes': n_nodes,
             'edges': n_edges,
-            'density': round(density, 4)
+            'density': round(density, 4),
+            'sources': source_count,
+            'amplifiers': amplifier_count,
         }
     }
-   
+    
 def calculate_ethiopia_relevance(text):
     if not text:
         return 0
@@ -5609,31 +5681,33 @@ class HomeView(BaseTabMixin, TemplateView):
     template_name = 'dashboard/home.html'
     
     def get_context_data(self, **kwargs):
-        # ── CHECK CACHE FIRST ──────────────────────────────────────
-        #view_all = self.request.GET.get('view_all') == 'true'
-        #req_start = self.request.GET.get('start_date', '')
-        #req_end = self.request.GET.get('end_date', '')
+        # ── 1. CHECK CACHE FIRST ──────────────────────────────────────
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
         
-        #cache_key = f"home_dashboard_v1_{req_start}_{req_end}_{view_all}"
-        #cached_data = cache.get(cache_key)
+        # Use v2 to invalidate any old broken caches
+        cache_key = f"home_dashboard_v2_{req_start}_{req_end}_{view_all}"
+        cached_data = cache.get(cache_key)
         
-        #if cached_data:
-         #   logger.info("✅ HomeView: Serving from cache")
-         #   context = super().get_context_data(**kwargs)
-         #   context.update(cached_data)
-          #  return context
+        if cached_data:
+            logger.info("✅ HomeView: Serving from cache")
+            context = super().get_context_data(**kwargs)
+            context.update(cached_data)
+            return context
         
         context = super().get_context_data(**kwargs)
         
-        # 1. GET FILTERED QUERYSET (now defaults to 3 months)
+        # ── 2. GET FILTERED QUERYSET (now defaults to 3 months) ───────
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
         posts = queryset
         total_posts = posts.count()
         
-        # 2. PLATFORM DISTRIBUTION - Direct aggregation extraction
+        # ── 3. PLATFORM DISTRIBUTION ──────────────────────────────────
         platform_stats = posts.values('platform').annotate(
             total_count=Count('id')
         ).order_by('-total_count')
+        
         labels = []
         values = []
         colors = []
@@ -5646,6 +5720,7 @@ class HomeView(BaseTabMixin, TemplateView):
             'YouTube': '#FF0000',
             'Instagram': '#E4405F'
         }
+        
         for item in platform_stats:
             p_name = str(item.get('platform') or '').strip()
             p_count = item.get('total_count') or 0
@@ -5654,11 +5729,10 @@ class HomeView(BaseTabMixin, TemplateView):
                 values.append(int(p_count))
                 colors.append(color_map.get(p_name, '#6B7280'))
         
-        # Set top platform metrics fallback
         top_platform = labels[0] if labels else "—"
         charts = {}
         
-        # 3. CREATE BAR CHART
+        # ── 4. CREATE BAR CHART ───────────────────────────────────────
         if labels:
             total_sum = sum(values)
             raw_chart_dict = {
@@ -5678,32 +5752,27 @@ class HomeView(BaseTabMixin, TemplateView):
                     "title": f'Post Distribution by Platform (Total: {total_sum:,} posts)',
                     "margin": {"b": 40, "t": 50, "l": 50, "r": 20},
                     "height": 400,
-                    "xaxis": {
-                        "title": "Platform",
-                        "tickmode": "array"
-                    },
-                    "yaxis": {
-                        "title": "Number of Posts",
-                        "gridcolor": "#E5E7EB"
-                    },
+                    "xaxis": {"title": "Platform", "tickmode": "array"},
+                    "yaxis": {"title": "Number of Posts", "gridcolor": "#E5E7EB"},
                     "plot_bgcolor": "#ffffff"
                 }
             }
             charts['platform'] = json.dumps(raw_chart_dict)
         
-        # 4. METRICS
+        # ── 5. METRICS ────────────────────────────────────────────────
         unique_accounts = posts.values('account_id').distinct().count()
         high_risk_count = posts.filter(risk_level__in=['high', 'critical']).count()
         alert_level = '🚨 High' if high_risk_count > 50 else '⚠️ Medium' if high_risk_count > 10 else '✅ Low'
         peps_tracked = PEP.objects.filter(is_active=True).count()
         last_update = timezone.now().strftime('%Y-%m-%d %H:%M UTC')
         
-        # 5. OTHER CHARTS
+        # ── 6. OTHER CHARTS ───────────────────────────────────────────
         if posts.exists():
             # Top Accounts
             top_accounts_raw = posts.values('account_id').annotate(count=Count('id')).order_by('-count')[:10]
             cleaned_accounts = []
             invalid_accounts = ['twitter', 'source', 'source twitter source', 'nan', 'none', '-', '', 'user', 'author', 'account']
+            
             for acc in top_accounts_raw:
                 name = str(acc['account_id']) if acc['account_id'] else ''
                 name = re.sub(r'Twitter Source\s*', '', name, flags=re.IGNORECASE)
@@ -5711,6 +5780,7 @@ class HomeView(BaseTabMixin, TemplateView):
                 name = re.sub(r'@\w+\s*Name:\s*\d+.*', '', name)
                 name = re.sub(r'dtype.*', '', name, flags=re.IGNORECASE)
                 name = re.sub(r'\s+', ' ', name).strip()
+                
                 if name.lower() not in invalid_accounts and name and name not in ['-', 'nan', 'None', '']:
                     cleaned_accounts.append({'account_id': name[:50], 'count': acc['count']})
             
@@ -5738,20 +5808,20 @@ class HomeView(BaseTabMixin, TemplateView):
                     fig_daily.update_layout(xaxis_tickangle=-45, margin=dict(b=100, t=50, l=50, r=20), height=400)
                     charts['daily'] = fig_daily.to_json()
         
-        # 6. UPLOAD SUMMARY
+        # ── 7. UPLOAD SUMMARY ─────────────────────────────────────────
         recent_uploads = DataUpload.objects.filter(status='completed').order_by('-uploaded_at')[:5]
         upload_summary = {
             'show': len(recent_uploads) > 0 and (recent_uploads[0].uploaded_at > timezone.now() - timedelta(hours=2)),
-            'files': recent_uploads,  # <-- This contains model instances with file fields!
+            'files': recent_uploads,  # Contains model instances for template rendering
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         
-        # 7. TREND ANALYSIS
+        # ── 8. TREND ANALYSIS ─────────────────────────────────────────
         start_str = start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date)
         end_str = end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date)
         trend_analysis = get_category_trend_analysis(posts, days_back=90, cache_suffix=f"{start_str}_{end_str}")
         
-        # 8. BUILD CONTEXT
+        # ── 9. BUILD CONTEXT ──────────────────────────────────────────
         context.update({
             'active_tab': 'home',
             'metrics': {
@@ -5767,12 +5837,12 @@ class HomeView(BaseTabMixin, TemplateView):
             'risk_actors': get_risk_actors_insight(posts),
             'top_hashtags': get_top_hashtags(posts),
             'trend_analysis': trend_analysis,
-            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
+            'start_date': start_str,
+            'end_date': end_str,
         })
         
-        # ── SAVE TO CACHE (30 minutes) ────────────────────────────
-        # Create a cacheable copy without unpicklable objects
+        # ── 10. SAVE TO CACHE (30 minutes) ────────────────────────────
+        # Create a cacheable copy without unpicklable objects (like Django model instances)
         cacheable_context = {
             'metrics': context['metrics'],
             'charts': context['charts'],
@@ -5781,11 +5851,10 @@ class HomeView(BaseTabMixin, TemplateView):
             'trend_analysis': context['trend_analysis'],
             'start_date': context['start_date'],
             'end_date': context['end_date'],
-            # Convert upload_summary to serializable format
             'upload_summary': {
                 'show': upload_summary['show'],
                 'total_records': upload_summary['total_records'],
-                # Convert model instances to dictionaries
+                # Convert model instances to dictionaries to prevent pickle errors
                 'files': [
                     {
                         'id': u.id,
@@ -5799,8 +5868,11 @@ class HomeView(BaseTabMixin, TemplateView):
             }
         }
         
-        #cache.set(cache_key, cacheable_context, 1800)
-        #logger.info(f"💾 HomeView: Cached for 30 minutes")
+        try:
+            cache.set(cache_key, cacheable_context, 1800)
+            logger.info(f"💾 HomeView: Cached for 30 minutes (key: {cache_key})")
+        except Exception as e:
+            logger.warning(f"⚠️ HomeView: Failed to save to cache: {e}")
         
         return context     
         
@@ -5861,11 +5933,17 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
     # ── CONFIGURATION ──────────────────────────────────────────────────────
-    SCAN_LIMIT = 5000           # Scan up to 5000 posts
+    SCAN_LIMIT = 5000           # Baseline limit for regular queries
     TIMEOUT_SECONDS = 90        # Hard stop after 90 seconds (leaves buffer for 100s Cloudflare limit)
     CHUNK_SIZE = 1000           # Process posts in larger chunks
     CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
     
+    # Words that are too generic on their own and require secondary context markers
+    GENERIC_TERMS_CONTEXT_MAP = {
+        'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
+        'ውጭ': ['ጣልቃ', 'ተዕኖ', 'ገንዘብ', 'ምርጫ', 'ሴራ', 'እጅ']
+    }
+
     def _get_lexicon_term_count(self):
         """Count total terms in CONFIG lexicon + Database."""
         try:
@@ -5874,7 +5952,17 @@ class LexiconsView(TemplateView):
             return total
         except Exception:
             return "1000+"
-    
+
+    def _is_valid_context(self, term: str, text_lower: str) -> bool:
+        """Enforces that ultra-generic words must appear alongside a secondary context word."""
+        term_clean = term.strip().lower()
+        if term_clean in self.GENERIC_TERMS_CONTEXT_MAP:
+            required_contexts = self.GENERIC_TERMS_CONTEXT_MAP[term_clean]
+            # Verify if at least one context-strengthening word is present
+            if not any(context in text_lower for context in required_contexts):
+                return False
+        return True
+
     def _scan_post(self, text: str, category_filter=None):
         """Scan one post's text using lexicon."""
         if not text or len(text.strip()) < 10:
@@ -5885,6 +5973,9 @@ class LexiconsView(TemplateView):
         filtered = []
         for m in raw_matches:
             if len(m['term'].strip()) <= 1:
+                continue
+            # Context Check: filter out generic keywords lacking supporting intent context
+            if not self._is_valid_context(m['term'], text_lower):
                 continue
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
                 filtered.append(m)
@@ -5898,20 +5989,20 @@ class LexiconsView(TemplateView):
             logger.warning(f"⏰ TIMEOUT: Scan stopped after {elapsed:.1f}s (limit: {self.TIMEOUT_SECONDS}s)")
             return True
         return False
-    
+
     def get_context_data(self, **kwargs):
         import time
         start_time = time.time()
         context = super().get_context_data(**kwargs)
         
-        # ── 1. URL params ─────────────────────────────────────────────────
+        # ── 1. URL params ────────────────────────────────────────────────
         selected_category = self.request.GET.get('category', '').strip()
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
         
         # ── 2. Cache (overview only, keyed to date range) ─────────────────
-        cache_key = f"lexicon_dashboard_v6_{req_start}_{req_end}_{view_all}_{selected_category}"
+        cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
         cached_data = cache.get(cache_key)
         
         if cached_data and not selected_category:
@@ -5924,74 +6015,90 @@ class LexiconsView(TemplateView):
             context['scan_timed_out']    = False
             return context
         
-        # ── 3. Fetch posts ─────────────────────────────────────────────────
+        # ── 3. Fetch posts ────────────────────────────────────────────────
         try:
-            filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-            filtered_posts = (filtered_posts
-                              .exclude(platform__icontains='media')
-                              .exclude(platform__icontains='news'))
+            _, start_date, end_date = get_election_posts_queryset(self.request)
+            
+            # Build database conditions dynamically
+            query_filters = {}
+            if not view_all:
+                query_filters['timestamp_share__range'] = (start_date, end_date)
+                
+            filtered_posts = ProcessedPost.objects.filter(
+                **query_filters
+            ).exclude(platform__icontains='media').exclude(platform__icontains='news').order_by('-timestamp_share')
+            
             total_posts = filtered_posts.count()
         except Exception as e:
-            logger.error(f"LexiconsView: error fetching posts: {e}")
-            context.update({
-                'active_tab': 'lexicons', 'top_terms': [], 'category_counts': {},
-                'severity_counts': {}, 'total_matches': 0, 'posts_scanned': 0,
-                'total_posts': 0, 'wordcloud_base64': None, 'targeted_entities': [],
-                'lexicon_term_count': self._get_lexicon_term_count(),
-                'selected_category': selected_category, 'category_terms': [],
-                'posts_with_terms': [], 'scan_timed_out': False,
-            })
+            logger.error(f"LexiconsView error: {e}")
             return context
         
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
-        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
+        # Expand limits safely. Category view gets 10k, Overview gets 5k to prevent timeouts.
+        effective_limit = 10000 if selected_category else self.SCAN_LIMIT
+        scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
+        
         category_terms  = []
         posts_with_terms = []
         all_matches     = []
         posts_scanned   = 0
         scan_timed_out  = False
         
+        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
-            logger.info(f"LexiconsView: category view → {selected_category} (limit: {self.SCAN_LIMIT} posts)")
+            logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
             
-            db_terms = LexiconTerm.objects.filter(category=selected_category).exclude(severity='low')
+            db_terms = LexiconTerm.objects.filter(category=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             elif selected_category in CONFIG.get('lexicon', {}):
-                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items() if m.get('severity', 'medium') != 'low']
+                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items()]
             
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
-                # Scan posts with TIMEOUT PROTECTION
-                for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
-                    # ── TIMEOUT CHECK ──
+                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
+                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
+                try:
+                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
+                except Exception:
+                    compiled_category_re = None
+                
+                for post in scan_pool:
                     if self._check_timeout(start_time):
                         scan_timed_out = True
                         break
                     
-                    if not post.original_text:
-                        continue
+                    posts_scanned += 1
+                    if not post.original_text: continue
                     
                     text       = post.original_text
                     text_lower = text.lower()
+                    
+                    # Instantly drops unrelated records out of processing loop
+                    if compiled_category_re and not compiled_category_re.search(text_lower):
+                        continue
+                        
                     is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
                     matched_terms = []
                     
                     for term_lower, meta in term_meta.items():
+                        if term_lower not in text_lower:
+                            continue
+                        if not self._is_valid_context(meta['term'], text_lower):
+                            continue
                         if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
                             continue
-                        matched_terms.append(term_lower)
+                        
+                        matched_terms.append(meta['term'])
                         all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
                     
                     if matched_terms:
-                        posts_scanned += 1
-                        
                         posts_with_terms.append({
                             'id':            post.id,
-                            'text':          text[:300],
+                            'text':          text,
                             'platform':      post.platform,
                             'timestamp':     post.timestamp_share,
                             'url':           post.url,
@@ -6000,70 +6107,34 @@ class LexiconsView(TemplateView):
                             'confidence':    1.0,
                             'model_category': selected_category,
                         })
-                        
-                        # STOP after reaching limit
-                        if posts_scanned >= self.SCAN_LIMIT:
-                            logger.info(f"✅ Reached scan limit of {self.SCAN_LIMIT} posts")
-                            break
                 
-                elapsed = time.time() - start_time
-                logger.info(f"  Category scan complete: {posts_scanned} posts matched in {elapsed:.1f}s (timed out: {scan_timed_out})")
-                
-                # ── LLM TRANSLATION FOR NON-ENGLISH TERMS ─────────────────
-                unique_foreign_terms = set()
-                for p_dict in posts_with_terms:
-                    for term in p_dict.get('matched_terms', []):
-                        if re.search(r'[^\x00-\x7F]', term):
-                            unique_foreign_terms.add(term)
-                
-                translations_map = {}
+                # LLM translations block
+                unique_foreign_terms = {t for p in posts_with_terms for t in p.get('matched_terms', []) if re.search(r'[^\x00-\x7F]', t)}
                 if unique_foreign_terms:
                     translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
-                
-                # Inject translations into each post dictionary
-                for p_dict in posts_with_terms:
-                    term_translations = []
-                    for term in p_dict.get('matched_terms', []):
-                        if term in translations_map:
-                            term_translations.append(f"{term}: {translations_map[term]}")
-                    p_dict['english_translations'] = term_translations
-        
+                    for p_dict in posts_with_terms:
+                        p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
+
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
-            logger.info(f"LexiconsView: overview scan (limit: {self.SCAN_LIMIT} posts)")
+            logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
             
-            # Scan with TIMEOUT PROTECTION
-            for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
-                # ── TIMEOUT CHECK ──
+            for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
                     break
                 
-                if not post.original_text:
-                    continue
+                posts_scanned += 1
+                if not post.original_text: continue
+                
                 try:
                     matches = self._scan_post(post.original_text)
-                    if matches:
+                    if matches: 
                         all_matches.extend(matches)
-                        posts_scanned += 1
-                        
-                        # Log progress every 500 posts
-                        if posts_scanned % 500 == 0:
-                            elapsed = time.time() - start_time
-                            logger.info(f"  Progress: {posts_scanned} posts scanned in {elapsed:.1f}s")
-                        
-                        # STOP after reaching limit
-                        if posts_scanned >= self.SCAN_LIMIT:
-                            logger.info(f"✅ Reached overview scan limit of {self.SCAN_LIMIT} posts")
-                            break
-                except Exception as e:
-                    logger.warning(f"Scan error post {post.id}: {e}")
+                except Exception as e: 
                     continue
         
-        elapsed = time.time() - start_time
-        logger.info(f"📊 LexiconsView: Total scan time: {elapsed:.1f}s | Posts scanned: {posts_scanned} | Matches: {len(all_matches)}")
-        
-        # ── 5. Aggregate analytics ─────────────────────────────────────────
+        # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
         try:
             term_counts     = Counter([m['term']     for m in all_matches])
             category_counts = Counter([m['category'] for m in all_matches])
@@ -6077,7 +6148,7 @@ class LexiconsView(TemplateView):
                     if len(term.strip()) <= 1: continue
                     metadata = {}
                     for cat, terms in CONFIG.get('lexicon', {}).items():
-                        if term in terms:
+                        if term in terms: 
                             metadata = terms[term]
                             break
                     if not metadata:
@@ -6097,22 +6168,19 @@ class LexiconsView(TemplateView):
                 valid_terms = [{'term': t, 'count': c} for t, c in term_counts.most_common(50) if len(t.strip()) > 1]
                 wc = generate_trigger_wordcloud({'top_terms': valid_terms})
                 if wc: wordcloud_base64 = wordcloud_to_base64(wc)
-            except Exception as e: logger.warning(f"Word cloud error: {e}")
-        
+            except Exception: pass
+            
         targeted_entities = []
         if not selected_category:
             try:
-                entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE|National\s+Election\s+Board)\b', r'\b(Amhara|Tigray|Oromo|Somali|Afar|Sidama)\b', r'[\u1200-\u137F]{3,}(?:\s+[\u1200-\u137F]{2,}){0,2}']
+                entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE)\b', r'\b(Amhara|Tigray|Oromo|Somali)\b']
                 entities_found = Counter()
-                for post in filtered_posts.iterator(chunk_size=self.CHUNK_SIZE):
-                    if not post.original_text: continue
+                for m in all_matches:
                     for pattern in entity_patterns:
-                        for match in re.findall(pattern, post.original_text, re.IGNORECASE):
-                            entity = match[0] if isinstance(match, tuple) else match
-                            if len(entity.strip()) >= 3: entities_found[entity.strip()] += 1
-                    if sum(entities_found.values()) > 50000: break
+                        for match in re.findall(pattern, m['term'], re.IGNORECASE):
+                            entities_found[match.strip()] += 1
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
-            except Exception as e: logger.error(f"Entity extraction error: {e}")
+            except Exception: pass
         
         # ── 8. Build context ───────────────────────────────────────────────
         shared = {
@@ -6121,23 +6189,22 @@ class LexiconsView(TemplateView):
             'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
             'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
-            'scan_timed_out': scan_timed_out,  # NEW: Flag for UI to show timeout warning
+            'scan_timed_out': scan_timed_out, 'wordcloud_base64': wordcloud_base64,
+            'targeted_entities': targeted_entities
         }
         
+        # ── CACHE (only simple data, no model instances) ───────
         if not selected_category:
-            shared['wordcloud_base64']  = wordcloud_base64
-            shared['targeted_entities'] = targeted_entities
-            # Cache for 2 hours (increased from 1 hour)
-            cache.set(cache_key, shared, self.CACHE_DURATION)
-            logger.info(f"💾 Cached results for {self.CACHE_DURATION}s")
-        else:
-            shared['wordcloud_base64']  = None
-            shared['targeted_entities'] = []
+            try:
+                cache.set(cache_key, shared, self.CACHE_DURATION)
+                logger.info(f"💾 LexiconsView cached for {self.CACHE_DURATION}s")
+            except Exception as e:
+                logger.warning(f"Cache save failed: {e}")
         
         context.update(shared)
         context['selected_category'] = selected_category
-        context['category_terms']    = category_terms
-        context['posts_with_terms']  = posts_with_terms[:100]
+        context['category_terms'] = category_terms
+        context['posts_with_terms'] = posts_with_terms[:100]
         
         return context
         
@@ -6187,6 +6254,7 @@ class LexiconsView(TemplateView):
             
             cache.set(cache_key, {'results': ai_results, 'total_analyzed': total_analyzed, 'total_hateful': total_hateful}, 86400)
             logger.info(f"Background analysis COMPLETE: {total_hateful} hateful / {total_analyzed} analysed.")
+            
         except Exception as e:
             logger.error(f"Background analysis FAILED: {e}")
             logger.error(traceback.format_exc())
@@ -6194,7 +6262,7 @@ class LexiconsView(TemplateView):
         finally:
             cache.delete("lexicons_analysis_running")
             logger.info("Background thread finished and cleaned up.")
-
+            
 class PEPsHubView(TemplateView):
     template_name = 'dashboard/peps_hub.html'
     
@@ -6404,6 +6472,54 @@ class NetworksView(TemplateView):
             try:
                 G = nx.Graph()
                 active_groups_subset = coordination_groups[:top_n]
+                
+                # ── Build a proper source→amplifier map ──────────────────
+                # For each group, find the account with the OLDEST timestamp
+                # that is NOT retweeting someone else. That's the source.
+                group_sources = {}  # group_id -> source_account
+                for group in active_groups_subset:
+                    source_account = None
+                    earliest_ts = None
+                    sample_posts = group.get('sample_posts_with_urls', [])
+                    
+                    for post in sample_posts:
+                        username = post.get('username', '')
+                        timestamp_str = post.get('timestamp', '')
+                        text = post.get('text_preview', '')
+                        
+                        # Skip if this post is clearly an RT/QT of someone else
+                        if text and re.match(r'^(RT|QT|repost)\s+@\w+', text.strip(), re.IGNORECASE):
+                            continue
+                        
+                        # Parse timestamp
+                        ts = None
+                        if timestamp_str and timestamp_str != 'N/A':
+                            try:
+                                ts = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M')
+                            except:
+                                try:
+                                    ts = datetime.fromisoformat(timestamp_str)
+                                except:
+                                    ts = None
+                        
+                        if ts is None:
+                            continue
+                        
+                        if earliest_ts is None or ts < earliest_ts:
+                            earliest_ts = ts
+                            source_account = username
+                    
+                    if source_account:
+                        group_sources[group['id']] = source_account
+                    elif sample_posts:
+                        # Fallback: use first non-RT account
+                        for post in sample_posts:
+                            text = post.get('text_preview', '')
+                            if not re.match(r'^(RT|QT|repost)\s+@\w+', text.strip(), re.IGNORECASE):
+                                group_sources[group['id']] = post.get('username', '')
+                                break
+                
+                # ─ Build graph edges ──────────────────────────────────────────
                 for group in active_groups_subset:
                     accounts = group.get('accounts', [])
                     weight = group.get('post_count', 1)
@@ -6416,6 +6532,7 @@ class NetworksView(TemplateView):
                             else:
                                 G.add_edge(node_a, node_b, weight=weight)
                 
+                # ── Layout ────────────────────────────────────────────────────
                 if layout_style == 'circular':
                     pos = nx.circular_layout(G)
                 elif layout_style == 'kamada_kawai':
@@ -6423,12 +6540,18 @@ class NetworksView(TemplateView):
                 else:
                     pos = nx.spring_layout(G, k=0.4, iterations=30)
                 
+                # ── FIX: Mark nodes as source or amplifier ─────────────────────
+                # An account is a "source" if it's the originator in ANY group
+                source_accounts = set(group_sources.values())
+                
                 nodes_list = []
                 for node in G.nodes():
-                    is_source = any(g.get('accounts', []) and str(g.get('accounts', [])[0]) == str(node) for g in active_groups_subset)
+                    is_source = node in source_accounts
                     nodes_list.append({
-                        'id': node, 'label': str(node)[:15],
-                        'x': float(pos[node][0]), 'y': float(pos[node][1]),
+                        'id': node,
+                        'label': str(node)[:15],
+                        'x': float(pos[node][0]),
+                        'y': float(pos[node][1]),
                         'type': 'source' if is_source else 'amplifier',
                         'size': int(G.degree(node))
                     })
@@ -6441,10 +6564,10 @@ class NetworksView(TemplateView):
                         'target_x': float(pos[v][0]), 'target_y': float(pos[v][1]),
                         'weight': int(data.get('weight', 1))
                     })
+                
                 network_graph_json = json.dumps({'nodes': nodes_list, 'edges': edges_list})
             except Exception as e:
                 logger.error(f"Error drawing network: {e}")
-
         # 4. ACTUAL TTP ANALYSIS (Replaces the broken static reference loop)
         # This analyzes your coordination_groups to find the 12 TTPs and attaches real evidence posts
         ttps = analyze_ttps(coordination_groups, posts_qs)
@@ -6479,78 +6602,87 @@ class NetworksView(TemplateView):
         
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # 1. Grab Active User Date Filters
-        req_start = self.request.GET.get('start_date', '')
-        req_end = self.request.GET.get('end_date', '')
-        
-        # Build base queryset for processed posts
-        posts_qs = ProcessedPost.objects.all()
-        if req_start:
-            posts_qs = posts_qs.filter(timestamp_share__gte=req_start)
-        if req_end:
-            posts_qs = posts_qs.filter(timestamp_share__lte=req_end)
-            
-        # Limit to the 3,000 most recent posts based on active filters
-        recent_posts = posts_qs.order_by('-timestamp_share')[:3000]
-        total_posts_count = recent_posts.count()
-        
-        # 2. Load Lexicon Terms from Database
-        lexicon_terms = LexiconTerm.objects.filter(
-            is_election_related=True
-        ).exclude(
+        # Load lexicon terms from DB, excluding single characters
+        lexicon_terms = LexiconTerm.objects.exclude(
             term__regex=r'^.$'
         ).order_by('category', 'severity')
-        
-        categories = lexicon_terms.values_list('category', flat=True).distinct()
-        scan_results = self.request.session.pop('scan_results', None)
-        
-        # 3. Calculate Global Lexicon Term Counts
-        db_count = lexicon_terms.count()
-        config_count = sum(len(terms) for terms in CONFIG.get('lexicon', {}).values()) if 'CONFIG' in globals() else 0
-        total_count = db_count + config_count
-        
-        # 4. OPTIMIZED BULK REAL-TIME DATABASE SCAN (No Slow Loops!)
-        total_matches = 0
-        if total_posts_count > 0 and db_count > 0:
-            # Build an aggregated database OR query matching any terms in one single pass
-            terms_list = list(lexicon_terms.values_list('term', flat=True))
-            word_conditions = Q()
-            for term in terms_list:
-                # Direct substring check for Ge'ez/Ethiopic scripts vs English word boundaries
-                if re.search(r'[^\x00-\x7F]', term):
-                    word_conditions |= Q(original_text__icontains=term)
-                else:
-                    word_conditions |= Q(original_text__iregex=r'\b' + re.escape(term) + r'\b')
-            
-            # Count exactly how many of these 3,000 recent posts match your active terms
-            post_ids = list(recent_posts.values_list('id', flat=True))
-            total_matches = ProcessedPost.objects.filter(id__in=post_ids).filter(word_conditions).count()
 
-        # 5. Populate Context to Update UI Statistics From 0
+        # If DB is empty, seed from CONFIG (one-time migration)
+        if not lexicon_terms.exists():
+            for category, terms in CONFIG['lexicon'].items():
+                for term, metadata in terms.items():
+                    if len(term.strip()) > 1:
+                        LexiconTerm.objects.get_or_create(
+                            term=term,
+                            defaults={
+                                'category': category,
+                                'severity': metadata.get('severity', 'medium'),
+                                'target_entity': metadata.get('target_entity', ''),
+                                'language': metadata.get('language', 'english'),
+                                'is_election_related': True
+                            }
+                        )
+            lexicon_terms = LexiconTerm.objects.exclude(
+                term__regex=r'^.$'
+            ).order_by('category', 'severity')
+
+        # RESPECT THE GLOBAL DATE FILTER
+        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+        total_posts_in_filter = filtered_posts.count()
+
+        # Only scan the most recent 3000 posts instead of all
+        posts_to_scan = filtered_posts[:3000]
+        
+        all_matches = []
+        posts_scanned = 0
+        
+        # Scan only the limited dataset
+        for post in posts_to_scan.iterator():
+            if post.original_text:
+                try:
+                    matches = scan_text_for_lexicon_terms(post.original_text)
+                    if matches:
+                        all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
+                        posts_scanned += 1
+                except Exception as e:
+                    logger.warning(f"Error scanning post {post.id}: {e}")
+                    continue
+
+        # Get distinct categories for filter dropdown
+        categories = lexicon_terms.values_list('category', flat=True).distinct()
+
+        # Get scan results from session (if any) and clear immediately
+        scan_results = self.request.session.pop('scan_results', None)
+
+        # Determine filter state for the template text
+        view_all = self.request.GET.get('view_all') == 'true'
+        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
+
         context.update({
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
             'categories': categories,
-            'total_terms': total_count,
-            'db_term_count': db_count,
+            'total_terms': lexicon_terms.count(),
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
-            
-            # --- FIXED AND POPULATED DYNAMICALLY ---
-            'total_matches': total_matches,
-            'posts_scanned': total_posts_count,
-            'total_posts': total_posts_count,
+            'total_matches': len(all_matches),
+            'posts_scanned': posts_scanned,
+            'total_posts': total_posts_in_filter,
+            'view_all': view_all,
+            'has_custom_date_filter': has_custom_date_filter,
+            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
+            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
         return context
-    
+
     def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
-        
+
         # Handle Edit Term
         if action == 'edit_term':
             term_id = request.POST.get('term_id')
@@ -6566,11 +6698,12 @@ class LexiconManagementView(TemplateView):
                         obj.language = request.POST.get('language', 'english')
                         obj.save()
                         messages.success(request, "Term updated successfully!")
+                        cache.delete("lexicon_dashboard_data_v2")
                     else:
                         messages.warning(request, "Term must be at least 2 characters long.")
                 except LexiconTerm.DoesNotExist:
                     messages.error(request, "Term not found.")
-        
+
         # Handle Delete Term
         elif action == 'delete_term':
             term_id = request.POST.get('term_id')
@@ -6578,9 +6711,10 @@ class LexiconManagementView(TemplateView):
                 try:
                     LexiconTerm.objects.filter(id=term_id).delete()
                     messages.success(request, "Term deleted successfully.")
+                    cache.delete("lexicon_dashboard_data_v2")
                 except Exception as e:
                     messages.error(request, f"Error: {e}")
-        
+
         # Handle Add Term
         elif action == 'add_term':
             term = request.POST.get('term', '').strip()
@@ -6596,70 +6730,124 @@ class LexiconManagementView(TemplateView):
                     }
                 )
                 messages.success(request, "Term added successfully!")
+                cache.delete("lexicon_dashboard_data_v2")
             else:
-                messages.warning(request, "Term must be at least 2 characters long.")
-        
-        # Handle Scan Text (only when user submits the scan form)
+                messages.warning(request, "Term must be at least 2 characters long. Single characters are skipped.")
+
+        # Handle Scan Text
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
             if text:
                 # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
-                
+
                 # 2. LLM-based detection
-                llm_result = detect_hate_speech_llm_enhanced(text)
-                
-                # 3. AFRO-XLMR detection
+                llm_result = detect_hate_speech_llm(text)
+
+                # 3. Extract NEW trigger terms not in lexicon
+                new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
+
+                # 4. Fine-tuned AFRO-XLMR Model detection (Swapped out Gemma here)
                 try:
                     afro_result = detect_hate_speech_afro_xlmr(text)
                 except Exception as e:
                     logger.error(f"AFRO-XLMR detection failed: {e}")
-                    afro_result = {
-                        'is_hate_speech': False,
-                        'confidence': 0.0,
-                        'category': 'error',
-                        'severity': 'low',
-                        'error': 'Model not loaded'
-                    }
+                    afro_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'is_hate_speech': False, 'error': 'Model failed to compute'}
                 
-                # Determine verdict
+                # 5. Determine final verdict - AFRO-XLMR / LLM Priority Check
                 is_hate_speech = False
-                overall_severity = 'low'
-                model_used = "None"
+                overall_severity_num = 1
+                explanation = ""
+
+                llm_is_hate = llm_result.get('is_hate_speech', False)
+                llm_confidence = llm_result.get('confidence', 0)
+                llm_explanation = llm_result.get('explanation', '').lower()
                 
-                if afro_result.get('is_hate_speech') and afro_result.get('confidence', 0) >= 0.6:
-                    is_hate_speech = True
-                    overall_severity = afro_result.get('severity', 'medium')
-                    model_used = "AFRO-XLMR"
-                elif llm_result.get('is_hate_speech') and llm_result.get('confidence', 0) >= 0.6:
-                    is_hate_speech = True
-                    overall_severity = llm_result.get('severity', 'medium')
-                    model_used = "LLM"
-                elif lexicon_risk.get('score', 0) > 3:
-                    is_hate_speech = True
-                    overall_severity = lexicon_risk.get('level', 'medium')
-                    model_used = "Lexicon"
+                afro_is_hate = afro_result.get('is_hate_speech', False)
+                afro_confidence = afro_result.get('confidence', 0)
                 
-                # Save to session
+                # SAFETY NET: If LLM explanation indicates hate speech, force flag
+                hate_indicators = [
+                    'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
+                    'derogatory', 'discrimination', 'dangerous', 'threat',
+                    'ethnic cleansing', 'genocide', 'kill', 'attack', 'slaughter'
+                ]
+                
+                if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
+                    llm_is_hate = True
+                    llm_confidence = max(llm_confidence, 0.75)
+                
+                # PRIORITY 1: AFRO-XLMR detects hate speech confidently
+                if afro_is_hate and afro_confidence >= 0.6:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_result.get('severity', 'medium'), 2)
+                    explanation = f"AFRO-XLMR Model detected hate speech ({afro_confidence*100:.0f}% confidence)."
+                
+                # PRIORITY 2: LLM says hate speech
+                elif llm_is_hate and llm_confidence >= 0.6:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
+                    explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
+                
+                # PRIORITY 3: Lexicon finds high-risk terms
+                elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
+                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
+                
+                # PRIORITY 4: Default to neutral
+                else:
+                    is_hate_speech = False
+                    overall_severity_num = 1
+                    if lexicon_matches:
+                        explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
+                    else:
+                        explanation = "No hate speech detected by any method."
+                
+                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
+                
+                # Create combined analysis field
+                analysis_parts = []
+                if llm_result.get('explanation'):
+                    analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
+                if lexicon_matches:
+                    terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
+                    analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
+                combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
+                
+                # Save data safely back to UI template context via session
                 request.session['scan_results'] = {
-                    'text': text[:200],
+                    'text': text[:200] + '...' if len(text) > 200 else text,
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
-                    'afro_xlmr_result': afro_result,
+                    'afro_xlmr_result': afro_result,  # Replaces gemma_result key smoothly
                     'is_hate_speech': is_hate_speech,
-                    'overall_severity': overall_severity,
-                    'model_used': model_used,
+                    'overall_severity': severity_map[overall_severity_num],
+                    'overall_confidence': round(max(llm_confidence, afro_confidence), 2),
+                    'overall_confidence_pct': f"{round(max(llm_confidence, afro_confidence) * 100)}%",
+                    'all_categories': list(set([m['category'] for m in lexicon_matches] + llm_result.get('categories', []))),
+                    'targeted_groups': llm_result.get('targeted_groups', []),
+                    'explanation': explanation,
+                    'analysis': combined_analysis,
+                    'has_lexicon_matches': len(lexicon_matches) > 0,
+                    'new_trigger_terms': new_terms,
+                    'has_new_terms': len(new_terms) > 0,
                 }
                 
                 if is_hate_speech:
-                    messages.warning(request, f"⚠️ Potential hate speech detected by {model_used}!")
+                    messages.warning(request, f"Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()}")
+                    if new_terms:
+                        messages.info(request, f"{len(new_terms)} new trigger terms extracted for review.")
                 else:
-                    messages.success(request, "✅ No hate speech detected.")
+                    if lexicon_matches:
+                        messages.info(request, f"No hate speech detected. (Note: {len(lexicon_matches)} sensitive term(s) found, but context is neutral).")
+                    else:
+                        messages.success(request, "No hate speech detected.")
             else:
                 messages.warning(request, "Please enter text to scan")
-        
+
         return redirect('lexicon_management')
            
 class UploadDataView(TemplateView):
