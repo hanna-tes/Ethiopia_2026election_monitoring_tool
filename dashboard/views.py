@@ -5938,6 +5938,21 @@ class LexiconsView(TemplateView):
     CHUNK_SIZE = 1000           # Process posts in larger chunks
     CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
     
+    # ─ CATEGORY DISPLAY NAME MAPPING ─────────────────────────────────────
+    # Maps internal category keys to user-friendly display names
+    CATEGORY_DISPLAY_NAMES = {
+        'foreign_interference': 'Cross-Border Geopolitical Narratives',
+        'ethnic_identity': 'Ethnic Identity',
+        'political_groups': 'Political Groups',
+        'violence_incitement': 'Violence & Incitement',
+        'dehumanizing': 'Dehumanizing Language',
+        'election_governance': 'Election & Governance',
+        'religious_cultural': 'Religious & Cultural',
+        'gender_misogynistic': 'Gender-Based Misogyny',
+        'discriminatory_homophobic': 'Discriminatory & Homophobic',
+        'socio_economic_caste': 'Socio-Economic & Caste',
+    }
+    
     # Words that are too generic on their own and require secondary context markers
     GENERIC_TERMS_CONTEXT_MAP = {
         'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
@@ -6001,7 +6016,7 @@ class LexiconsView(TemplateView):
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
         
-        # ── 2. Cache (overview only, keyed to date range) ─────────────────
+        # ─ 2. Cache (overview only, keyed to date range) ─────────────────
         cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
         cached_data = cache.get(cache_key)
         
@@ -6137,8 +6152,14 @@ class LexiconsView(TemplateView):
         # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
         try:
             term_counts     = Counter([m['term']     for m in all_matches])
-            category_counts = Counter([m['category'] for m in all_matches])
+            raw_category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
+            
+            # Transform category keys to display names
+            category_counts = Counter()
+            for cat_key, count in raw_category_counts.items():
+                display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key.replace('_', ' ').title())
+                category_counts[display_name] = count
             
             if selected_category and category_terms:
                 top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
@@ -6161,7 +6182,7 @@ class LexiconsView(TemplateView):
             category_counts     = Counter()
             severity_counts     = Counter()
         
-        # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
+        # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
