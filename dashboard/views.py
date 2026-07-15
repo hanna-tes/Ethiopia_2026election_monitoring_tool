@@ -56,6 +56,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
 from django.contrib.auth.decorators import login_required
 from .utils.afro_xlmr_detector import get_detector
+from .your_detector_file import get_detector
 
 
 
@@ -170,6 +171,54 @@ Context: [Explanation of usage and severity]
         logger.error(f"LLM translation failed: {e}")
         # Return original terms without translation
         return amharic_terms
+
+# ==========================================
+# 1. DEFINE UTILITY FUNCTIONS (Put at top)
+# ==========================================
+
+def preprocess_and_clean_post(post_text, threshold=5):
+    """
+    Checks for hashtag stuffing. If the number of hashtags exceeds the threshold,
+    it strips them from the text so the classifier isn't misled.
+    
+    Returns:
+        cleaned_text (str): The text to be processed by the classifier.
+        confidence_flag (str): "normal" or "low-confidence"
+    """
+    hashtag_pattern = r'#\S+'
+    hashtags = re.findall(hashtag_pattern, post_text)
+    
+    if len(hashtags) > threshold:
+        # Strip all hashtags and clean up trailing/double whitespaces
+        cleaned_text = re.sub(hashtag_pattern, '', post_text)
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+        confidence_flag = "low-confidence"
+    else:
+        cleaned_text = post_text
+        confidence_flag = "normal"
+        
+    return cleaned_text, confidence_flag
+
+
+# ==========================================
+# 2. THE PROCESSING PIPELINE 
+# ==========================================
+
+def process_incoming_post(raw_post, classifier, publish_function):
+    # Step A: Clean the post
+    cleaned_text, confidence = preprocess_and_clean_post(raw_post, threshold=5)
+
+    # Step B: Use the passed classifier
+    category_prediction = classifier.predict(cleaned_text) 
+
+    # Step C: Drop if low-confidence
+    if confidence == "low-confidence":
+        print(f"Post dropped! Caught hashtag stuffing. (Predicted: {category_prediction})")
+        return False  
+
+    # Step D: Use the passed publish function
+    publish_function(category_prediction, raw_post)
+    return True
 
 def parse_llm_translations(response_text):
     """Parse LLM response to extract translations"""
