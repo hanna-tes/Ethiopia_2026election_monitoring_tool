@@ -185,9 +185,9 @@ OPENMEASURES_URL = env('OPENMEASURES_URL', default='')
 ORIGINAL_POSTS_URL = env('ORIGINAL_POSTS_URL', default='')
 PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
 
-# File upload limits
-FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+# Allow uploads up to 100MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100 MB in bytes
+FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100 MB in bytes
 
 # Gama model
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
