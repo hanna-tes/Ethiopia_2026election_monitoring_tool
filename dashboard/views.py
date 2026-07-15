@@ -19,7 +19,6 @@ import numpy as np
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from .utils.hate_speech_detector import get_hate_speech_detector
-from .utils.hate_speech_detector import get_hate_speech_detector
 from .utils.json_loader import get_disarm_ttp_reference
 from django.shortcuts import render, redirect
 from django.contrib import messages
