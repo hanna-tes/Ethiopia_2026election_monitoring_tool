@@ -3733,8 +3733,8 @@ CONFIG = {
             "Kaadiree qonqoo": {"severity": "high", "target_entity": "", "language": "Oromo"}
         },
         
-        # === Foreign Interference, Borders & Xenophobia ===
-        "foreign_interference": {
+        # === Cross-Border Geopolitical Narratives ===
+        "Cross-Border Geopolitical Narratives": {
             "ግብፅ": {"severity": "low", "target_entity": "Egypt", "language": "Amharic"},
             "egypt": {"severity": "low", "target_entity": "Egypt", "language": "English"},
             "ሱዳን": {"severity": "low", "target_entity": "Sudan", "language": "Amharic"},
@@ -6065,12 +6065,22 @@ class LexiconsView(TemplateView):
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
             
-            db_terms = LexiconTerm.objects.filter(category=selected_category)
+            # Initialize the variable to avoid UnboundLocalError
+            category_terms = []
+            
+            # 1. Look up using case-insensitive check in DB
+            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
-            elif selected_category in CONFIG.get('lexicon', {}):
-                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items()]
-            
+            else:
+                # 2. Case-insensitive fallback lookup in the CONFIG dictionary
+                config_lexicon = CONFIG.get('lexicon', {})
+                matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
+                
+                if matched_config_key:
+                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
+        
+            # This check is now completely safe!
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
@@ -6080,7 +6090,7 @@ class LexiconsView(TemplateView):
                     compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
                 except Exception:
                     compiled_category_re = None
-                
+                    
                 for post in scan_pool:
                     if self._check_timeout(start_time):
                         scan_timed_out = True
