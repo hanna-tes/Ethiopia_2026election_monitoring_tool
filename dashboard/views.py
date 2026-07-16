@@ -6124,8 +6124,8 @@ class LexiconsView(TemplateView):
         'socio_economic_caste': 'Socio-Economic & Caste',
     }
     
-    # Reverse mapping to translate UI names back to internal keys
-    DISPLAY_TO_CATEGORY = {v: k for k, v in CATEGORY_DISPLAY_NAMES.items()}
+    # Reverse mapping to translate UI names back to internal keys (FIXED NAME)
+    DISPLAY_TO_INTERNAL = {v: k for k, v in CATEGORY_DISPLAY_NAMES.items()}
     
     # Words that are too generic on their own and require secondary context markers
     GENERIC_TERMS_CONTEXT_MAP = {
@@ -6147,7 +6147,6 @@ class LexiconsView(TemplateView):
         term_clean = term.strip().lower()
         if term_clean in self.GENERIC_TERMS_CONTEXT_MAP:
             required_contexts = self.GENERIC_TERMS_CONTEXT_MAP[term_clean]
-            # Verify if at least one context-strengthening word is present
             if not any(context in text_lower for context in required_contexts):
                 return False
         return True
@@ -6163,7 +6162,6 @@ class LexiconsView(TemplateView):
         for m in raw_matches:
             if len(m['term'].strip()) <= 1:
                 continue
-            # Context Check: filter out generic keywords lacking supporting intent context
             if not self._is_valid_context(m['term'], text_lower):
                 continue
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
@@ -6191,8 +6189,6 @@ class LexiconsView(TemplateView):
         req_end   = self.request.GET.get('end_date', '')
         
         # Translate display name to internal key before processing
-        # e.g., "Cross-Border Geopolitical Narratives" becomes "foreign_interference"
-        # e.g., "Violence & Incitement" becomes "violence_incitement"
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
         # ── 2. Cache (overview only, keyed to date range) ─────────────────
@@ -6212,8 +6208,6 @@ class LexiconsView(TemplateView):
         # ── 3. Fetch posts ────────────────────────────────────────────────
         try:
             _, start_date, end_date = get_election_posts_queryset(self.request)
-            
-            # Build database conditions dynamically
             query_filters = {}
             if not view_all:
                 query_filters['timestamp_share__range'] = (start_date, end_date)
@@ -6230,7 +6224,6 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
-        # Expand limits safely. Category view gets 10k, Overview gets 5k to prevent timeouts.
         effective_limit = 10000 if selected_category else self.SCAN_LIMIT
         scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
         
@@ -6243,27 +6236,19 @@ class LexiconsView(TemplateView):
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
-            
-            # Initialize the variable to avoid UnboundLocalError
             category_terms = []
             
-            # 1. Look up using case-insensitive check in DB
             db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
-                # 2. Case-insensitive fallback lookup in the CONFIG dictionary
                 config_lexicon = CONFIG.get('lexicon', {})
                 matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
-                
                 if matched_config_key:
                     category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
         
-            # This check is now completely safe!
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
-                
-                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
                 regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
                 try:
                     compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
@@ -6278,14 +6263,13 @@ class LexiconsView(TemplateView):
                     posts_scanned += 1
                     if not post.original_text: continue
                     
-                    text       = post.original_text
+                    text = post.original_text
                     text_lower = text.lower()
                     
-                    # Instantly drops unrelated records out of processing loop
                     if compiled_category_re and not compiled_category_re.search(text_lower):
                         continue
                         
-                    is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
+                    is_inoc = bool(_INNOCUOUS_RE.search(text_lower))
                     matched_terms = []
                     
                     for term_lower, meta in term_meta.items():
@@ -6301,18 +6285,17 @@ class LexiconsView(TemplateView):
                     
                     if matched_terms:
                         posts_with_terms.append({
-                            'id':            post.id,
-                            'text':          text,
-                            'platform':      post.platform,
-                            'timestamp':     post.timestamp_share,
-                            'url':           post.url,
+                            'id': post.id,
+                            'text': text,
+                            'platform': post.platform,
+                            'timestamp': post.timestamp_share,
+                            'url': post.url,
                             'matched_terms': list(set(matched_terms))[:5],
-                            'detected_by':   'Lexicon',
-                            'confidence':    1.0,
+                            'detected_by': 'Lexicon',
+                            'confidence': 1.0,
                             'model_category': selected_category,
                         })
                 
-                # LLM translations block
                 unique_foreign_terms = {t for p in posts_with_terms for t in p.get('matched_terms', []) if re.search(r'[^\x00-\x7F]', t)}
                 if unique_foreign_terms:
                     translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
@@ -6322,15 +6305,12 @@ class LexiconsView(TemplateView):
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
-            
             for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
                     break
-                
                 posts_scanned += 1
                 if not post.original_text: continue
-                
                 try:
                     matches = self._scan_post(post.original_text)
                     if matches: 
@@ -6340,11 +6320,10 @@ class LexiconsView(TemplateView):
         
         # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
         try:
-            term_counts     = Counter([m['term']     for m in all_matches])
+            term_counts = Counter([m['term'] for m in all_matches])
             raw_category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
             
-            # Transform category keys to display names
             category_counts = Counter()
             for cat_key, count in raw_category_counts.items():
                 display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key.replace('_', ' ').title())
@@ -6368,10 +6347,10 @@ class LexiconsView(TemplateView):
         except Exception as e:
             logger.error(f"LexiconsView: aggregation error: {e}")
             top_terms_with_meta = []
-            category_counts     = Counter()
-            severity_counts     = Counter()
+            category_counts = Counter()
+            severity_counts = Counter()
         
-        # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
+        # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
@@ -6403,7 +6382,6 @@ class LexiconsView(TemplateView):
             'targeted_entities': targeted_entities
         }
         
-        # ── CACHE (only simple data, no model instances) ───────
         if not selected_category:
             try:
                 cache.set(cache_key, shared, self.CACHE_DURATION)
@@ -6412,7 +6390,7 @@ class LexiconsView(TemplateView):
                 logger.warning(f"Cache save failed: {e}")
         
         context.update(shared)
-        context['selected_category'] = raw_category  # Keep original for UI highlighting
+        context['selected_category'] = raw_category
         context['category_terms'] = category_terms
         context['posts_with_terms'] = posts_with_terms[:100]
         
