@@ -56,7 +56,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
 from django.contrib.auth.decorators import login_required
 from .utils.afro_xlmr_detector import get_detector
-from .your_detector_file import get_detector
+from .detectors import is_election_related
 
 
 
