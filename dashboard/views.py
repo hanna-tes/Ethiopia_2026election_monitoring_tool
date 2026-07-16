@@ -6314,20 +6314,30 @@ class LexiconsView(TemplateView):
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
-            
             for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
                     break
-                
                 posts_scanned += 1
-                if not post.original_text: continue
-                
+                if not post.original_text: 
+                    continue
                 try:
                     matches = self._scan_post(post.original_text)
-                    if matches: 
+                    if matches:
                         all_matches.extend(matches)
-                except Exception as e: 
+                        # ADD THIS BLOCK to populate posts_with_terms
+                        posts_with_terms.append({
+                            'id': post.id,
+                            'text': post.original_text,
+                            'platform': post.platform,
+                            'timestamp': post.timestamp_share,
+                            'url': post.url,
+                            'matched_terms': list(set([m['term'] for m in matches]))[:5],
+                            'detected_by': 'Lexicon',
+                            'confidence': 1.0,
+                            'model_category': matches[0]['category'] if matches else '',
+                        })
+                except Exception as e:
                     continue
         
         # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
