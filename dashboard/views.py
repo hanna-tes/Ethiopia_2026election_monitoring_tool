@@ -6125,7 +6125,7 @@ class LexiconsView(TemplateView):
     }
     
     # Reverse mapping to translate UI names back to internal keys
-    DISPLAY_TO_INTERNAL = {v: k for k, v in CATEGORY_DISPLAY_NAMES.items()}
+    DISPLAY_TO_CATEGORY = {v: k for k, v in CATEGORY_DISPLAY_NAMES.items()}
     
     # Words that are too generic on their own and require secondary context markers
     GENERIC_TERMS_CONTEXT_MAP = {
@@ -6192,9 +6192,10 @@ class LexiconsView(TemplateView):
         
         # Translate display name to internal key before processing
         # e.g., "Cross-Border Geopolitical Narratives" becomes "foreign_interference"
+        # e.g., "Violence & Incitement" becomes "violence_incitement"
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
-        # ─ 2. Cache (overview only, keyed to date range) ─────────────────
+        # ── 2. Cache (overview only, keyed to date range) ─────────────────
         cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
         cached_data = cache.get(cache_key)
         
