@@ -18,12 +18,12 @@
             <label class="block text-sm font-medium text-gray-700 mb-2">CSV Files</label>
             <!-- 
                Matches name="files" in Django request.FILES.getlist('files') 
-               Added client-side safety limits
+               Added client-side safety limits per file
             -->
             <input type="file" name="files" id="fileInput" accept=".csv" multiple required
                    class="block w-full text-sm text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
             <p class="mt-2 text-xs text-gray-500">
-                💡 Hold <strong>Ctrl/Cmd</strong> to select multiple files. Total files must be under <strong>500MB</strong>.
+                💡 Hold <strong>Ctrl/Cmd</strong> to select multiple files. Individual files can be up to <strong>500MB</strong> each.
             </p>
             <!-- JS Error Container -->
             <div id="fileError" class="hidden mt-2 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700 font-medium"></div>
@@ -120,31 +120,40 @@
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         const fileInput = document.getElementById("fileInput");
-        const uploadForm = document.getElementById("uploadForm");
         const fileError = document.getElementById("fileError");
         const submitBtn = document.getElementById("submitBtn");
 
-        const MAX_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB
+        const MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB limit per file
 
         fileInput.addEventListener("change", function () {
+            // Reset any previous states
             fileError.classList.add("hidden");
             fileError.innerHTML = "";
             submitBtn.disabled = false;
             submitBtn.classList.remove("opacity-50", "cursor-not-allowed");
 
-            let files = fileInput.files;
-            let totalSize = 0;
+            const files = fileInput.files;
+            let oversizedFiles = [];
 
+            // Inspect each file individually
             for (let i = 0; i < files.length; i++) {
-                totalSize += files[i].size;
+                if (files[i].size > MAX_FILE_SIZE_BYTES) {
+                    const fileSizeMB = (files[i].size / (1024 * 1024)).toFixed(2);
+                    oversizedFiles.push(`<li><strong>${files[i].name}</strong> (${fileSizeMB} MB)</li>`);
+                }
             }
 
-            if (totalSize > MAX_SIZE_BYTES) {
-                const totalMB = (totalSize / (1024 * 1024)).toFixed(2);
-                fileError.innerHTML = `⚠️ <strong>File size block:</strong> Selected files total <strong>${totalMB} MB</strong>. The system has a strict limit of 500 MB to prevent server crashes. Please split or optimize your dataset.`;
+            // If any single file is over 500MB, block submit and display custom message
+            if (oversizedFiles.length > 0) {
+                fileError.innerHTML = `
+                    <p class="font-bold mb-1">⚠️ File size limit exceeded:</p>
+                    <p class="mb-2">The following file(s) exceed the maximum limit of <strong>500 MB per file</strong>:</p>
+                    <ul class="list-disc pl-5 mb-2">${oversizedFiles.join('')}</ul>
+                    <p class="text-xs">Please split or compress these files before uploading.</p>
+                `;
                 fileError.classList.remove("hidden");
                 
-                // Disable form submit
+                // Disable submit button
                 submitBtn.disabled = true;
                 submitBtn.classList.add("opacity-50", "cursor-not-allowed");
             }
