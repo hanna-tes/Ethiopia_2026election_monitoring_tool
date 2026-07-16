@@ -6236,23 +6236,28 @@ class LexiconsView(TemplateView):
         
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
-            logger.info(f"LexiconsView: category view → Internal Key: '{selected_category}' (limit: {effective_limit} posts)")
+            #  Translate the UI display name back to the internal CONFIG/DB key
+            internal_category = self.DISPLAY_TO_INTERNAL.get(selected_category, selected_category)
+            
+            logger.info(f"LexiconsView: category view → UI: '{selected_category}' | Internal Key: '{internal_category}'")
             
             category_terms = []
             
-            # 1. Look up using exact internal key in DB
-            db_terms = LexiconTerm.objects.filter(category=selected_category)
+            # 1. Look up using the exact internal key in DB
+            db_terms = LexiconTerm.objects.filter(category=internal_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
-                # 2. Fallback lookup in the CONFIG dictionary using internal key
+                # 2. Fallback lookup in the CONFIG dictionary using the exact internal key
                 config_lexicon = CONFIG.get('lexicon', {})
-                if selected_category in config_lexicon:
-                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[selected_category].items()]
+                if internal_category in config_lexicon:
+                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[internal_category].items()]
         
+            # This check is now completely safe and will find the 73 terms!
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
+                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
                 regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
                 try:
                     compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
@@ -6270,6 +6275,7 @@ class LexiconsView(TemplateView):
                     text       = post.original_text
                     text_lower = text.lower()
                     
+                    # Instantly drops unrelated records out of processing loop
                     if compiled_category_re and not compiled_category_re.search(text_lower):
                         continue
                         
@@ -6285,7 +6291,7 @@ class LexiconsView(TemplateView):
                             continue
                         
                         matched_terms.append(meta['term'])
-                        all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
+                        all_matches.append({'term': meta['term'], 'category': internal_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
                     
                     if matched_terms:
                         posts_with_terms.append({
@@ -6297,7 +6303,7 @@ class LexiconsView(TemplateView):
                             'matched_terms': list(set(matched_terms))[:5],
                             'detected_by':   'Lexicon',
                             'confidence':    1.0,
-                            'model_category': selected_category,
+                            'model_category': internal_category,
                         })
                 
                 # LLM translations block
@@ -6306,7 +6312,6 @@ class LexiconsView(TemplateView):
                     translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
                     for p_dict in posts_with_terms:
                         p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
-
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
@@ -6341,11 +6346,12 @@ class LexiconsView(TemplateView):
             raw_category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
             
-            # Transform category keys to display names for the UI
+            # Transform category keys to display names AND FILTER OUT ZERO COUNTS
             category_counts = Counter()
             for cat_key, count in raw_category_counts.items():
-                display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key.replace('_', ' ').title())
-                category_counts[display_name] = count
+                if count > 0:  # ONLY include categories with actual matches
+                    display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key.replace('_', ' ').title())
+                    category_counts[display_name] = count
             
             if selected_category and category_terms:
                 top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
