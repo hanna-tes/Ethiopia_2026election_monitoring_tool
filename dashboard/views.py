@@ -6110,6 +6110,7 @@ class LexiconsView(TemplateView):
     CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
     
     # ─ CATEGORY DISPLAY NAME MAPPING ─────────────────────────────────────
+    # Maps internal category keys to user-friendly display names
     CATEGORY_DISPLAY_NAMES = {
         'foreign_interference': 'Cross-Border Geopolitical Narratives',
         'ethnic_identity': 'Ethnic Identity',
@@ -6123,13 +6124,13 @@ class LexiconsView(TemplateView):
         'socio_economic_caste': 'Socio-Economic & Caste',
     }
     
-    # Reverse mapping to translate UI display names back to internal keys
+    # Reverse mapping to translate UI names back to internal keys
     DISPLAY_TO_INTERNAL = {v: k for k, v in CATEGORY_DISPLAY_NAMES.items()}
     
     # Words that are too generic on their own and require secondary context markers
     GENERIC_TERMS_CONTEXT_MAP = {
         'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
-        'የውጭ': ['ጣልቃ-ገብነት', 'ተጽዕኖ', 'ገንዘብ', 'ምርጫ', ' ሴራ', 'እጅ', 'ጫና', 'ወኪል']
+        'ውጭ': ['ጣልቃ', 'ተዕኖ', 'ገንዘብ', 'ምርጫ', 'ሴራ', 'እጅ']
     }
 
     def _get_lexicon_term_count(self):
@@ -6146,6 +6147,7 @@ class LexiconsView(TemplateView):
         term_clean = term.strip().lower()
         if term_clean in self.GENERIC_TERMS_CONTEXT_MAP:
             required_contexts = self.GENERIC_TERMS_CONTEXT_MAP[term_clean]
+            # Verify if at least one context-strengthening word is present
             if not any(context in text_lower for context in required_contexts):
                 return False
         return True
@@ -6161,6 +6163,7 @@ class LexiconsView(TemplateView):
         for m in raw_matches:
             if len(m['term'].strip()) <= 1:
                 continue
+            # Context Check: filter out generic keywords lacking supporting intent context
             if not self._is_valid_context(m['term'], text_lower):
                 continue
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
@@ -6187,9 +6190,9 @@ class LexiconsView(TemplateView):
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
         
-        # Translate display name to internal key
-        # e.g., "Violence & Incitement" -> "violence_incitement"
-        selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category.lower().replace(' & ', '_').replace(' ', '_').replace('-', '_'))
+        # Translate display name to internal key before processing
+        # e.g., "Cross-Border Geopolitical Narratives" becomes "foreign_interference"
+        selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
         # ─ 2. Cache (overview only, keyed to date range) ─────────────────
         cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
@@ -6209,6 +6212,7 @@ class LexiconsView(TemplateView):
         try:
             _, start_date, end_date = get_election_posts_queryset(self.request)
             
+            # Build database conditions dynamically
             query_filters = {}
             if not view_all:
                 query_filters['timestamp_share__range'] = (start_date, end_date)
@@ -6225,6 +6229,7 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
         
+        # Expand limits safely. Category view gets 10k, Overview gets 5k to prevent timeouts.
         effective_limit = 10000 if selected_category else self.SCAN_LIMIT
         scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
         
@@ -6236,24 +6241,24 @@ class LexiconsView(TemplateView):
         
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
-            #  Translate the UI display name back to the internal CONFIG/DB key
-            internal_category = self.DISPLAY_TO_INTERNAL.get(selected_category, selected_category)
+            logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
             
-            logger.info(f"LexiconsView: category view → UI: '{selected_category}' | Internal Key: '{internal_category}'")
-            
+            # Initialize the variable to avoid UnboundLocalError
             category_terms = []
             
-            # 1. Look up using the exact internal key in DB
-            db_terms = LexiconTerm.objects.filter(category=internal_category)
+            # 1. Look up using case-insensitive check in DB
+            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
-                # 2. Fallback lookup in the CONFIG dictionary using the exact internal key
+                # 2. Case-insensitive fallback lookup in the CONFIG dictionary
                 config_lexicon = CONFIG.get('lexicon', {})
-                if internal_category in config_lexicon:
-                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[internal_category].items()]
+                matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
+                
+                if matched_config_key:
+                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
         
-            # This check is now completely safe and will find the 73 terms!
+            # This check is now completely safe!
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
@@ -6291,7 +6296,7 @@ class LexiconsView(TemplateView):
                             continue
                         
                         matched_terms.append(meta['term'])
-                        all_matches.append({'term': meta['term'], 'category': internal_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
+                        all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
                     
                     if matched_terms:
                         posts_with_terms.append({
@@ -6303,7 +6308,7 @@ class LexiconsView(TemplateView):
                             'matched_terms': list(set(matched_terms))[:5],
                             'detected_by':   'Lexicon',
                             'confidence':    1.0,
-                            'model_category': internal_category,
+                            'model_category': selected_category,
                         })
                 
                 # LLM translations block
@@ -6312,32 +6317,24 @@ class LexiconsView(TemplateView):
                     translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
                     for p_dict in posts_with_terms:
                         p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
+
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
+            
             for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
                     break
+                
                 posts_scanned += 1
-                if not post.original_text: 
-                    continue
+                if not post.original_text: continue
+                
                 try:
                     matches = self._scan_post(post.original_text)
-                    if matches:
+                    if matches: 
                         all_matches.extend(matches)
-                        posts_with_terms.append({
-                            'id': post.id,
-                            'text': post.original_text,
-                            'platform': post.platform,
-                            'timestamp': post.timestamp_share,
-                            'url': post.url,
-                            'matched_terms': list(set([m['term'] for m in matches]))[:5],
-                            'detected_by': 'Lexicon',
-                            'confidence': 1.0,
-                            'model_category': matches[0]['category'] if matches else '',
-                        })
-                except Exception as e:
+                except Exception as e: 
                     continue
         
         # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
@@ -6346,12 +6343,11 @@ class LexiconsView(TemplateView):
             raw_category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
             
-            # Transform category keys to display names AND FILTER OUT ZERO COUNTS
+            # Transform category keys to display names
             category_counts = Counter()
             for cat_key, count in raw_category_counts.items():
-                if count > 0:  # ONLY include categories with actual matches
-                    display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key.replace('_', ' ').title())
-                    category_counts[display_name] = count
+                display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key.replace('_', ' ').title())
+                category_counts[display_name] = count
             
             if selected_category and category_terms:
                 top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
@@ -6406,6 +6402,7 @@ class LexiconsView(TemplateView):
             'targeted_entities': targeted_entities
         }
         
+        # ── CACHE (only simple data, no model instances) ───────
         if not selected_category:
             try:
                 cache.set(cache_key, shared, self.CACHE_DURATION)
