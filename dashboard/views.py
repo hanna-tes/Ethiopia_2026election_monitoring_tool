@@ -1130,14 +1130,78 @@ def get_queryset(self):
         from django.utils import timezone
         qs = qs.filter(timestamp_share__gte=timezone.now() - timezone.timedelta(days=30))
     return qs.order_by('-timestamp_share')
+
+# Constants
+MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+def dynamically_map_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Scans an arbitrary DataFrame's columns and maps custom/generic headers 
+    to our standardized schema names:
+    - account_id
+    - original_text
+    - url
+    - timestamp_share
+    - platform
+    """
+    # Create mapping dictionary
+    mapping = {}
+
+    # Common aliases grouped by our target database/pipeline fields
+    aliases = {
+        'account_id': ['account_id', 'account', 'username', 'user', 'author', 'handle', 'sender', 'screen_name'],
+        'original_text': ['original_text', 'text', 'content', 'body', 'tweet', 'post', 'message', 'caption', 'description', 'comment'],
+        'url': ['url', 'link', 'uri', 'href', 'permalink', 'post_url'],
+        'timestamp_share': ['timestamp_share', 'timestamp', 'date', 'created_at', 'published', 'time', 'datetime', 'published_date'],
+        'platform': ['platform', 'source', 'channel', 'network', 'social_network']
+    }
+
+    # Match actual columns with aliases case-insensitively
+    for target_field, alias_list in aliases.items():
+        for col_name in df.columns:
+            clean_col = str(col_name).lower().strip()
+            if clean_col in alias_list:
+                mapping[col_name] = target_field
+                break  # Pick the first matching alias and move on to next target
+
+    if mapping:
+        df = df.rename(columns=mapping)
+
+    # --- Robust Fallbacks ---
     
+    # 1. Fallback for account_id
+    if 'account_id' not in df.columns:
+        df['account_id'] = 'Unknown'
+
+    # 2. Fallback for original_text (Crucial: Try to find a high-length text column if no headers matched)
+    if 'original_text' not in df.columns:
+        string_cols = df.select_dtypes(include=['object', 'string']).columns
+        if len(string_cols) > 0:
+            # Fallback to the text-type column with the highest average string length
+            fallback_col = max(string_cols, key=lambda c: df[c].astype(str).str.len().mean())
+            df = df.rename(columns={fallback_col: 'original_text'})
+        else:
+            df['original_text'] = ''
+
+    # 3. Fallback for other expected keys
+    if 'url' not in df.columns:
+        df['url'] = ''
+    if 'timestamp_share' not in df.columns:
+        df['timestamp_share'] = timezone.now()
+    if 'platform' not in df.columns:
+        df['platform'] = 'Generic CSV'
+
+    return df
+
+
 @never_cache  
 def dashboard_view(request):
     """Main Dashboard View with Sidebar Upload and Stats Reporting"""
     
     # 1. Handle File Uploads via POST
     if request.method == 'POST' and request.FILES.getlist('files'):
-        platform_type = request.POST.get('platform')
+        platform_type = request.POST.get('platform', 'generic')
         uploaded_files = request.FILES.getlist('files')
         
         stats = {
@@ -1148,34 +1212,54 @@ def dashboard_view(request):
         }
         
         for f in uploaded_files:
+            # --- FILE SIZE VALIDATION ---
+            if f.size > MAX_UPLOAD_SIZE_BYTES:
+                messages.error(
+                    request, 
+                    f"The file '{f.name}' exceeds our 500MB limit. "
+                    "Please optimize, compress, or split your CSV before uploading."
+                )
+                return redirect(request.POST.get('next', 'home'))
+
             try:
                 # Brandwatch needs specific handling (skiprows=6 for metadata)
                 if platform_type == 'brandwatch':
                     df = pd.read_csv(f, sep=',', low_memory=False, skiprows=6, on_bad_lines='skip')
                 else:
-                    
                     df = load_data_robustly(f) 
                 
                 stats['total_rows'] += len(df)
                 
-                # Normalize columns based on platform
-                if platform_type == 'meltwater':
-                    processed_df = combine_social_media_data(meltwater_df=df)
-                elif platform_type == 'tiktok':
-                    processed_df = combine_social_media_data(tiktok_df=df)
-                elif platform_type == 'openmeasure':
-                    processed_df = combine_social_media_data(openmeasures_df=df)
-                elif platform_type == 'brandwatch':
-                    processed_df = combine_social_media_data(brandwatch_df=df)
+                # Check if it is a known/hardcoded pipeline
+                known_platforms = ['meltwater', 'tiktok', 'openmeasure', 'brandwatch', 'civicsignals']
+                
+                if platform_type in known_platforms:
+                    # Leverage your existing fixed mappings
+                    if platform_type == 'meltwater':
+                        processed_df = combine_social_media_data(meltwater_df=df)
+                    elif platform_type == 'tiktok':
+                        processed_df = combine_social_media_data(tiktok_df=df)
+                    elif platform_type == 'openmeasure':
+                        processed_df = combine_social_media_data(openmeasures_df=df)
+                    elif platform_type == 'brandwatch':
+                        processed_df = combine_social_media_data(brandwatch_df=df)
+                    else:
+                        processed_df = combine_social_media_data(civicsignals_df=df)
                 else:
-                    processed_df = combine_social_media_data(civicsignals_df=df)
+                    # Dynamic Fallback pipeline: Handles ANY arbitrary or manually selected CSV dataset
+                    processed_df = dynamically_map_columns(df)
 
                 # ONE CLEAN LOOP
                 for _, row in processed_df.iterrows():
                     cid = row.get('content_id')
                     
+                    # Generate a unique content ID fallback if empty to prevent collision
+                    if not cid:
+                        text_hash = hashlib.md5(str(row.get('original_text', '')).encode('utf-8')).hexdigest()
+                        cid = f"gen_{text_hash[:16]}"
+                    
                     # Check for duplicates before saving
-                    if cid and ProcessedPost.objects.filter(content_id=cid).exists():
+                    if ProcessedPost.objects.filter(content_id=cid).exists():
                         stats['duplicates'] += 1
                         continue
                         
@@ -1183,13 +1267,11 @@ def dashboard_view(request):
                     source_obj, _ = DataSource.objects.get_or_create(name=source_name)
             
                     ProcessedPost.objects.create(
-                        account_id=str(row.get('account_id', ''))[:100],
+                        account_id=str(row.get('account_id', 'Unknown'))[:100],
                         content_id=cid,
-                        # Use 'original_text' which is the standardized column name
                         original_text=str(row.get('original_text', '')),
-                        
                         url=row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '',
-                        platform=row.get('Platform', platform_type.title()),
+                        platform=row.get('platform', platform_type.title()),
                         timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
                         source_dataset=source_obj,
                         is_election_related=is_election_related(str(row.get('original_text', '')))
@@ -1198,8 +1280,8 @@ def dashboard_view(request):
                 
                 stats['files_count'] += 1
             except Exception as e:
-                logger.error(f"Upload error: {e}")
-                messages.error(request, f"Error processing {f.name}")
+                logger.error(f"Upload error processing '{f.name}': {e}")
+                messages.error(request, f"Error processing '{f.name}'. Ensure it's a valid CSV format.")
 
         detail_msg = (
             f"<strong>Data Upload Details:</strong><br>"
@@ -1210,7 +1292,6 @@ def dashboard_view(request):
             f"• Duplicates ignored: {stats['duplicates']}"
         )
         messages.success(request, detail_msg)
-        
         return redirect(request.POST.get('next', 'home'))
 
     # 2. Page Load Logic (GET)
@@ -1237,7 +1318,6 @@ def dashboard_view(request):
     
     return render(request, 'dashboard.html', context)
     
-import re
 
 # Compile patterns once, reuse them forever
 _COMPILED_PATTERNS = {}
