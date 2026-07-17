@@ -6806,41 +6806,39 @@ class NetworksView(TemplateView):
         
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
-
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Load lexicon terms from DB, excluding single characters
+        # Unconditionally sync CONFIG lexicon to DB to ensure all terms are present.
+        for category, terms in CONFIG.get('lexicon', {}).items():
+            for term, metadata in terms.items():
+                if len(term.strip()) > 1:
+                    LexiconTerm.objects.get_or_create(
+                        term=term,
+                        defaults={
+                            'category': category,
+                            'severity': metadata.get('severity', 'medium'),
+                            'target_entity': metadata.get('target_entity', ''),
+                            'language': metadata.get('language', 'english'),
+                            'is_election_related': True
+                        }
+                    )
+        
+        # Load all lexicon terms from DB
         lexicon_terms = LexiconTerm.objects.exclude(
             term__regex=r'^.$'
         ).order_by('category', 'severity')
-
-        # If DB is empty, seed from CONFIG (one-time migration)
-        if not lexicon_terms.exists():
-            for category, terms in CONFIG['lexicon'].items():
-                for term, metadata in terms.items():
-                    if len(term.strip()) > 1:
-                        LexiconTerm.objects.get_or_create(
-                            term=term,
-                            defaults={
-                                'category': category,
-                                'severity': metadata.get('severity', 'medium'),
-                                'target_entity': metadata.get('target_entity', ''),
-                                'language': metadata.get('language', 'english'),
-                                'is_election_related': True
-                            }
-                        )
-            lexicon_terms = LexiconTerm.objects.exclude(
-                term__regex=r'^.$'
-            ).order_by('category', 'severity')
-
+        
+        # Get distinct categories for filter dropdown
+        categories = lexicon_terms.values_list('category', flat=True).distinct()
+        
         # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
-
+        
         # Only scan the most recent 3000 posts instead of all
         posts_to_scan = filtered_posts[:3000]
-        
         all_matches = []
         posts_scanned = 0
         
@@ -6855,22 +6853,19 @@ class LexiconManagementView(TemplateView):
                 except Exception as e:
                     logger.warning(f"Error scanning post {post.id}: {e}")
                     continue
-
-        # Get distinct categories for filter dropdown
-        categories = lexicon_terms.values_list('category', flat=True).distinct()
-
+        
         # Get scan results from session (if any) and clear immediately
         scan_results = self.request.session.pop('scan_results', None)
-
+        
         # Determine filter state for the template text
         view_all = self.request.GET.get('view_all') == 'true'
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
-
+        
         context.update({
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
             'categories': categories,
-            'total_terms': lexicon_terms.count(),
+            'total_terms': lexicon_terms.count(),  
             'critical_count': lexicon_terms.filter(severity='critical').count(),
             'amharic_count': lexicon_terms.filter(language='amharic').count(),
             'scan_results': scan_results,
@@ -6879,8 +6874,8 @@ class LexiconManagementView(TemplateView):
             'total_posts': total_posts_in_filter,
             'view_all': view_all,
             'has_custom_date_filter': has_custom_date_filter,
-            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
-            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
+            'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date),
+            'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date),
         })
         return context
 
