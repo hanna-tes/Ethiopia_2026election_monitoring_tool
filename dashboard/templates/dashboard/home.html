@@ -9,7 +9,7 @@
     <div class="flex items-start gap-4">
         <div class="hidden md:flex shrink-0 w-11 h-11 rounded-xl items-center justify-center"
              style="background:linear-gradient(135deg, rgba(34,211,238,.18), rgba(124,92,255,.18)); border:1px solid var(--line-strong);">
-            <span class="text-xl">️</span>
+            <span class="text-xl">🛰️</span>
         </div>
         <div class="flex-1">
             <div class="text-[11px] uppercase tracking-[0.14em] muted mb-1">Mission Brief</div>
@@ -138,7 +138,7 @@
 
     <div class="panel p-6 flex flex-col justify-between min-h-[420px]">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-display text-[15px] font-semibold text-slate-100">️ Risk Level Distribution</h3>
+            <h3 class="font-display text-[15px] font-semibold text-slate-100">⚠️ Risk Level Distribution</h3>
             <span class="chip">Signal</span>
         </div>
         <div class="relative w-full flex-1 min-h-[340px]">
@@ -152,7 +152,7 @@
 
     <div class="panel p-6 w-full flex flex-col min-h-[420px]">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-display text-[15px] font-semibold text-slate-100"> Daily Post Volume</h3>
+            <h3 class="font-display text-[15px] font-semibold text-slate-100">📈 Daily Post Volume</h3>
             <span class="chip">Trend</span>
         </div>
         <div class="relative w-full flex-1 min-h-[340px]">
@@ -162,7 +162,7 @@
 
     <div class="panel p-6 w-full flex flex-col min-h-[420px]">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-display text-[15px] font-semibold text-slate-100"> Top 10 Accounts by Activity</h3>
+            <h3 class="font-display text-[15px] font-semibold text-slate-100">👤 Top 10 Accounts by Activity</h3>
             <span class="chip">Ranking</span>
         </div>
         <div class="relative w-full flex-1 min-h-[340px]">
@@ -178,7 +178,7 @@
     <div class="flex items-center justify-between mb-5">
         <div class="flex items-center gap-3">
             <h3 class="font-display text-[16px] font-bold text-slate-100 flex items-center gap-2">
-                ️ High-Risk Actors
+                ⚠️ High-Risk Actors
             </h3>
             <span class="chip" style="background:rgba(248,113,113,.1); color:#fca5a5; border-color:rgba(248,113,113,.3);">
                 {{ risk_actors|length }} detected
@@ -201,7 +201,7 @@
                 <div class="min-w-0">
                     <h4 class="font-display font-bold text-slate-100 text-[15px] truncate">{{ actor.account_id }}</h4>
                     <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] muted mt-1.5">
-                        <span> {{ actor.platforms|join:', ' }}</span>
+                        <span>📱 {{ actor.platforms|join:', ' }}</span>
                         <span class="opacity-40">•</span>
                         <span>📅 Last seen: {{ actor.latest_post|date:"Y-m-d" }}</span>
                         <span class="opacity-40">•</span>
@@ -213,7 +213,7 @@
                     {% if actor.risk_category == 'disinformation_actor' %}
                     <span class="px-3 py-1 text-[11px] font-bold rounded-full text-white" style="background:#dc2626;">🔴 Disinformation</span>
                     {% elif actor.risk_category == 'coordinated_actor' %}
-                    <span class="px-3 py-1 text-[11px] font-bold rounded-full text-white" style="background:#ea580c;"> Coordinated</span>
+                    <span class="px-3 py-1 text-[11px] font-bold rounded-full text-white" style="background:#ea580c;">🟠 Coordinated</span>
                     {% elif actor.risk_category == 'high_risk_amplifier' %}
                     <span class="px-3 py-1 text-[11px] font-bold rounded-full text-slate-900" style="background:#facc15;">🟡 Amplifier</span>
                     {% elif actor.risk_category == 'media_monitoring' %}
@@ -254,7 +254,7 @@
 
 <div class="panel p-6 mb-10">
     <div class="flex items-center gap-3 mb-4">
-        <span class="text-xl">#️</span>
+        <span class="text-xl">#️⃣</span>
         <h3 class="font-display text-[16px] font-bold text-slate-100">Trending Hashtags</h3>
         <span class="chip" style="background:rgba(167,139,250,.1); color:#c4b5fd; border-color:rgba(167,139,250,.3);">
             Top {{ top_hashtags|length }}
@@ -275,7 +275,7 @@
     {% endif %}
 </div>
 
-<!--  TREND ANALYSIS SECTION -->
+<!-- TREND ANALYSIS SECTION -->
 {% if trend_analysis.chart_json %}
 <div class="panel p-6 mb-10">
     <div class="flex items-center justify-between mb-4">
@@ -335,130 +335,100 @@
 
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
-    // Enhanced dark theme with better visibility
+    // Enhanced Dark Theme Defaults for maximum visibility
     const darkLayout = {
         paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(15, 23, 42, 0.8)',
-        font: { 
-            family: 'Inter, sans-serif', 
-            color: '#e2e8f0', 
-            size: 13 
-        },
+        plot_bgcolor: 'rgba(15, 23, 42, 0.4)', // Slight background for plot area contrast
+        font: { family: 'Inter, sans-serif', color: '#e2e8f0', size: 12 },
+        // Vibrant color palette specifically chosen for dark backgrounds
+        colorway: ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#60a5fa', '#f472b6'],
         xaxis: { 
-            gridcolor: 'rgba(148,163,184,0.25)', 
-            linecolor: 'rgba(148,163,184,0.4)', 
-            zerolinecolor: 'rgba(148,163,184,0.3)',
-            tickfont: { color: '#94a3b8', size: 11 }
+            gridcolor: 'rgba(148,163,184,0.15)', 
+            linecolor: 'rgba(148,163,184,0.3)', 
+            zerolinecolor: 'rgba(148,163,184,0.2)',
+            tickfont: { color: '#94a3b8' }
         },
         yaxis: { 
-            gridcolor: 'rgba(148,163,184,0.25)', 
-            linecolor: 'rgba(148,163,184,0.4)', 
-            zerolinecolor: 'rgba(148,163,184,0.3)',
-            tickfont: { color: '#94a3b8', size: 11 }
+            gridcolor: 'rgba(148,163,184,0.15)', 
+            linecolor: 'rgba(148,163,184,0.3)', 
+            zerolinecolor: 'rgba(148,163,184,0.2)',
+            tickfont: { color: '#94a3b8' }
         },
-        margin: { l: 60, r: 30, t: 30, b: 60 },
+        margin: { l: 50, r: 20, t: 30, b: 50 },
         legend: { 
-            font: { color: '#e2e8f0', size: 12 },
+            font: { color: '#e2e8f0' },
             bgcolor: 'rgba(15, 23, 42, 0.6)',
-            bordercolor: 'rgba(148,163,184,0.3)',
+            bordercolor: 'rgba(148,163,184,0.2)',
             borderwidth: 1
         },
         hoverlabel: {
             bgcolor: 'rgba(15, 23, 42, 0.95)',
-            bordercolor: 'rgba(148,163,184,0.5)',
+            bordercolor: 'rgba(148,163,184,0.3)',
             font: { color: '#e2e8f0', size: 12, family: 'Inter, sans-serif' }
         }
     };
-    
+
     const mergeLayout = (l) => {
-        const base = JSON.parse(JSON.stringify(darkLayout));
+        const merged = JSON.parse(JSON.stringify(darkLayout));
         if (l) {
-            Object.assign(base, l);
-            if (l.xaxis) Object.assign(base.xaxis, l.xaxis);
-            if (l.yaxis) Object.assign(base.yaxis, l.yaxis);
-            if (l.legend) Object.assign(base.legend, l.legend);
+            Object.assign(merged, l);
+            if (l.xaxis) Object.assign(merged.xaxis, l.xaxis);
+            if (l.yaxis) Object.assign(merged.yaxis, l.yaxis);
+            if (l.legend) Object.assign(merged.legend, l.legend);
         }
-        return base;
+        return merged;
     };
+
+    // Helper function to force vibrant colors on traces if they are missing or white
+    function ensureVibrantColors(data) {
+        const vibrantColors = ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#60a5fa', '#f472b6'];
+        return data.map((trace, index) => {
+            const color = vibrantColors[index % vibrantColors.length];
+            
+            if (trace.type === 'scatter' || trace.type === 'line') {
+                trace.line = trace.line || {};
+                trace.line.color = trace.line.color || color;
+                trace.line.width = trace.line.width || 3; // Thicker lines for visibility
+                trace.marker = trace.marker || {};
+                trace.marker.color = trace.marker.color || color;
+                trace.marker.size = trace.marker.size || 6;
+            } else if (trace.type === 'bar') {
+                trace.marker = trace.marker || {};
+                trace.marker.color = trace.marker.color || color;
+                // Add a subtle border for better bar definition
+                trace.marker.line = { color: 'rgba(255,255,255,0.2)', width: 1 };
+            }
+            return trace;
+        });
+    }
 
     {% if charts.platform %}
     var platformData = {{ charts.platform|safe }};
-    // Ensure vibrant colors for platform chart
-    if (platformData.data && platformData.data[0]) {
-        platformData.data[0].marker = platformData.data[0].marker || {};
-        platformData.data[0].marker.color = platformData.data[0].marker.color || [
-            '#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'
-        ];
-        platformData.data[0].textfont = { color: '#0f172a', size: 12, family: 'Inter, sans-serif' };
-    }
+    platformData.data = ensureVibrantColors(platformData.data);
     Plotly.newPlot('chart-platform', platformData.data, mergeLayout(platformData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
     {% if charts.risk %}
     var riskData = {{ charts.risk|safe }};
-    // Ensure vibrant colors for risk chart
-    if (riskData.data && riskData.data[0]) {
-        riskData.data[0].marker = riskData.data[0].marker || {};
-        riskData.data[0].marker.colors = riskData.data[0].marker.colors || [
-            '#22c55e', '#eab308', '#f97316', '#dc2626'
-        ];
-        riskData.data[0].textfont = { color: '#0f172a', size: 12, family: 'Inter, sans-serif' };
-    }
+    riskData.data = ensureVibrantColors(riskData.data);
     Plotly.newPlot('chart-risk', riskData.data, mergeLayout(riskData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
     {% if charts.daily %}
     var dailyData = {{ charts.daily|safe }};
-    // Ensure visible line color for daily chart
-    if (dailyData.data && dailyData.data[0]) {
-        dailyData.data[0].line = dailyData.data[0].line || {};
-        dailyData.data[0].line.color = dailyData.data[0].line.color || '#06b6d4';
-        dailyData.data[0].line.width = 3;
-        dailyData.data[0].marker = dailyData.data[0].marker || {};
-        dailyData.data[0].marker.color = dailyData.data[0].marker.color || '#06b6d4';
-        dailyData.data[0].marker.size = 6;
-    }
+    dailyData.data = ensureVibrantColors(dailyData.data);
     Plotly.newPlot('chart-daily', dailyData.data, mergeLayout(dailyData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
     {% if charts.accounts %}
     var accountsData = {{ charts.accounts|safe }};
-    // Ensure vibrant colors for accounts chart
-    if (accountsData.data && accountsData.data[0]) {
-        accountsData.data[0].marker = accountsData.data[0].marker || {};
-        accountsData.data[0].marker.colorscale = accountsData.data[0].marker.colorscale || 'Viridis';
-        accountsData.data[0].textfont = { color: '#0f172a', size: 11, family: 'Inter, sans-serif' };
-    }
+    accountsData.data = ensureVibrantColors(accountsData.data);
     Plotly.newPlot('chart-accounts', accountsData.data, mergeLayout(accountsData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
-    // 🔥 TREND ANALYSIS CHART - Enhanced visibility
     {% if trend_analysis.chart_json %}
     var trendData = {{ trend_analysis.chart_json|safe }};
-    // Ensure all trend lines are visible with vibrant colors
-    if (trendData.data) {
-        const vibrantColors = [
-            '#06b6d4', // cyan
-            '#8b5cf6', // violet
-            '#10b981', // emerald
-            '#f59e0b', // amber
-            '#ef4444', // red
-            '#ec4899', // pink
-            '#6366f1', // indigo
-            '#14b8a6', // teal
-            '#f97316', // orange
-            '#84cc16'  // lime
-        ];
-        
-        trendData.data.forEach((trace, idx) => {
-            trace.line = trace.line || {};
-            trace.line.color = trace.line.color || vibrantColors[idx % vibrantColors.length];
-            trace.line.width = trace.line.width || 2.5;
-            trace.marker = trace.marker || {};
-            trace.marker.color = trace.marker.color || trace.line.color;
-            trace.marker.size = trace.marker.size || 5;
-        });
-    }
+    trendData.data = ensureVibrantColors(trendData.data);
     Plotly.newPlot('trendChart', trendData.data, mergeLayout(trendData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 </script>
