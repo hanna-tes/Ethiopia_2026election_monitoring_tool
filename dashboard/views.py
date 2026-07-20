@@ -1081,37 +1081,42 @@ def detect_hate_speech_llm_enhanced(text: str) -> dict:
     - Other (specify in explanation)
     """
     
-    # Use string concatenation instead of f-string to avoid syntax issues
+    # SAFE PROMPT CONSTRUCTION: Uses string concatenation to avoid editor syntax highlighting bugs
     prompt = (
-        "You are an expert hate speech analyst analyzing social media content from Ethiopia.\n\n"
-        "TEXT TO ANALYZE:\n"
-        f'"{text}"\n\n'
-        "INSTRUCTIONS:\n"
-        "1. Analyze the text carefully for hate speech, threats, or harmful content\n"
-        "2. Identify the PRIMARY category from these options (choose ONE):\n"
-        f"{category_options}\n"
-        "3. Provide specific context about:\n"
-        "   - Who is being targeted (ethnic group, religion, gender, etc.)\n"
-        "   - What specific harmful language is used\n"
-        "   - Whether it contains threats, slurs, or incitement\n"
-        "   - The overall tone and intent\n\n"
-        "4. Determine severity level: low, medium, high, or critical\n\n"
-        "5. Provide confidence score (0.0 to 1.0)\n\n"
-        "Return your analysis in this EXACT JSON format:\n"
-        '{\n'
-        '    "category": "Your chosen category",\n'
-        '    "explanation": "Detailed analysis with specific context about the content",\n'
-        '    "severity": "low|medium|high|critical",\n'
-        '    "confidence": 0.0-1.0,\n'
-        '    "is_hate_speech": true|false,\n'
-        '    "target_group": "Who is being targeted (or \'none\' if neutral)",\n'
-        '    "harmful_elements": ["list", "of", "specific", "harmful", "elements"]\n'
-        '}\n\n'
-        "Be specific and accurate. If the text mentions specific ethnic groups, religious groups, or individuals, name them in your analysis."
+        "You are an elite expert content moderator specialized in Ethiopian political discourse, Amharic sociolinguistics, ethnic conflict dynamics, and dangerous speech.\n\n"
+        "SYSTEM ROLE & GOAL:\n"
+        "Your task is to analyze social media text from Ethiopia and identify whether it contains hate speech, ethnic targeting, dehumanization, or dangerous atrocity claims.\n\n"
+        f"TEXT TO ANALYZE:\n\"{text}\"\n\n"
+        "ALLOWED CATEGORIES (Select the single best match):\n"
+        f"{category_options}\n\n"
+        "CRITICAL ETHIOPIAN DISCOURSE & MODERATION RULES:\n"
+        "1. ATROCITY ALLEGATIONS & SEXUAL VIOLENCE:\n"
+        "   - Posts alleging massacres, gang rape (e.g., \"መደፈር\", \"ለሶስት እንደፈሯት\"), or war crimes by ethnically labeled armed forces (e.g., \"የኦሮሙማ ወታሮች\", \"የአምሃ ኃይሎች\") must NEVER be classified as neutral news.\n"
+        "   - They are HIGH-RISK INCITEMENT / DANGEROUS SPEECH (Severity: HIGH or CRITICAL) because they are weaponized to drive immediate offline ethnic retaliation.\n\n"
+        "2. COLLECTIVE ETHNIC GUILT & ELITE CAPTURE:\n"
+        "   - Framing an entire ethnic group as \"looters\", \"thieves\", or \"monopolizing state assets\" (e.g., claiming \"all looters come from one family/ethnicity\" or \"Oromo/Oromuma took over all banks\") is NOT fair economic critique. It is Collective Guilt & Ethnic Generalization (Severity: HIGH).\n\n"
+        "3. ETHNIC SLURS & POLITICAL DOGWHISTLES:\n"
+        "   - Slurs & Subservient Terms: Words like \"ጋላ\" (Galla) or pairing ethnic groups with \"አሽከሮች\" (slaves/lackeys) are DEHUMANIZING SLURS (Severity: HIGH/CRITICAL).\n"
+        "   - Manipulated Names: Words like \"ብልግና\" (vulgarity) used to insult \"ብልጽግና\" (Prosperity Party) are political insults.\n"
+        "   - Opportunist Labels: Terms like \"ባለጊዜዎቹ\" used to dismiss an entire ethnic group as temporary illegitimate rulers carry targeted ethnic hostility.\n\n"
+        "4. FAIR CRITIQUE vs. HATE SPEECH:\n"
+        "   - FAIR CRITIQUE: Criticizing policy, economic inflation, or named state officials on performance grounds (e.g., \"The bank president mismanaged funds\").\n"
+        "   - HATE SPEECH: Attributing institutional failure or corruption to an entire ethnic identity or cultural concept (e.g., \"Oromuma is looting the country\").\n\n"
+        "RESPONSE FORMAT:\n"
+        "You must return your output strictly in JSON format. Do not add markdown outside the JSON block.\n\n"
+        "{\n"
+        "    \"category\": \"Chosen category from list\",\n"
+        "    \"explanation\": \"Detailed step-by-step reasoning grounded in the specialized rules above\",\n"
+        "    \"severity\": \"low|medium|high|critical\",\n"
+        "    \"confidence\": 0.0-1.0,\n"
+        "    \"is_hate_speech\": true|false,\n"
+        "    \"target_group\": \"Name of targeted group or 'none'\",\n"
+        "    \"harmful_elements\": [\"list\", \"of\", \"specific\", \"harmful\", \"phrases/elements\"]\n"
+        "}"
     )
     
     try:
-        response = safe_llm_call(prompt, max_tokens=500)
+        response = safe_llm_call(prompt, max_tokens=600)
         if not response:
             return {
                 'is_hate_speech': False,
@@ -1121,8 +1126,6 @@ def detect_hate_speech_llm_enhanced(text: str) -> dict:
                 'severity': 'low'
             }
         
-        # Extract JSON from response
-        # Try to find JSON in the response
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group(0))
@@ -1136,9 +1139,8 @@ def detect_hate_speech_llm_enhanced(text: str) -> dict:
                 'harmful_elements': result.get('harmful_elements', [])
             }
         else:
-            # Fallback: parse text response
             return {
-                'is_hate_speech': 'hate speech' in response.lower(),
+                'is_hate_speech': 'true' in response.lower() and 'is_hate_speech": true' in response.lower(),
                 'confidence': 0.5,
                 'category': 'uncategorized',
                 'explanation': response,
