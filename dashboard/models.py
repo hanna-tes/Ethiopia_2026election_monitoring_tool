@@ -171,6 +171,8 @@ class LexiconTerm(models.Model):
     )
     is_election_related = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
+    justification = models.TextField(blank=True, null=True, help_text="Why is this a trigger term?")
+
     
     def __str__(self):
         return f"{self.term} ({self.severity})"
