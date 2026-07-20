@@ -66,13 +66,50 @@ logger = logging.getLogger(__name__)
 _GEMMA_MODEL = None
 _GEMMA_TOKENIZER = None
 
+#Cache to merge CONFIG and Database lexicon terms
+_COMBINED_LEXICON_CACHE = None
+_CACHE_TIMESTAMP = 0
+
 def load_gemma_lora_model():
     """Gemma LoRA model - DISABLED due to RAM limitations """
     # TODO: Re-enable after upgrading EC2 instance to t3.xlarge (16GB RAM)
     logger.warning("Gemma LoRA model is DISABLED - insufficient RAM (current: 8GB, required: 16GB+)")
     return None, None
 
-
+def get_combined_lexicon():
+    """
+    Merges CONFIG lexicon with Database lexicon terms.
+    Cached for 60 seconds to prevent database hammering during scans.
+    """
+    global _COMBINED_LEXICON_CACHE, _CACHE_TIMESTAMP
+    import time
+    if _COMBINED_LEXICON_CACHE is None or (time.time() - _CACHE_TIMESTAMP) > 60:
+        try:
+            # Start with a copy of CONFIG lexicon
+            combined = {k: v.copy() for k, v in CONFIG.get("lexicon", {}).items()}
+            
+            # Fetch all active DB terms
+            db_terms = LexiconTerm.objects.filter(is_election_related=True).values(
+                'term', 'category', 'severity', 'target_entity', 'language'
+            )
+            for term_obj in db_terms:
+                cat = term_obj['category']
+                if cat not in combined:
+                    combined[cat] = {}
+                # DB terms override or add to CONFIG
+                combined[cat][term_obj['term']] = {
+                    'severity': term_obj['severity'],
+                    'target_entity': term_obj['target_entity'],
+                    'language': term_obj['language']
+                }
+            _COMBINED_LEXICON_CACHE = combined
+            _CACHE_TIMESTAMP = time.time()
+        except Exception as e:
+            logger.warning(f"Failed to load DB lexicon terms, falling back to CONFIG: {e}")
+            _COMBINED_LEXICON_CACHE = CONFIG.get("lexicon", {})
+            _CACHE_TIMESTAMP = time.time()
+    return _COMBINED_LEXICON_CACHE
+    
 WEAPONIZED_KEYWORDS = [
     # === ENGLISH: VIOLENCE & CONFLICT ===
     'genocide', 'kill', 'attack', 'war', 'slur', 'hate', 
@@ -1386,14 +1423,15 @@ def _get_cached_pattern(term, language):
 def scan_text_for_lexicon_terms(text, category_filter=None):
     """
     FAST PATH: Only regex matching - NO LLM calls during page load.
-    LLM extraction happens asynchronously via background tasks.
+    Combines CONFIG lexicon with Database lexicon terms.
     """
     if not isinstance(text, str) or not text.strip():
         return []
-    
     text_lower = text.lower()
     matches = []
-    lexicon = CONFIG.get("lexicon", {})
+    
+    #  Use the combined lexicon (CONFIG + Database)
+    lexicon = get_combined_lexicon()
     categories_to_check = category_filter if category_filter else lexicon.keys()
     
     # Neutral context indicators
@@ -1423,7 +1461,8 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                 )
                 if not has_hate_terms:
                     continue
-            pattern = _get_cached_pattern(term, metadata.get("language", "english"))
+            
+            pattern = get_cached_pattern(term, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
                     'term': term,
@@ -1433,8 +1472,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     'language': metadata.get('language', 'english'),
                     'source': 'Lexicon'
                 })
-    
-    return matches  
+    return matches 
 
 def auto_save_important_llm_terms(llm_terms):
     """
