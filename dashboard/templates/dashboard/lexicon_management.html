@@ -78,7 +78,7 @@
                 <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Extremism</span>
                 <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Ethnic Slur</span>
                 <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Misogynistic</span>
-                <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300">🟠 Slur</span>
+                <span class="px-3 py-1.5 bg-orange-950/40 border border-orange-800/60 rounded text-xs text-orange-300"> Slur</span>
                 
                 <span class="px-3 py-1.5 bg-yellow-950/40 border border-yellow-800/60 rounded text-xs text-yellow-300">🟡 Derogatory</span>
                 <span class="px-3 py-1.5 bg-yellow-950/40 border border-yellow-800/60 rounded text-xs text-yellow-300">🟡 Inflammatory</span>
@@ -91,7 +91,7 @@
                 <span class="px-3 py-1.5 bg-blue-950/40 border border-blue-800/60 rounded text-xs text-blue-300">🔵 Homophobic</span>
                 
                 <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Ancestry</span>
-                <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Class</span>
+                <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300"> Class</span>
                 <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Structural</span>
                 <span class="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded text-xs text-slate-300">⚪ Neutral</span>
             </div>
@@ -151,7 +151,7 @@
             </div>
             {% endif %}
             
-            <!-- 🎯 AFRO-XLMR Model Results (ONLY SHOW IF ACTIVE) -->
+            <!-- 🎯 AFRO-XLMR Model Results -->
             {% if scan_results.afro_xlmr_result and scan_results.afro_xlmr_result.category != 'error' %}
             <div class="mb-4 p-4 bg-gradient-to-br from-purple-950/40 to-indigo-950/40 rounded-lg border border-purple-800/60">
                 <div class="flex items-start justify-between mb-3">
@@ -180,7 +180,7 @@
                 {% endif %}
             </div>
             
-            <!-- ℹ️ FALLBACK: Show this if model is unavailable -->
+            <!-- ℹ️ FALLBACK -->
             {% elif scan_results.afro_xlmr_result and scan_results.afro_xlmr_result.category == 'error' %}
             <div class="mb-4 p-4 bg-slate-900/40 rounded-lg border border-slate-800/60">
                 <p class="text-sm text-slate-400">
@@ -189,13 +189,13 @@
             </div>
             {% endif %}
             
-            <!-- 🤖 LLM Detection Results (ENHANCED WITH CATEGORY) -->
+            <!-- 🤖 LLM Detection Results -->
             {% if scan_results.llm_result and scan_results.llm_result.category %}
             <div class="mb-4 p-4 bg-indigo-950/40 rounded-lg border border-indigo-800/60">
                 <div class="flex items-start justify-between mb-3">
                     <div>
                         <p class="text-sm font-semibold text-indigo-300 mb-1">
-                            <strong>🤖 LLM Semantic Analysis:</strong>
+                            <strong> LLM Semantic Analysis:</strong>
                         </p>
                         <div class="flex items-center gap-3 flex-wrap">
                             <span class="px-3 py-1 bg-indigo-600/30 border border-indigo-500/50 rounded-full text-indigo-200 text-sm font-semibold">
@@ -266,7 +266,7 @@
             </div>
             {% endif %}
             
-            <!-- LLM-Extracted Trigger Terms (Not in Lexicon Yet) -->
+            <!-- LLM-Extracted Trigger Terms -->
             {% if scan_results.new_trigger_terms and scan_results.has_new_terms %}
             <div class="mb-4 p-4 bg-purple-950/20 rounded-lg border border-purple-800/40">
                 <p class="text-sm font-semibold text-purple-300 mb-3 flex items-center gap-2">
@@ -362,35 +362,63 @@
 
     <div class="mb-8 p-6 bg-blue-950/20 rounded-lg border border-blue-900/40">
         <h3 class="text-lg font-semibold text-blue-400 mb-4">➕ Add New Term</h3>
-        <form method="post" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <form method="post" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="action" value="add_term">
-            <input type="text" name="term" placeholder="Term (supports Amharic, min 2 chars)" required class="p-2 dark-lex-input rounded text-sm">
-            <select name="category" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
-                {% for cat in categories %}<option value="{{ cat }}">{{ cat|title }}</option>{% endfor %}
-                <option value="uncategorized">Uncategorized</option>
-            </select>
-            <select name="severity" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-            </select>
-            <select name="language" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
-                <option value="amharic">Amharic</option>
-                <option value="english">English</option>
-                <option value="oromo">Oromo</option>
-                <option value="tigrinya">Tigrinya</option>
-                <option value="somali">Somali</option>
-            </select>
-            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold transition text-sm">Add Term</button>
+            
+            <!-- First Row: Term, Category, Severity -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <input type="text" name="term" placeholder="Term (supports Amharic, min 2 chars)" required 
+                       class="p-2 dark-lex-input rounded text-sm">
+                <select name="category" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
+                    {% for cat in categories %}<option value="{{ cat }}">{{ cat|title }}</option>{% endfor %}
+                    <option value="uncategorized">Uncategorized</option>
+                </select>
+                <select name="severity" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                </select>
+            </div>
+            
+            <!-- Second Row: Language and Target Entity -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select name="language" class="p-2 dark-lex-input rounded text-sm cursor-pointer">
+                    <option value="amharic">Amharic</option>
+                    <option value="english">English</option>
+                    <option value="oromo">Oromo</option>
+                    <option value="tigrinya">Tigrinya</option>
+                    <option value="somali">Somali</option>
+                </select>
+                <input type="text" name="target_entity" placeholder="Target Entity (e.g., Amhara, Oromo, Women)" 
+                       class="p-2 dark-lex-input rounded text-sm">
+            </div>
+            
+            <!-- Third Row: Justification/Reason -->
+            <div>
+                <label class="block text-sm font-medium text-slate-400 mb-2">
+                    <i class="fas fa-info-circle text-blue-400 mr-1"></i>
+                    Justification/Reason (Why is this a trigger term?)
+                </label>
+                <textarea name="justification" rows="3" 
+                          placeholder="Explain why this term is considered harmful, hate speech, or a trigger term. Include context about how it's used, what groups it targets, and why it's problematic..."
+                          class="w-full p-2 dark-lex-input rounded text-sm"></textarea>
+                <p class="text-xs text-slate-500 mt-1">
+                    Optional but recommended. Helps analysts understand the context and severity of the term.
+                </p>
+            </div>
+            
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold transition text-sm">
+                <i class="fas fa-plus mr-2"></i>Add Term
+            </button>
         </form>
     </div>
     
     <div class="mb-6">
         <h3 class="text-2xl font-bold text-white mb-2 flex items-center gap-3">
             <span class="bg-blue-600/20 border border-blue-500/40 rounded-lg px-4 py-2">
-                📋 {{ total_matches|default:0 }} Trigger Matches
+                 {{ total_matches|default:0 }} Trigger Matches
             </span>
             <span class="text-slate-400 font-normal text-lg">
                 found in {{ posts_scanned|default:0 }} posts
@@ -423,6 +451,7 @@
                         <th class="px-4 py-3 text-left border-b border-slate-800">Severity</th>
                         <th class="px-4 py-3 text-left border-b border-slate-800">Language</th>
                         <th class="px-4 py-3 text-left border-b border-slate-800">Target Entity</th>
+                        <th class="px-4 py-3 text-left border-b border-slate-800">Justification</th>
                         <th class="px-4 py-3 text-left border-b border-slate-800">Actions</th>
                     </tr>
                 </thead>
@@ -436,8 +465,9 @@
                         </td>
                         <td class="px-4 py-3 text-sm text-slate-400">{{ term.language|title }}</td>
                         <td class="px-4 py-3 text-sm text-slate-400">{{ term.target_entity|default:"—" }}</td>
+                        <td class="px-4 py-3 text-sm text-slate-400">{{ term.justification|default:"—" }}</td>
                         <td class="px-4 py-3 text-sm font-medium">
-                            <button type="button" onclick="openEditModal('{{ term.id }}', '{{ term.term|escapejs }}', '{{ term.category }}', '{{ term.severity }}', '{{ term.target_entity|default:""|escapejs }}', '{{ term.language }}')" class="text-blue-400 hover:text-blue-300 mr-3 transition">Edit</button>
+                            <button type="button" onclick="openEditModal('{{ term.id }}', '{{ term.term|escapejs }}', '{{ term.category }}', '{{ term.severity }}', '{{ term.target_entity|default:""|escapejs }}', '{{ term.language }}', '{{ term.justification|default:""|escapejs }}')" class="text-blue-400 hover:text-blue-300 mr-3 transition">Edit</button>
                             <form method="POST" class="inline">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="delete_term">
@@ -447,13 +477,14 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500 bg-slate-900/10 italic">No terms in lexicon. Add one above.</td></tr>
+                    <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500 bg-slate-900/10 italic">No terms in lexicon. Add one above.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
 
+    <!-- Edit Modal -->
     <div id="editModal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm overflow-y-auto h-full w-full z-50 transition-opacity">
         <div class="relative top-20 mx-auto p-5 border w-96 shadow-2xl rounded-xl bg-slate-900 border-slate-800 text-slate-100">
             <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-800">
@@ -500,6 +531,13 @@
                         <option value="tigrinya">Tigrinya</option>
                     </select>
                 </div>
+                <!-- Justification Field -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-400">Justification/Reason</label>
+                    <textarea name="justification" id="edit_justification" rows="3" 
+                              class="mt-1 block w-full rounded-md dark-lex-input p-2 text-sm"
+                              placeholder="Explain why this is a trigger term..."></textarea>
+                </div>
                 <div class="flex justify-end gap-2 pt-4 border-t border-slate-800">
                     <button type="button" onclick="closeEditModal()" class="px-4 py-2 bg-slate-800 text-slate-300 rounded-md hover:bg-slate-700 transition text-sm">Cancel</button>
                     <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-semibold">Save Changes</button>
@@ -510,13 +548,14 @@
 </div>
 
 <script>
-function openEditModal(id, term, category, severity, target, language) {
+function openEditModal(id, term, category, severity, target, language, justification='') {
     document.getElementById('edit_term_id').value = id;
     document.getElementById('edit_term').value = term;
     document.getElementById('edit_category').value = category;
     document.getElementById('edit_severity').value = severity;
     document.getElementById('edit_target_entity').value = target;
     document.getElementById('edit_language').value = language;
+    document.getElementById('edit_justification').value = justification || '';
     document.getElementById('editModal').classList.remove('hidden');
 }
 
