@@ -1082,32 +1082,35 @@ def detect_hate_speech_llm_enhanced(text: str) -> dict:
     """
     
     # Use string concatenation instead of f-string to avoid syntax issues
-    prompt = (
-        "You are an expert hate speech analyst analyzing social media content from Ethiopia.\n\n"
+     prompt = (
+        "You are an expert hate speech and disinformation analyst focusing on the Ethiopian socio-political context.\n\n"
         "TEXT TO ANALYZE:\n"
         f'"{text}"\n\n'
+        "CRITICAL CONTEXT RULES:\n"
+        "1. PERPETRATOR vs. VICTIM: You MUST distinguish between who is committing violence and who is being targeted. If a post describes crimes (e.g., sexual violence, killings) COMMITTED BY a specific group, that group is the PERPETRATOR. Do NOT classify the post as hate speech directed AT that group unless the text explicitly attacks or slurs them.\n"
+        "2. NEUTRAL DEMOGRAPHIC TERMS: Do NOT flag neutral words like 'youth' (ዳጊ ወት), 'women', 'civilians', 'soldiers', or 'children' as 'Dehumanizing' or 'Hate Speech' just because they appear in a post about violence. Only flag them if they are used as derogatory slurs.\n\n"
         "INSTRUCTIONS:\n"
-        "1. Analyze the text carefully for hate speech, threats, or harmful content\n"
+        "1. Analyze the text carefully for actual hate speech, threats, slurs, or harmful incitement.\n"
         "2. Identify the PRIMARY category from these options (choose ONE):\n"
         f"{category_options}\n"
         "3. Provide specific context about:\n"
-        "   - Who is being targeted (ethnic group, religion, gender, etc.)\n"
-        "   - What specific harmful language is used\n"
-        "   - Whether it contains threats, slurs, or incitement\n"
-        "   - The overall tone and intent\n\n"
+        "   - Who is the PERPETRATOR (if violence is described)?\n"
+        "   - Who is the actual TARGET/VICTIM of the hate speech (if any)?\n"
+        "   - What specific harmful language is used?\n"
+        "   - The overall tone and intent (e.g., factual reporting of crimes vs. inciting hatred).\n\n"
         "4. Determine severity level: low, medium, high, or critical\n\n"
         "5. Provide confidence score (0.0 to 1.0)\n\n"
         "Return your analysis in this EXACT JSON format:\n"
         '{\n'
         '    "category": "Your chosen category",\n'
-        '    "explanation": "Detailed analysis with specific context about the content",\n'
+        '    "explanation": "Detailed analysis. Explicitly state if the text is factual reporting of crimes vs hate speech, and identify the true target.",\n'
         '    "severity": "low|medium|high|critical",\n'
         '    "confidence": 0.0-1.0,\n'
         '    "is_hate_speech": true|false,\n'
-        '    "target_group": "Who is being targeted (or \'none\' if neutral)",\n'
+        '    "target_group": "The actual group being attacked/slandered (or \'none\' if it is factual reporting)",\n'
         '    "harmful_elements": ["list", "of", "specific", "harmful", "elements"]\n'
         '}\n\n'
-        "Be specific and accurate. If the text mentions specific ethnic groups, religious groups, or individuals, name them in your analysis."
+        "Be highly specific. If the text is reporting on atrocities committed by a group, set 'is_hate_speech' to false and 'target_group' to 'none' or the actual victims."
     )
     
     try:
