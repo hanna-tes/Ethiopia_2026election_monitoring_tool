@@ -6240,49 +6240,62 @@ class LexiconsView(TemplateView):
         
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
-            logger.info(f"LexiconsView: category view → Internal Key: '{selected_category}' (limit: {effective_limit} posts)")
-            
+            logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
+            # Initialize the variable to avoid UnboundLocalError
             category_terms = []
-            
-            # 1. Look up using exact internal key in DB
-            db_terms = LexiconTerm.objects.filter(category=selected_category)
+            # 1. Look up using case-insensitive check in DB
+            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
-                # 2. Fallback lookup in the CONFIG dictionary using exact internal key
+                # 2. Case-insensitive fallback lookup in the CONFIG dictionary
                 config_lexicon = CONFIG.get('lexicon', {})
-                if selected_category in config_lexicon:
-                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[selected_category].items()]
-        
+                matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
+                if matched_config_key:
+                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
             # This check is now completely safe!
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
-                
                 # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
                 regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
                 try:
                     compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
                 except Exception:
                     compiled_category_re = None
-                    
+                
+                # Track seen posts to avoid duplicates
+                seen_post_ids = set()
+                seen_post_texts = set()
+                
                 for post in scan_pool:
                     if self._check_timeout(start_time):
                         scan_timed_out = True
                         break
-                    
                     posts_scanned += 1
-                    if not post.original_text: continue
+                    if not post.original_text: 
+                        continue
+                    
+                    # Skip RT/retweet posts
+                    if post.original_text.strip().lower().startswith('rt ') or post.original_text.strip().lower().startswith('rt\n'):
+                        continue
+                    
+                    # Skip if we've already seen this post
+                    if post.id in seen_post_ids:
+                        continue
                     
                     text       = post.original_text
                     text_lower = text.lower()
                     
+                    # Skip if we've already seen this exact text content
+                    text_hash = hash(text.strip())
+                    if text_hash in seen_post_texts:
+                        continue
+                    
                     # Instantly drops unrelated records out of processing loop
                     if compiled_category_re and not compiled_category_re.search(text_lower):
                         continue
-                        
                     is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
                     matched_terms = []
-                    
                     for term_lower, meta in term_meta.items():
                         if term_lower not in text_lower:
                             continue
@@ -6290,11 +6303,13 @@ class LexiconsView(TemplateView):
                             continue
                         if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
                             continue
-                        
                         matched_terms.append(meta['term'])
                         all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
-                    
                     if matched_terms:
+                        # Mark this post as seen
+                        seen_post_ids.add(post.id)
+                        seen_post_texts.add(text_hash)
+                        
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text,
