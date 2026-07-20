@@ -1402,7 +1402,7 @@ def dashboard_view(request):
 # Compile patterns once, reuse them forever
 _COMPILED_PATTERNS = {}
 
-def _get_cached_pattern(term, language):
+def get_cached_pattern(term, language):  # 🔥 FIXED: Removed underscore
     """Get or compile a regex pattern, caching it to prevent memory spikes."""
     cache_key = f"{term}_{language}"
     
@@ -1430,7 +1430,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
     text_lower = text.lower()
     matches = []
     
-    #  Use the combined lexicon (CONFIG + Database)
+    # Use the combined lexicon (CONFIG + Database)
     lexicon = get_combined_lexicon()
     categories_to_check = category_filter if category_filter else lexicon.keys()
     
@@ -1462,6 +1462,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                 if not has_hate_terms:
                     continue
             
+            # This call now matches the function name above
             pattern = get_cached_pattern(term, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
@@ -1472,7 +1473,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     'language': metadata.get('language', 'english'),
                     'source': 'Lexicon'
                 })
-    return matches 
+    return matches
 
 def auto_save_important_llm_terms(llm_terms):
     """
