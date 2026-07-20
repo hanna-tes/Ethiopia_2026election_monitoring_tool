@@ -175,7 +175,7 @@ CACHES = {
 
 # Groq API
 GROQ_API_KEY = env('GROQ_API_KEY', default='')
-GROQ_MODEL = env('GROQ_MODEL', default='meta-llama/llama-4-scout-17b-16e-instruct')
+GROQ_MODEL = env('GROQ_MODEL', default='GPT OSS 120B')
 
 # Data source URLs
 MELTWATER_URL = env('MELTWATER_URL', default='')
