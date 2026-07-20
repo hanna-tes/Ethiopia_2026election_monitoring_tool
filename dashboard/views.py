@@ -4881,34 +4881,39 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
     """Use LLM to extract NEW trigger terms not in the lexicon."""
     if not text or len(text.strip()) < 20:
         return []
-    
+        
     existing_terms = set()
     if existing_matches:
         existing_terms = set(m['term'].lower() for m in existing_matches)
     for category, terms in CONFIG.get('lexicon', {}).items():
         existing_terms.update(t.lower() for t in terms.keys())
-    
+        
     existing_list = ', '.join(list(existing_terms)[:50])
     
-    # FIXED PROMPT: Now includes confidence score requirement
+    # 🔥 UPDATED PROMPT: Explicitly handles "Slur + Name" cases
     prompt = (
-        "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language) "
-        "from this text that are NOT already in the lexicon.\n"
+        "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language, harmful adjectives) "
+        "from this text that are NOT already in the lexicon.\n\n"
         "TEXT:\n"
-        '"' + text + '"\n'
+        '"' + text + '"\n\n'
         "EXISTING TERMS (do not extract these):\n"
-        + existing_list + "\n"
+        + existing_list + "\n\n"
+        "CRITICAL RULES:\n"
+        "- 🚫 NEVER extract personal names, politicians, or specific individuals (e.g., 'Abiy Ahmed', 'Margaret', 'John Doe').\n"
+        "- 🚫 NEVER extract neutral demographic terms like 'youth', 'women', 'soldiers' unless clearly used as a slur.\n"
+        "- ✅ SEPARATE SLURS FROM NAMES: If a harmful adjective or slur is attached to a person's name (e.g., 'Fascist Abiy Ahmed', 'Thief John', 'በሺስት አብይ አመድ'), extract ONLY the harmful word or phrase (e.g., 'Fascist', 'Thief', 'ፋሺስት'). Do NOT include the person's name in the extracted term.\n"
+        "- ✅ ONLY extract actual slurs, threats, dehumanizing phrases, or weaponized language.\n\n"
         "Return ONLY a valid JSON array. Each object must have:\n"
         '- "term": the exact phrase from the text\n'
         '- "category": one of [ethnic_identity, violence_incitement, dehumanizing, religious_cultural, gender_misogynistic, discriminatory_homophobic, socio_economic_caste, political_groups, foreign_interference, election_governance]\n'
         '- "severity": one of [low, medium, high, critical]\n'
         '- "target_entity": the group being targeted (e.g., Amhara, Oromo, Women) or empty string\n'
         '- "language": one of [Amharic, Oromo, English, Tigrinya, Somali]\n'
-        '- "confidence": A number between 0.0 and 1.0 representing your confidence (e.g., 0.95 for very confident, 0.7 for moderate)\n'
+        '- "confidence": A number between 0.0 and 1.0 representing your confidence\n\n'
         "EXAMPLE OUTPUT:\n"
         '[\n'
         '  {"term": "example slur", "category": "ethnic_identity", "severity": "high", "target_entity": "Group", "language": "Amharic", "confidence": 0.92}\n'
-        ']\n'
+        ']\n\n'
         "If no new terms found, return: []"
     )
     
@@ -4916,21 +4921,21 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
         response = safe_llm_call(prompt, max_tokens=1024)
         if not response:
             return []
-        
+            
         json_str = extract_first_json_array(response)
         if not json_str:
             logger.warning(f"No JSON array found in LLM response. Preview: {response[:200]}")
             return []
-        
+            
         try:
             extracted_terms = json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}. Preview: {json_str[:200]}")
             return []
-        
+            
         if not isinstance(extracted_terms, list):
             return []
-        
+            
         valid_terms = []
         valid_categories = ['ethnic_identity', 'violence_incitement', 'dehumanizing',
                            'religious_cultural', 'gender_misogynistic', 'discriminatory_homophobic',
@@ -4942,55 +4947,57 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
         for term_data in extracted_terms:
             if not isinstance(term_data, dict):
                 continue
-            
+                
             term = term_data.get('term', '').strip()
             if not term or len(term) < 2:
                 continue
-            
+                
             if term.lower() in existing_terms:
                 continue
-            
+                
+            # 🔥 PROGRAMMATIC FILTER: Drop terms that look like standard English proper names
+            if re.match(r'^[A-Za-z\s]+$', term) and term.istitle():
+                logger.info(f"Filtered out likely name: '{term}'")
+                continue
+                
             category = term_data.get('category', 'uncategorized')
             if category not in valid_categories:
                 category = 'uncategorized'
-            
+                
             severity = term_data.get('severity', 'medium')
             if severity not in valid_severities:
                 severity = 'medium'
-            
+                
             language = term_data.get('language', 'Amharic')
             if language not in valid_languages:
                 language = 'Amharic'
-            
-            # FIXED: Properly handle confidence score
-            confidence = term_data.get('confidence', 0.85)  # Default to 85% if not provided
+                
+            confidence = term_data.get('confidence', 0.85)
             try:
                 confidence = float(confidence)
-                # Ensure it's between 0 and 1
                 confidence = max(0.0, min(1.0, confidence))
             except (ValueError, TypeError):
-                confidence = 0.85  # Fallback to 85%
-            
+                confidence = 0.85
+                
             valid_terms.append({
                 'term': term,
                 'category': category,
                 'severity': severity,
                 'target_entity': term_data.get('target_entity', ''),
                 'language': language,
-                'confidence': round(confidence, 2),  # Round to 2 decimal places
+                'confidence': round(confidence, 2),
                 'source': 'LLM Extraction',
-                'context': text[:200]
+                'context': text[:300]
             })
-        
+            
         if valid_terms:
             logger.info(f"LLM extracted {len(valid_terms)} new trigger terms")
-        
         return valid_terms
         
     except Exception as e:
         logger.error(f"Error in LLM trigger term extraction: {e}")
         return []
-
+        
 def export_new_terms_csv(request):
     """Export new trigger terms detected by LLM to CSV"""
     # Get terms from session
