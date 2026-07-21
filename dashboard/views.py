@@ -7206,16 +7206,18 @@ class ProcessUploadView(View):
     def post(self, request):
         import os
         import uuid
-        import hashlib
         from django.utils import timezone
-        from django.core.cache import cache
         
-        logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
+        #  Match the HTML form's input names ('files' and 'platform')
+        uploaded_files = request.FILES.getlist('files')
+        data_type = request.POST.get('platform', 'generic')
+        source_name = request.POST.get('source_name', 'User Upload')
+        
+        logger.info(f"📥 Upload request: data_type={data_type}, source={source_name}")
         logger.info(f"📁 FILES: {list(request.FILES.keys())}")
         
-        uploaded_files = request.FILES.getlist('csv_files')
         if not uploaded_files:
-            messages.error(request, "No files received.")
+            messages.error(request, "No files received. Please check the file input name.")
             return redirect('upload_data')
         
         results = []
@@ -7232,130 +7234,105 @@ class ProcessUploadView(View):
                 # Save file
                 file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
                 full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-                logger.info(f"🔄 Processing: {original_name} -> {unique_filename}")
+                logger.info(f"🔄 Processing: {original_name} -> {unique_filename} ({uploaded_file.size / 1024 / 1024:.2f} MB)")
                 
                 # Create upload record
                 upload = DataUpload.objects.create(
                     uploaded_file=file_path,
                     original_filename=original_name,
                     uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
-                    data_type=request.POST.get('data_type', 'custom'),
+                    data_type=data_type,
                     status='processing'
                 )
                 
-                # === STREAMLIT-STYLE DATA PROCESSING ===
-                data_type = upload.data_type
-                
-                # === LOAD CSV WITH APPROPRIATE HANDLING ===
+                #  Use robust inline processing instead of the black-box process_uploaded_csv
                 if data_type == 'brandwatch':
                     df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore', skiprows=6)
                 else:
                     df = load_data_robustly(full_path)
                 
-                logger.info(f"📊 CSV Shape: {df.shape}")
-                logger.info(f"📋 CSV Columns: {list(df.columns)}")
+                logger.info(f"📊 Initial CSV Shape: {df.shape} | Columns: {list(df.columns)}")
                 
                 if df.empty:
-                    raise ValueError(f"Failed to load data from {original_name} - DataFrame is empty")
+                    raise ValueError("DataFrame is empty after loading")
                 
-                # === COMBINE/MAP DATA BASED ON SOURCE TYPE ===
+                # Combine/Map data based on source
                 if data_type == 'meltwater':
-                    combined_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
+                    combined_df = combine_social_media_data(meltwater_df=df)
                 elif data_type == 'civicsignals':
-                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=df)
+                    combined_df = combine_social_media_data(civicsignals_df=df)
                 elif data_type == 'tiktok':
-                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
+                    combined_df = combine_social_media_data(tiktok_df=df)
                 elif data_type == 'openmeasure':
-                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
+                    combined_df = combine_social_media_data(openmeasures_df=df)
                 elif data_type == 'brandwatch':
                     combined_df = combine_social_media_data(brandwatch_df=df)
                 else:
-                    # Custom/unknown format
                     combined_df = preprocess_dataframe(df)
                 
-                logger.info(f"📊 COMBINED DATA COLUMNS: {list(combined_df.columns)}")
-                logger.info(f"📊 COMBINED DATA SHAPE: {combined_df.shape}")
-                
-                # Ensure required columns exist
-                required_cols = ['account_id', 'original_text', 'URL', 'timestamp_share', 'Platform']
-                for col in required_cols:
-                    if col not in combined_df.columns:
-                        combined_df[col] = ''
-                        logger.warning(f"⚠️ Added missing column: {col}")
-                
-                # === FINAL PREPROCESSING ===
+                # Final preprocessing
                 processed_df = final_preprocess_and_map_columns(combined_df)
+                logger.info(f"📊 Processed Data Shape: {processed_df.shape} | Columns: {list(processed_df.columns)}")
                 
-                logger.info(f"📊 PROCESSED DATA COLUMNS: {list(processed_df.columns)}")
-                logger.info(f"📊 PROCESSED DATA SHAPE: {processed_df.shape}")
-                
-                # Parse timestamps with error handling
+                # Parse timestamps
                 if 'timestamp_share' in processed_df.columns:
                     processed_df['timestamp_share'] = processed_df['timestamp_share'].apply(
                         lambda x: parse_timestamp_robust(x) if pd.notna(x) else pd.NaT
                     )
                 
-                # === SAVE TO DATABASE ===
+                #  Save to Database with detailed skip tracking
                 count = 0
                 urls_saved = 0
-                errors = []
+                skipped_empty = 0
+                skipped_dup = 0
                 
                 for idx, row in processed_df.iterrows():
                     try:
-                        # Skip if no content
-                        if not row.get('original_text') or pd.isna(row.get('original_text')) or str(row.get('original_text', '')).strip() == '':
+                        text_val = str(row.get('original_text', '')).strip()
+                        if not text_val or text_val.lower() in ['nan', 'none', '']:
+                            skipped_empty += 1
                             continue
                         
-                        # Check for duplicates
-                        cid = row.get('content_id')
-                        url_val = row.get('url') or row.get('URL')
+                        cid = str(row.get('content_id', '')).strip()
+                        url_val = str(row.get('url') or row.get('URL', '')).strip()
                         
-                        if cid and ProcessedPost.objects.filter(content_id=cid).exists():
+                        # Check duplicates
+                        if cid and cid.lower() != 'nan' and ProcessedPost.objects.filter(content_id=cid).exists():
+                            skipped_dup += 1
                             continue
-                        if url_val and str(url_val).startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
+                        if url_val.startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
+                            skipped_dup += 1
                             continue
                         
-                        # Get or create DataSource
-                        source_name = str(row.get('source_dataset', data_type))
                         source_obj, _ = DataSource.objects.get_or_create(name=source_name)
-                        
-                        # Prepare URL value
-                        url_value = str(url_val).strip()[:500] if url_val and str(url_val).startswith('http') else None
+                        url_value = url_val[:500] if url_val.startswith('http') else None
                         if url_value:
                             urls_saved += 1
                         
-                        # Create post
                         ProcessedPost.objects.create(
-                            account_id=str(row.get('account_id', ''))[:100],
-                            content_id=str(cid).strip()[:100] if cid else None,
-                            original_text=str(row.get('original_text', '')).strip(),
+                            account_id=str(row.get('account_id', 'Unknown'))[:100],
+                            content_id=cid if cid and cid.lower() != 'nan' else None,
+                            original_text=text_val,
                             url=url_value,
                             platform=str(row.get('Platform', 'Unknown')),
                             timestamp_share=row.get('timestamp_share'),
                             source_dataset=source_obj,
-                            is_election_related=is_election_related(str(row.get('original_text', '')))
+                            is_election_related=is_election_related(text_val)
                         )
                         count += 1
-                        
                     except Exception as row_error:
-                        errors.append(f"Row {idx}: {str(row_error)}")
-                        logger.error(f"❌ Error processing row {idx}: {row_error}")
+                        logger.error(f"❌ Row {idx} error: {row_error}")
                         continue
                 
-                logger.info(f"✅ Saved {count} posts, {urls_saved} with URLs from {original_name}")
-                if errors:
-                    logger.warning(f"⚠️ {len(errors)} rows failed to process")
+                logger.info(f"✅ Saved: {count} | Skipped Empty: {skipped_empty} | Skipped Duplicates: {skipped_dup}")
                 
                 # Update record
                 upload.status = 'completed'
-                upload.processing_log = f"Successfully processed {count} posts ({urls_saved} with URLs)"
-                if errors:
-                    upload.processing_log += f". {len(errors)} rows skipped."
+                upload.processing_log = f"Saved: {count}, Empty: {skipped_empty}, Duplicates: {skipped_dup}"
                 upload.records_processed = count
                 upload.save()
                 
                 results.append((original_name, True, f"Processed {count} posts", count))
-                logger.info(f"✅ {original_name}: Processed {count} posts")
                 
             except Exception as e:
                 logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
@@ -7365,20 +7342,16 @@ class ProcessUploadView(View):
                     upload.save()
                 results.append((uploaded_file.name, False, str(e), 0))
         
-        # === SHOW SUMMARY ===
+        # Show summary in UI
         success_count = sum(1 for _, s, _, c in results if s and c > 0)
         total_saved = sum(c for _, s, _, c in results if s)
-    
         
         if total_saved > 0:
-            if success_count == len([r for r in results if r[1]]):
-                messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully! Saved {total_saved} posts.")
-            else:
-                messages.warning(request, f"⚠️ {success_count}/{len(uploaded_files)} files succeeded. Saved {total_saved} posts total.")
+            messages.success(request, f"✅ Successfully saved {total_saved} new posts!")
         elif not any(s for _, s, _, _ in results):
-            messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
+            messages.error(request, "❌ Failed to process files. Check terminal logs for details.")
         else:
-            messages.info(request, "ℹ️ Upload completed. No new posts matched criteria (check logs for details).")
+            messages.warning(request, f"⚠️ File processed, but 0 new posts were saved. They may be duplicates or have empty text. Check logs.")
         
         return redirect('upload_data')
         
