@@ -4763,7 +4763,7 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
                     )
                     
                     response = client.chat.completions.create(
-                        model="meta-llama/llama-4-scout-17b-16e-instruct",
+                        model="llama-3.3-70b-versatile",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.1,
                         max_tokens=10
@@ -5496,7 +5496,7 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
         )
 
         response = client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=10
@@ -7308,16 +7308,20 @@ class ProcessUploadView(View):
                         url_value = url_val[:500] if url_val.startswith('http') else None
                         if url_value:
                             urls_saved += 1
-                        
+                        # Convert Pandas NaT to None for Django
+                        ts_val = row.get('timestamp_share')
+                        if pd.isna(ts_val) or str(ts_val) == 'NaT':
+                            ts_val = None
+                            
                         ProcessedPost.objects.create(
-                            account_id=str(row.get('account_id', 'Unknown'))[:100],
-                            content_id=cid if cid and cid.lower() != 'nan' else None,
-                            original_text=text_val,
+                            account_id=str(row.get('account_id', ''))[:100],
+                            content_id=str(cid).strip()[:100] if cid else None,
+                            original_text=str(row.get('original_text', '')).strip(),
                             url=url_value,
                             platform=str(row.get('Platform', 'Unknown')),
-                            timestamp_share=row.get('timestamp_share'),
+                            timestamp_share=ts_val,  # <--- NOW SAFE FOR DJANGO
                             source_dataset=source_obj,
-                            is_election_related=is_election_related(text_val)
+                            is_election_related=is_election_related(str(row.get('original_text', '')))
                         )
                         count += 1
                     except Exception as row_error:
