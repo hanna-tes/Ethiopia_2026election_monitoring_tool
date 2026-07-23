@@ -275,7 +275,7 @@
     {% endif %}
 </div>
 
-<!-- 🔥 NEW: TREND ANALYSIS SECTION -->
+<!-- TREND ANALYSIS SECTION -->
 {% if trend_analysis.chart_json %}
 <div class="panel p-6 mb-10">
     <div class="flex items-center justify-between mb-4">
@@ -335,45 +335,100 @@
 
 <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
-
-    // Dark theme defaults for all charts
+    // Enhanced Dark Theme Defaults for maximum visibility
     const darkLayout = {
         paper_bgcolor: 'rgba(0,0,0,0)',
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        font: { family: 'Inter, sans-serif', color: '#cbd5e1', size: 12 },
-        xaxis: { gridcolor: 'rgba(148,163,184,0.1)', linecolor: 'rgba(148,163,184,0.2)', zerolinecolor: 'rgba(148,163,184,0.15)' },
-        yaxis: { gridcolor: 'rgba(148,163,184,0.1)', linecolor: 'rgba(148,163,184,0.2)', zerolinecolor: 'rgba(148,163,184,0.15)' },
-        margin: { l: 50, r: 20, t: 20, b: 50 },
-        legend: { font: { color: '#cbd5e1' } }
+        plot_bgcolor: 'rgba(15, 23, 42, 0.4)', // Slight background for plot area contrast
+        font: { family: 'Inter, sans-serif', color: '#e2e8f0', size: 12 },
+        // Vibrant color palette specifically chosen for dark backgrounds
+        colorway: ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#60a5fa', '#f472b6'],
+        xaxis: { 
+            gridcolor: 'rgba(148,163,184,0.15)', 
+            linecolor: 'rgba(148,163,184,0.3)', 
+            zerolinecolor: 'rgba(148,163,184,0.2)',
+            tickfont: { color: '#94a3b8' }
+        },
+        yaxis: { 
+            gridcolor: 'rgba(148,163,184,0.15)', 
+            linecolor: 'rgba(148,163,184,0.3)', 
+            zerolinecolor: 'rgba(148,163,184,0.2)',
+            tickfont: { color: '#94a3b8' }
+        },
+        margin: { l: 50, r: 20, t: 30, b: 50 },
+        legend: { 
+            font: { color: '#e2e8f0' },
+            bgcolor: 'rgba(15, 23, 42, 0.6)',
+            bordercolor: 'rgba(148,163,184,0.2)',
+            borderwidth: 1
+        },
+        hoverlabel: {
+            bgcolor: 'rgba(15, 23, 42, 0.95)',
+            bordercolor: 'rgba(148,163,184,0.3)',
+            font: { color: '#e2e8f0', size: 12, family: 'Inter, sans-serif' }
+        }
     };
-    const mergeLayout = (l) => Object.assign({}, darkLayout, l || {}, {
-        xaxis: Object.assign({}, darkLayout.xaxis, (l && l.xaxis) || {}),
-        yaxis: Object.assign({}, darkLayout.yaxis, (l && l.yaxis) || {})
-    });
+
+    const mergeLayout = (l) => {
+        const merged = JSON.parse(JSON.stringify(darkLayout));
+        if (l) {
+            Object.assign(merged, l);
+            if (l.xaxis) Object.assign(merged.xaxis, l.xaxis);
+            if (l.yaxis) Object.assign(merged.yaxis, l.yaxis);
+            if (l.legend) Object.assign(merged.legend, l.legend);
+        }
+        return merged;
+    };
+
+    // Helper function to force vibrant colors on traces if they are missing or white
+    function ensureVibrantColors(data) {
+        const vibrantColors = ['#22d3ee', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#60a5fa', '#f472b6'];
+        return data.map((trace, index) => {
+            const color = vibrantColors[index % vibrantColors.length];
+            
+            if (trace.type === 'scatter' || trace.type === 'line') {
+                trace.line = trace.line || {};
+                trace.line.color = trace.line.color || color;
+                trace.line.width = trace.line.width || 3; // Thicker lines for visibility
+                trace.marker = trace.marker || {};
+                trace.marker.color = trace.marker.color || color;
+                trace.marker.size = trace.marker.size || 6;
+            } else if (trace.type === 'bar') {
+                trace.marker = trace.marker || {};
+                trace.marker.color = trace.marker.color || color;
+                // Add a subtle border for better bar definition
+                trace.marker.line = { color: 'rgba(255,255,255,0.2)', width: 1 };
+            }
+            return trace;
+        });
+    }
 
     {% if charts.platform %}
     var platformData = {{ charts.platform|safe }};
+    platformData.data = ensureVibrantColors(platformData.data);
     Plotly.newPlot('chart-platform', platformData.data, mergeLayout(platformData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
     {% if charts.risk %}
     var riskData = {{ charts.risk|safe }};
+    riskData.data = ensureVibrantColors(riskData.data);
     Plotly.newPlot('chart-risk', riskData.data, mergeLayout(riskData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
     {% if charts.daily %}
     var dailyData = {{ charts.daily|safe }};
+    dailyData.data = ensureVibrantColors(dailyData.data);
     Plotly.newPlot('chart-daily', dailyData.data, mergeLayout(dailyData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
     {% if charts.accounts %}
     var accountsData = {{ charts.accounts|safe }};
+    accountsData.data = ensureVibrantColors(accountsData.data);
     Plotly.newPlot('chart-accounts', accountsData.data, mergeLayout(accountsData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 
-    // 🔥 TREND ANALYSIS CHART - Now safely after mergeLayout is defined
     {% if trend_analysis.chart_json %}
     var trendData = {{ trend_analysis.chart_json|safe }};
+    trendData.data = ensureVibrantColors(trendData.data);
     Plotly.newPlot('trendChart', trendData.data, mergeLayout(trendData.layout), {responsive: true, displayModeBar: false});
     {% endif %}
 </script>

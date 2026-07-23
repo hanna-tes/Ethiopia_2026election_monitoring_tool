@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'huey.contrib.djhuey',
+    'django_q',
     
     # Third-party
     'rest_framework',
@@ -148,9 +150,32 @@ REST_FRAMEWORK = {
 # CORS
 CORS_ALLOW_ALL_ORIGINS = True
 
+# Django-Q2 Configuration using Redis Broker
+Q_CLUSTER = {
+    'name': 'ethiopia_monitor_cluster',
+    'workers': 2,                # Number of parallel worker processes
+    'recycle': 500,              # Restart workers after 500 tasks to prevent memory leaks
+    'timeout': 600,              # Automatically time out a task if it takes more than 10 mins
+    'retry': 700,                # Retry time slightly higher than timeout
+    'django_redis': 'default',   # Tells Django-Q to use your existing Redis cache config
+}
+
+# ── REDIS CACHE ──────────────────────────────────────────────
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+        }
+    }
+}
+
 # Groq API
 GROQ_API_KEY = env('GROQ_API_KEY', default='')
-GROQ_MODEL = env('GROQ_MODEL', default='meta-llama/llama-4-scout-17b-16e-instruct')
+GROQ_MODEL = env('GROQ_MODEL', default='llama-3.3-70b-versatile')
 
 # Data source URLs
 MELTWATER_URL = env('MELTWATER_URL', default='')
@@ -160,9 +185,10 @@ OPENMEASURES_URL = env('OPENMEASURES_URL', default='')
 ORIGINAL_POSTS_URL = env('ORIGINAL_POSTS_URL', default='')
 PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
 
-# File upload limits
-FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50MB
+# Allow uploads up to 100MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 534773760  # 510 MB (510 * 1024 * 1024)
+
+FILE_UPLOAD_MAX_MEMORY_SIZE = 26214400  # 25 MB
 
 # Gama model
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

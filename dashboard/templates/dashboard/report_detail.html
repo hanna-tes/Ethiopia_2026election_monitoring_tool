@@ -34,8 +34,8 @@
 <div class="max-w-7xl mx-auto px-6 py-12">
     {% if report.summary %}
     <section class="mb-12">
-        <h2 class="text-2xl font-bold text-gray-900 mb-4" style="color: #111827 !important;">Overview</h2>
-        <div class="prose prose-lg max-w-none text-gray-700 leading-relaxed bg-gray-50 p-6 rounded-xl border border-gray-200" style="color: #374151 !important;">
+        <h2 class="text-2xl font-bold text-white mb-4" style="color: #f8fafc !important;">Overview</h2>
+        <div class="prose prose-lg max-w-none text-slate-300 leading-relaxed bg-slate-900/40 p-6 rounded-xl border border-slate-800" style="color: #cbd5e1 !important;">
             {{ report.summary|linebreaks }}
         </div>
     </section>
@@ -43,10 +43,10 @@
 
     {% if report.report_includes %}
     <section class="mb-12">
-        <h2 class="text-2xl font-bold text-gray-900 mb-4" style="color: #111827 !important;">This report includes:</h2>
+        <h2 class="text-2xl font-bold text-white mb-4" style="color: #f8fafc !important;">This report includes:</h2>
         <ul class="space-y-3">
             {% for item in report.report_includes %}
-            <li class="flex items-start gap-3 text-gray-700" style="color: #374151 !important;">
+            <li class="flex items-start gap-3 text-slate-300" style="color: #cbd5e1 !important;">
                 <span class="flex-shrink-0 w-6 h-6 bg-blue-800 text-white rounded-full flex items-center justify-center text-xs font-bold mt-0.5" style="background-color: #1e40af !important;">
                     {{ forloop.counter }}
                 </span>
@@ -59,8 +59,8 @@
 
     {% if report.key_findings %}
     <section class="mb-12">
-        <h2 class="text-2xl font-bold text-gray-900 mb-4" style="color: #111827 !important;">Key Findings</h2>
-        <div class="bg-blue-900 text-white rounded-xl p-6 shadow-lg" style="background-color: #1e3a8a !important;">
+        <h2 class="text-2xl font-bold text-white mb-4" style="color: #f8fafc !important;">Key Findings</h2>
+        <div class="bg-blue-900/40 text-white rounded-xl p-6 shadow-lg border border-blue-800/50" style="background-color: rgba(30, 58, 138, 0.4) !important;">
             <ul class="space-y-3">
                 {% for finding in report.key_findings %}
                 <li class="flex items-start gap-3">
@@ -74,7 +74,7 @@
     {% endif %}
 
     <!-- Download Section -->
-    <section class="mt-12 pt-8 border-t-2 border-gray-300 flex flex-wrap gap-4">
+    <section class="mt-12 pt-8 border-t-2 border-slate-800 flex flex-wrap gap-4">
         {% if report.report_file %}
         <a href="{{ report.report_file.url }}" download 
            class="inline-flex items-center gap-3 px-8 py-4 bg-blue-900 text-white text-lg font-semibold rounded-lg hover:bg-blue-800 transition-colors shadow-lg"
@@ -86,15 +86,15 @@
         
         {% if report.full_report_url %}
         <a href="{{ report.full_report_url }}" target="_blank" 
-           class="inline-flex items-center gap-3 px-8 py-4 bg-gray-200 text-gray-800 text-lg font-semibold rounded-lg hover:bg-gray-300 transition-colors"
-           style="background-color: #e5e7eb !important; color: #111827 !important;">
+           class="inline-flex items-center gap-3 px-8 py-4 bg-slate-800 text-slate-100 text-lg font-semibold rounded-lg hover:bg-slate-700 transition-colors border border-slate-700"
+           style="background-color: #1e293b !important; color: #f8fafc !important;">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
             View External Link
         </a>
         {% endif %}
     </section>
     
-    <p class="mt-6 text-sm text-gray-600" style="color: #4b5563 !important;">
+    <p class="mt-6 text-sm text-slate-400" style="color: #94a3b8 !important;">
         Published: {{ report.uploaded_at|date:"F d, Y" }} &nbsp;|&nbsp; Analyst: {{ report.source_analyst }}
     </p>
 </div>

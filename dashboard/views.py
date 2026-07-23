@@ -19,7 +19,6 @@ import numpy as np
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from .utils.hate_speech_detector import get_hate_speech_detector
-from .utils.hate_speech_detector import get_hate_speech_detector
 from .utils.json_loader import get_disarm_ttp_reference
 from django.shortcuts import render, redirect
 from django.contrib import messages
@@ -57,6 +56,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
 from django.contrib.auth.decorators import login_required
 from .utils.afro_xlmr_detector import get_detector
+from .detectors import is_election_related
 
 
 
@@ -66,13 +66,50 @@ logger = logging.getLogger(__name__)
 _GEMMA_MODEL = None
 _GEMMA_TOKENIZER = None
 
+#Cache to merge CONFIG and Database lexicon terms
+_COMBINED_LEXICON_CACHE = None
+_CACHE_TIMESTAMP = 0
+
 def load_gemma_lora_model():
     """Gemma LoRA model - DISABLED due to RAM limitations """
     # TODO: Re-enable after upgrading EC2 instance to t3.xlarge (16GB RAM)
     logger.warning("Gemma LoRA model is DISABLED - insufficient RAM (current: 8GB, required: 16GB+)")
     return None, None
 
-
+def get_combined_lexicon():
+    """
+    Merges CONFIG lexicon with Database lexicon terms.
+    Cached for 60 seconds to prevent database hammering during scans.
+    """
+    global _COMBINED_LEXICON_CACHE, _CACHE_TIMESTAMP
+    import time
+    if _COMBINED_LEXICON_CACHE is None or (time.time() - _CACHE_TIMESTAMP) > 60:
+        try:
+            # Start with a copy of CONFIG lexicon
+            combined = {k: v.copy() for k, v in CONFIG.get("lexicon", {}).items()}
+            
+            # Fetch all active DB terms
+            db_terms = LexiconTerm.objects.filter(is_election_related=True).values(
+                'term', 'category', 'severity', 'target_entity', 'language'
+            )
+            for term_obj in db_terms:
+                cat = term_obj['category']
+                if cat not in combined:
+                    combined[cat] = {}
+                # DB terms override or add to CONFIG
+                combined[cat][term_obj['term']] = {
+                    'severity': term_obj['severity'],
+                    'target_entity': term_obj['target_entity'],
+                    'language': term_obj['language']
+                }
+            _COMBINED_LEXICON_CACHE = combined
+            _CACHE_TIMESTAMP = time.time()
+        except Exception as e:
+            logger.warning(f"Failed to load DB lexicon terms, falling back to CONFIG: {e}")
+            _COMBINED_LEXICON_CACHE = CONFIG.get("lexicon", {})
+            _CACHE_TIMESTAMP = time.time()
+    return _COMBINED_LEXICON_CACHE
+    
 WEAPONIZED_KEYWORDS = [
     # === ENGLISH: VIOLENCE & CONFLICT ===
     'genocide', 'kill', 'attack', 'war', 'slur', 'hate', 
@@ -106,6 +143,49 @@ WEAPONIZED_KEYWORDS = [
     'PP', 'nafxanyaa'
 ]
 
+
+def should_process_post(text: str) -> bool:
+    """
+    Allows all posts through EXCEPT those that have no mention of Ethiopian 
+    affairs/geography or are clearly spam/walls of irrelevant hashtags.
+    """
+    if not text:
+        return False
+        
+    text_lower = text.lower()
+    
+    # 1. Broadest possible anchors to confirm the post is about Ethiopia/local affairs
+    ethiopian_anchors = [
+        "ethiopia", "etiopia", "itopia", "habesha", "addis", "orom", "amhar", 
+        "tigray", "somali", "afar", "sidama", "fano", "shene", "ager", "hizb", 
+        "hezb", "biher", "gosa", "abiy", "prosperity", "pp", "tplf"
+    ]
+    
+    has_local_context = any(anchor in text_lower for anchor in ethiopian_anchors)
+    
+    # 2. Identify hashtag spam not talking about Ethiopian affairs
+    # Find all hashtags in the text
+    hashtags = re.findall(r"#\w+", text_lower)
+    
+    if hashtags:
+        # Define high-frequency non-Ethiopian spam hashtags
+        spam_hashtags = {
+            "#crypto", "#bitcoin", "#nft", "#forex", "#marketing", "#digitalmarketing",
+            "#makeup", "#fashion", "#travel", "#football", "#cricket", "#ecommerce", 
+            "#jobs", "#hiring", "#win", "#giveaway", "#fitness", "#motivation"
+        }
+        
+        # Count how many spam hashtags are present
+        spam_count = sum(1 for tag in hashtags if tag in spam_hashtags)
+        
+        # If MORE THAN HALF of the hashtags are completely unrelated spam, drop it
+        if len(hashtags) >= 3 and (spam_count / len(hashtags)) > 0.5:
+            return False
+
+    # 3. Final Decision: Keep it if it has local context, or if it's just regular text
+    # (We only reject if it explicitly matches the spam rules or completely lacks local context)
+    return has_local_context
+    
 def detect_hate_speech_afro_xlmr(text: str) -> dict:
     """
     Detect hate speech using AFRO-XLMR model
@@ -172,6 +252,54 @@ Context: [Explanation of usage and severity]
         # Return original terms without translation
         return amharic_terms
 
+# ==========================================
+# 1. DEFINE UTILITY FUNCTIONS (Put at top)
+# ==========================================
+
+def preprocess_and_clean_post(post_text, threshold=5):
+    """
+    Checks for hashtag stuffing. If the number of hashtags exceeds the threshold,
+    it strips them from the text so the classifier isn't misled.
+    
+    Returns:
+        cleaned_text (str): The text to be processed by the classifier.
+        confidence_flag (str): "normal" or "low-confidence"
+    """
+    hashtag_pattern = r'#\S+'
+    hashtags = re.findall(hashtag_pattern, post_text)
+    
+    if len(hashtags) > threshold:
+        # Strip all hashtags and clean up trailing/double whitespaces
+        cleaned_text = re.sub(hashtag_pattern, '', post_text)
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+        confidence_flag = "low-confidence"
+    else:
+        cleaned_text = post_text
+        confidence_flag = "normal"
+        
+    return cleaned_text, confidence_flag
+
+
+# ==========================================
+# 2. THE PROCESSING PIPELINE 
+# ==========================================
+
+def process_incoming_post(raw_post, classifier, publish_function):
+    # Step A: Clean the post
+    cleaned_text, confidence = preprocess_and_clean_post(raw_post, threshold=5)
+
+    # Step B: Use the passed classifier
+    category_prediction = classifier.predict(cleaned_text) 
+
+    # Step C: Drop if low-confidence
+    if confidence == "low-confidence":
+        print(f"Post dropped! Caught hashtag stuffing. (Predicted: {category_prediction})")
+        return False  
+
+    # Step D: Use the passed publish function
+    publish_function(category_prediction, raw_post)
+    return True
+
 def parse_llm_translations(response_text):
     """Parse LLM response to extract translations"""
     translations = {}
@@ -196,7 +324,7 @@ def parse_llm_translations(response_text):
     
     return translations
     
-@login_required
+
 def export_merged_gephi_csv(request):
     """Generates and downloads a Gephi-compatible CSV edge-list representing the coordination network"""
     import re
@@ -647,7 +775,6 @@ def export_network_edges_with_tweets(request):
     
     return response
     
-@login_required
 def export_complete_network_csv(request):
     """Export COMPLETE network data - both nodes and edges with full metadata"""
     import csv
@@ -953,37 +1080,42 @@ def detect_hate_speech_llm_enhanced(text: str) -> dict:
     - Other (specify in explanation)
     """
     
-    # Use string concatenation instead of f-string to avoid syntax issues
+    # SAFE PROMPT CONSTRUCTION: Uses string concatenation to avoid editor syntax highlighting bugs
     prompt = (
-        "You are an expert hate speech analyst analyzing social media content from Ethiopia.\n\n"
-        "TEXT TO ANALYZE:\n"
-        f'"{text}"\n\n'
-        "INSTRUCTIONS:\n"
-        "1. Analyze the text carefully for hate speech, threats, or harmful content\n"
-        "2. Identify the PRIMARY category from these options (choose ONE):\n"
-        f"{category_options}\n"
-        "3. Provide specific context about:\n"
-        "   - Who is being targeted (ethnic group, religion, gender, etc.)\n"
-        "   - What specific harmful language is used\n"
-        "   - Whether it contains threats, slurs, or incitement\n"
-        "   - The overall tone and intent\n\n"
-        "4. Determine severity level: low, medium, high, or critical\n\n"
-        "5. Provide confidence score (0.0 to 1.0)\n\n"
-        "Return your analysis in this EXACT JSON format:\n"
-        '{\n'
-        '    "category": "Your chosen category",\n'
-        '    "explanation": "Detailed analysis with specific context about the content",\n'
-        '    "severity": "low|medium|high|critical",\n'
-        '    "confidence": 0.0-1.0,\n'
-        '    "is_hate_speech": true|false,\n'
-        '    "target_group": "Who is being targeted (or \'none\' if neutral)",\n'
-        '    "harmful_elements": ["list", "of", "specific", "harmful", "elements"]\n'
-        '}\n\n'
-        "Be specific and accurate. If the text mentions specific ethnic groups, religious groups, or individuals, name them in your analysis."
+        "You are an elite expert content moderator specialized in Ethiopian political discourse, Amharic sociolinguistics, ethnic conflict dynamics, and dangerous speech.\n\n"
+        "SYSTEM ROLE & GOAL:\n"
+        "Your task is to analyze social media text from Ethiopia and identify whether it contains hate speech, ethnic targeting, dehumanization, or dangerous atrocity claims.\n\n"
+        f"TEXT TO ANALYZE:\n\"{text}\"\n\n"
+        "ALLOWED CATEGORIES (Select the single best match):\n"
+        f"{category_options}\n\n"
+        "CRITICAL ETHIOPIAN DISCOURSE & MODERATION RULES:\n"
+        "1. ATROCITY ALLEGATIONS & SEXUAL VIOLENCE:\n"
+        "   - Posts alleging massacres, gang rape (e.g., \"መደፈር\", \"ለሶስት እንደፈሯት\"), or war crimes by ethnically labeled armed forces (e.g., \"የኦሮሙማ ወታሮች\", \"የአምሃ ኃይሎች\") must NEVER be classified as neutral news.\n"
+        "   - They are HIGH-RISK INCITEMENT / DANGEROUS SPEECH (Severity: HIGH or CRITICAL) because they are weaponized to drive immediate offline ethnic retaliation.\n\n"
+        "2. COLLECTIVE ETHNIC GUILT & ELITE CAPTURE:\n"
+        "   - Framing an entire ethnic group as \"looters\", \"thieves\", or \"monopolizing state assets\" (e.g., claiming \"all looters come from one family/ethnicity\" or \"Oromo/Oromuma took over all banks\") is NOT fair economic critique. It is Collective Guilt & Ethnic Generalization (Severity: HIGH).\n\n"
+        "3. ETHNIC SLURS & POLITICAL DOGWHISTLES:\n"
+        "   - Slurs & Subservient Terms: Words like \"ጋላ\" (Galla) or pairing ethnic groups with \"አሽከሮች\" (slaves/lackeys) are DEHUMANIZING SLURS (Severity: HIGH/CRITICAL).\n"
+        "   - Manipulated Names: Words like \"ብልግና\" (vulgarity) used to insult \"ብልጽግና\" (Prosperity Party) are political insults.\n"
+        "   - Opportunist Labels: Terms like \"ባለጊዜዎቹ\" used to dismiss an entire ethnic group as temporary illegitimate rulers carry targeted ethnic hostility.\n\n"
+        "4. FAIR CRITIQUE vs. HATE SPEECH:\n"
+        "   - FAIR CRITIQUE: Criticizing policy, economic inflation, or named state officials on performance grounds (e.g., \"The bank president mismanaged funds\").\n"
+        "   - HATE SPEECH: Attributing institutional failure or corruption to an entire ethnic identity or cultural concept (e.g., \"Oromuma is looting the country\").\n\n"
+        "RESPONSE FORMAT:\n"
+        "You must return your output strictly in JSON format. Do not add markdown outside the JSON block.\n\n"
+        "{\n"
+        "    \"category\": \"Chosen category from list\",\n"
+        "    \"explanation\": \"Detailed step-by-step reasoning grounded in the specialized rules above\",\n"
+        "    \"severity\": \"low|medium|high|critical\",\n"
+        "    \"confidence\": 0.0-1.0,\n"
+        "    \"is_hate_speech\": true|false,\n"
+        "    \"target_group\": \"Name of targeted group or 'none'\",\n"
+        "    \"harmful_elements\": [\"list\", \"of\", \"specific\", \"harmful\", \"phrases/elements\"]\n"
+        "}"
     )
     
     try:
-        response = safe_llm_call(prompt, max_tokens=500)
+        response = safe_llm_call(prompt, max_tokens=600)
         if not response:
             return {
                 'is_hate_speech': False,
@@ -993,11 +1125,6 @@ def detect_hate_speech_llm_enhanced(text: str) -> dict:
                 'severity': 'low'
             }
         
-        # Extract JSON from response
-        import re
-        import json
-        
-        # Try to find JSON in the response
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group(0))
@@ -1011,15 +1138,13 @@ def detect_hate_speech_llm_enhanced(text: str) -> dict:
                 'harmful_elements': result.get('harmful_elements', [])
             }
         else:
-            # Fallback: parse text response
             return {
-                'is_hate_speech': 'hate speech' in response.lower(),
+                'is_hate_speech': 'true' in response.lower() and 'is_hate_speech": true' in response.lower(),
                 'confidence': 0.5,
                 'category': 'uncategorized',
                 'explanation': response,
                 'severity': 'medium'
             }
-            
     except Exception as e:
         logger.error(f"Enhanced LLM detection failed: {e}")
         return {
@@ -1082,14 +1207,78 @@ def get_queryset(self):
         from django.utils import timezone
         qs = qs.filter(timestamp_share__gte=timezone.now() - timezone.timedelta(days=30))
     return qs.order_by('-timestamp_share')
+
+# Constants
+MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+def dynamically_map_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Scans an arbitrary DataFrame's columns and maps custom/generic headers 
+    to our standardized schema names:
+    - account_id
+    - original_text
+    - url
+    - timestamp_share
+    - platform
+    """
+    # Create mapping dictionary
+    mapping = {}
+
+    # Common aliases grouped by our target database/pipeline fields
+    aliases = {
+        'account_id': ['account_id', 'account', 'username', 'user', 'author', 'handle', 'sender', 'screen_name'],
+        'original_text': ['original_text', 'text', 'content', 'body', 'tweet', 'post', 'message', 'caption', 'description', 'comment'],
+        'url': ['url', 'link', 'uri', 'href', 'permalink', 'post_url'],
+        'timestamp_share': ['timestamp_share', 'timestamp', 'date', 'created_at', 'published', 'time', 'datetime', 'published_date'],
+        'platform': ['platform', 'source', 'channel', 'network', 'social_network']
+    }
+
+    # Match actual columns with aliases case-insensitively
+    for target_field, alias_list in aliases.items():
+        for col_name in df.columns:
+            clean_col = str(col_name).lower().strip()
+            if clean_col in alias_list:
+                mapping[col_name] = target_field
+                break  # Pick the first matching alias and move on to next target
+
+    if mapping:
+        df = df.rename(columns=mapping)
+
+    # --- Robust Fallbacks ---
     
+    # 1. Fallback for account_id
+    if 'account_id' not in df.columns:
+        df['account_id'] = 'Unknown'
+
+    # 2. Fallback for original_text (Crucial: Try to find a high-length text column if no headers matched)
+    if 'original_text' not in df.columns:
+        string_cols = df.select_dtypes(include=['object', 'string']).columns
+        if len(string_cols) > 0:
+            # Fallback to the text-type column with the highest average string length
+            fallback_col = max(string_cols, key=lambda c: df[c].astype(str).str.len().mean())
+            df = df.rename(columns={fallback_col: 'original_text'})
+        else:
+            df['original_text'] = ''
+
+    # 3. Fallback for other expected keys
+    if 'url' not in df.columns:
+        df['url'] = ''
+    if 'timestamp_share' not in df.columns:
+        df['timestamp_share'] = timezone.now()
+    if 'platform' not in df.columns:
+        df['platform'] = 'Generic CSV'
+
+    return df
+
+
 @never_cache  
 def dashboard_view(request):
     """Main Dashboard View with Sidebar Upload and Stats Reporting"""
     
     # 1. Handle File Uploads via POST
     if request.method == 'POST' and request.FILES.getlist('files'):
-        platform_type = request.POST.get('platform')
+        platform_type = request.POST.get('platform', 'generic')
         uploaded_files = request.FILES.getlist('files')
         
         stats = {
@@ -1100,34 +1289,54 @@ def dashboard_view(request):
         }
         
         for f in uploaded_files:
+            # --- FILE SIZE VALIDATION ---
+            if f.size > MAX_UPLOAD_SIZE_BYTES:
+                messages.error(
+                    request, 
+                    f"The file '{f.name}' exceeds our 500MB limit. "
+                    "Please optimize, compress, or split your CSV before uploading."
+                )
+                return redirect(request.POST.get('next', 'home'))
+
             try:
                 # Brandwatch needs specific handling (skiprows=6 for metadata)
                 if platform_type == 'brandwatch':
                     df = pd.read_csv(f, sep=',', low_memory=False, skiprows=6, on_bad_lines='skip')
                 else:
-                    
                     df = load_data_robustly(f) 
                 
                 stats['total_rows'] += len(df)
                 
-                # Normalize columns based on platform
-                if platform_type == 'meltwater':
-                    processed_df = combine_social_media_data(meltwater_df=df)
-                elif platform_type == 'tiktok':
-                    processed_df = combine_social_media_data(tiktok_df=df)
-                elif platform_type == 'openmeasure':
-                    processed_df = combine_social_media_data(openmeasures_df=df)
-                elif platform_type == 'brandwatch':
-                    processed_df = combine_social_media_data(brandwatch_df=df)
+                # Check if it is a known/hardcoded pipeline
+                known_platforms = ['meltwater', 'tiktok', 'openmeasure', 'brandwatch', 'civicsignals']
+                
+                if platform_type in known_platforms:
+                    # Leverage your existing fixed mappings
+                    if platform_type == 'meltwater':
+                        processed_df = combine_social_media_data(meltwater_df=df)
+                    elif platform_type == 'tiktok':
+                        processed_df = combine_social_media_data(tiktok_df=df)
+                    elif platform_type == 'openmeasure':
+                        processed_df = combine_social_media_data(openmeasures_df=df)
+                    elif platform_type == 'brandwatch':
+                        processed_df = combine_social_media_data(brandwatch_df=df)
+                    else:
+                        processed_df = combine_social_media_data(civicsignals_df=df)
                 else:
-                    processed_df = combine_social_media_data(civicsignals_df=df)
+                    # Dynamic Fallback pipeline: Handles ANY arbitrary or manually selected CSV dataset
+                    processed_df = dynamically_map_columns(df)
 
                 # ONE CLEAN LOOP
                 for _, row in processed_df.iterrows():
                     cid = row.get('content_id')
                     
+                    # Generate a unique content ID fallback if empty to prevent collision
+                    if not cid:
+                        text_hash = hashlib.md5(str(row.get('original_text', '')).encode('utf-8')).hexdigest()
+                        cid = f"gen_{text_hash[:16]}"
+                    
                     # Check for duplicates before saving
-                    if cid and ProcessedPost.objects.filter(content_id=cid).exists():
+                    if ProcessedPost.objects.filter(content_id=cid).exists():
                         stats['duplicates'] += 1
                         continue
                         
@@ -1135,13 +1344,11 @@ def dashboard_view(request):
                     source_obj, _ = DataSource.objects.get_or_create(name=source_name)
             
                     ProcessedPost.objects.create(
-                        account_id=str(row.get('account_id', ''))[:100],
+                        account_id=str(row.get('account_id', 'Unknown'))[:100],
                         content_id=cid,
-                        # Use 'original_text' which is the standardized column name
                         original_text=str(row.get('original_text', '')),
-                        
                         url=row.get('url') or row.get('URL') or row.get('link') or row.get('Link') or '',
-                        platform=row.get('Platform', platform_type.title()),
+                        platform=row.get('platform', platform_type.title()),
                         timestamp_share=parse_timestamp_robust(row.get('timestamp_share')),
                         source_dataset=source_obj,
                         is_election_related=is_election_related(str(row.get('original_text', '')))
@@ -1150,8 +1357,8 @@ def dashboard_view(request):
                 
                 stats['files_count'] += 1
             except Exception as e:
-                logger.error(f"Upload error: {e}")
-                messages.error(request, f"Error processing {f.name}")
+                logger.error(f"Upload error processing '{f.name}': {e}")
+                messages.error(request, f"Error processing '{f.name}'. Ensure it's a valid CSV format.")
 
         detail_msg = (
             f"<strong>Data Upload Details:</strong><br>"
@@ -1162,7 +1369,6 @@ def dashboard_view(request):
             f"• Duplicates ignored: {stats['duplicates']}"
         )
         messages.success(request, detail_msg)
-        
         return redirect(request.POST.get('next', 'home'))
 
     # 2. Page Load Logic (GET)
@@ -1189,12 +1395,11 @@ def dashboard_view(request):
     
     return render(request, 'dashboard.html', context)
     
-import re
 
 # Compile patterns once, reuse them forever
 _COMPILED_PATTERNS = {}
 
-def _get_cached_pattern(term, language):
+def get_cached_pattern(term, language):  # 🔥 FIXED: Removed underscore
     """Get or compile a regex pattern, caching it to prevent memory spikes."""
     cache_key = f"{term}_{language}"
     
@@ -1215,14 +1420,15 @@ def _get_cached_pattern(term, language):
 def scan_text_for_lexicon_terms(text, category_filter=None):
     """
     FAST PATH: Only regex matching - NO LLM calls during page load.
-    LLM extraction happens asynchronously via background tasks.
+    Combines CONFIG lexicon with Database lexicon terms.
     """
     if not isinstance(text, str) or not text.strip():
         return []
-    
     text_lower = text.lower()
     matches = []
-    lexicon = CONFIG.get("lexicon", {})
+    
+    # Use the combined lexicon (CONFIG + Database)
+    lexicon = get_combined_lexicon()
     categories_to_check = category_filter if category_filter else lexicon.keys()
     
     # Neutral context indicators
@@ -1252,7 +1458,9 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                 )
                 if not has_hate_terms:
                     continue
-            pattern = _get_cached_pattern(term, metadata.get("language", "english"))
+            
+            # This call now matches the function name above
+            pattern = get_cached_pattern(term, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
                     'term': term,
@@ -1262,8 +1470,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     'language': metadata.get('language', 'english'),
                     'source': 'Lexicon'
                 })
-    
-    return matches  
+    return matches
 
 def auto_save_important_llm_terms(llm_terms):
     """
@@ -3733,8 +3940,8 @@ CONFIG = {
             "Kaadiree qonqoo": {"severity": "high", "target_entity": "", "language": "Oromo"}
         },
         
-        # === Foreign Interference, Borders & Xenophobia ===
-        "foreign_interference": {
+        # === Cross-Border Geopolitical Narratives ===
+        "Cross-Border Geopolitical Narratives": {
             "ግብፅ": {"severity": "low", "target_entity": "Egypt", "language": "Amharic"},
             "egypt": {"severity": "low", "target_entity": "Egypt", "language": "English"},
             "ሱዳን": {"severity": "low", "target_entity": "Sudan", "language": "Amharic"},
@@ -4555,7 +4762,7 @@ def get_pep_analysis_insights(posts_queryset, peps_queryset, extra_officials_lis
                     )
                     
                     response = client.chat.completions.create(
-                        model="meta-llama/llama-4-scout-17b-16e-instruct",
+                        model="llama-3.3-70b-versatile",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.1,
                         max_tokens=10
@@ -4673,34 +4880,39 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
     """Use LLM to extract NEW trigger terms not in the lexicon."""
     if not text or len(text.strip()) < 20:
         return []
-    
+        
     existing_terms = set()
     if existing_matches:
         existing_terms = set(m['term'].lower() for m in existing_matches)
     for category, terms in CONFIG.get('lexicon', {}).items():
         existing_terms.update(t.lower() for t in terms.keys())
-    
+        
     existing_list = ', '.join(list(existing_terms)[:50])
     
-    # FIXED PROMPT: Now includes confidence score requirement
+    # 🔥 UPDATED PROMPT: Explicitly handles "Slur + Name" cases
     prompt = (
-        "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language) "
-        "from this text that are NOT already in the lexicon.\n"
+        "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language, harmful adjectives) "
+        "from this text that are NOT already in the lexicon.\n\n"
         "TEXT:\n"
-        '"' + text + '"\n'
+        '"' + text + '"\n\n'
         "EXISTING TERMS (do not extract these):\n"
-        + existing_list + "\n"
+        + existing_list + "\n\n"
+        "CRITICAL RULES:\n"
+        "- 🚫 NEVER extract personal names, politicians, or specific individuals (e.g., 'Abiy Ahmed', 'Margaret', 'John Doe').\n"
+        "- 🚫 NEVER extract neutral demographic terms like 'youth', 'women', 'soldiers' unless clearly used as a slur.\n"
+        "- ✅ SEPARATE SLURS FROM NAMES: If a harmful adjective or slur is attached to a person's name (e.g., 'Fascist Abiy Ahmed', 'Thief John', 'በሺስት አብይ አመድ'), extract ONLY the harmful word or phrase (e.g., 'Fascist', 'Thief', 'ፋሺስት'). Do NOT include the person's name in the extracted term.\n"
+        "- ✅ ONLY extract actual slurs, threats, dehumanizing phrases, or weaponized language.\n\n"
         "Return ONLY a valid JSON array. Each object must have:\n"
         '- "term": the exact phrase from the text\n'
         '- "category": one of [ethnic_identity, violence_incitement, dehumanizing, religious_cultural, gender_misogynistic, discriminatory_homophobic, socio_economic_caste, political_groups, foreign_interference, election_governance]\n'
         '- "severity": one of [low, medium, high, critical]\n'
         '- "target_entity": the group being targeted (e.g., Amhara, Oromo, Women) or empty string\n'
         '- "language": one of [Amharic, Oromo, English, Tigrinya, Somali]\n'
-        '- "confidence": A number between 0.0 and 1.0 representing your confidence (e.g., 0.95 for very confident, 0.7 for moderate)\n'
+        '- "confidence": A number between 0.0 and 1.0 representing your confidence\n\n'
         "EXAMPLE OUTPUT:\n"
         '[\n'
         '  {"term": "example slur", "category": "ethnic_identity", "severity": "high", "target_entity": "Group", "language": "Amharic", "confidence": 0.92}\n'
-        ']\n'
+        ']\n\n'
         "If no new terms found, return: []"
     )
     
@@ -4708,21 +4920,21 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
         response = safe_llm_call(prompt, max_tokens=1024)
         if not response:
             return []
-        
+            
         json_str = extract_first_json_array(response)
         if not json_str:
             logger.warning(f"No JSON array found in LLM response. Preview: {response[:200]}")
             return []
-        
+            
         try:
             extracted_terms = json.loads(json_str)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}. Preview: {json_str[:200]}")
             return []
-        
+            
         if not isinstance(extracted_terms, list):
             return []
-        
+            
         valid_terms = []
         valid_categories = ['ethnic_identity', 'violence_incitement', 'dehumanizing',
                            'religious_cultural', 'gender_misogynistic', 'discriminatory_homophobic',
@@ -4734,55 +4946,57 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
         for term_data in extracted_terms:
             if not isinstance(term_data, dict):
                 continue
-            
+                
             term = term_data.get('term', '').strip()
             if not term or len(term) < 2:
                 continue
-            
+                
             if term.lower() in existing_terms:
                 continue
-            
+                
+            # 🔥 PROGRAMMATIC FILTER: Drop terms that look like standard English proper names
+            if re.match(r'^[A-Za-z\s]+$', term) and term.istitle():
+                logger.info(f"Filtered out likely name: '{term}'")
+                continue
+                
             category = term_data.get('category', 'uncategorized')
             if category not in valid_categories:
                 category = 'uncategorized'
-            
+                
             severity = term_data.get('severity', 'medium')
             if severity not in valid_severities:
                 severity = 'medium'
-            
+                
             language = term_data.get('language', 'Amharic')
             if language not in valid_languages:
                 language = 'Amharic'
-            
-            # FIXED: Properly handle confidence score
-            confidence = term_data.get('confidence', 0.85)  # Default to 85% if not provided
+                
+            confidence = term_data.get('confidence', 0.85)
             try:
                 confidence = float(confidence)
-                # Ensure it's between 0 and 1
                 confidence = max(0.0, min(1.0, confidence))
             except (ValueError, TypeError):
-                confidence = 0.85  # Fallback to 85%
-            
+                confidence = 0.85
+                
             valid_terms.append({
                 'term': term,
                 'category': category,
                 'severity': severity,
                 'target_entity': term_data.get('target_entity', ''),
                 'language': language,
-                'confidence': round(confidence, 2),  # Round to 2 decimal places
+                'confidence': round(confidence, 2),
                 'source': 'LLM Extraction',
-                'context': text[:200]
+                'context': text[:300]
             })
-        
+            
         if valid_terms:
             logger.info(f"LLM extracted {len(valid_terms)} new trigger terms")
-        
         return valid_terms
         
     except Exception as e:
         logger.error(f"Error in LLM trigger term extraction: {e}")
         return []
-
+        
 def export_new_terms_csv(request):
     """Export new trigger terms detected by LLM to CSV"""
     # Get terms from session
@@ -5281,7 +5495,7 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
         )
 
         response = client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=10
@@ -5942,6 +6156,30 @@ class LexiconsView(TemplateView):
     GENERIC_TERMS_CONTEXT_MAP = {
         'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
         'ውጭ': ['ጣልቃ', 'ተዕኖ', 'ገንዘብ', 'ምርጫ', 'ሴራ', 'እጅ']
+
+    # ─ CATEGORY DISPLAY NAME MAPPING ─────────────────────────────────────
+    # Maps internal category keys to user-friendly display names.
+    # Note: Using the internal key as the display name prevents any translation mismatches!
+    CATEGORY_DISPLAY_NAMES = {
+        'foreign_interference': 'Cross-Border Geopolitical Narratives',
+        'ethnic_identity': 'ethnic_identity',
+        'political_groups': 'political_groups',
+        'violence_incitement': 'violence_incitement',
+        'dehumanizing': 'dehumanizing',
+        'election_governance': 'election_governance',
+        'religious_cultural': 'religious_cultural',
+        'gender_misogynistic': 'gender_misogynistic',
+        'discriminatory_homophobic': 'discriminatory_homophobic',
+        'socio_economic_caste': 'socio_economic_caste',
+    }
+    
+    # Reverse mapping to translate UI names back to internal keys
+    DISPLAY_TO_INTERNAL = {v: k for k, v in CATEGORY_DISPLAY_NAMES.items()}
+    
+    # Words that are too generic on their own and require secondary context markers
+    GENERIC_TERMS_CONTEXT_MAP = {
+        'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
+        'የውጭ': ['ጣልቃ', 'ጣልቃ-ገብነት', 'ተጽዕኖ', 'ገንዘብ', 'ምርጫ', 'ሴራ', 'እጅ', 'ጫና', 'ወኪል'],
     }
 
     def _get_lexicon_term_count(self):
@@ -5958,7 +6196,9 @@ class LexiconsView(TemplateView):
         term_clean = term.strip().lower()
         if term_clean in self.GENERIC_TERMS_CONTEXT_MAP:
             required_contexts = self.GENERIC_TERMS_CONTEXT_MAP[term_clean]
+
             # Verify if at least one context-strengthening word is present
+
             if not any(context in text_lower for context in required_contexts):
                 return False
         return True
@@ -5974,7 +6214,10 @@ class LexiconsView(TemplateView):
         for m in raw_matches:
             if len(m['term'].strip()) <= 1:
                 continue
+
             # Context Check: filter out generic keywords lacking supporting intent context
+
+
             if not self._is_valid_context(m['term'], text_lower):
                 continue
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
@@ -5997,11 +6240,22 @@ class LexiconsView(TemplateView):
         
         # ── 1. URL params ────────────────────────────────────────────────
         selected_category = self.request.GET.get('category', '').strip()
+
+        raw_category = self.request.GET.get('category', '').strip()
+
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
         
+
         # ── 2. Cache (overview only, keyed to date range) ─────────────────
+
+        # Translate display name to internal key before processing.
+        # Because most display names ARE the internal keys, this safely resolves everything.
+        selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
+        
+        # ─ 2. Cache (overview only, keyed to date range) ─────────────────
+
         cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
         cached_data = cache.get(cache_key)
         
@@ -6049,6 +6303,7 @@ class LexiconsView(TemplateView):
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
+
             
             db_terms = LexiconTerm.objects.filter(category=selected_category)
             if db_terms.exists():
@@ -6056,9 +6311,23 @@ class LexiconsView(TemplateView):
             elif selected_category in CONFIG.get('lexicon', {}):
                 category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items()]
             
+
+            # Initialize the variable to avoid UnboundLocalError
+            category_terms = []
+            # 1. Look up using case-insensitive check in DB
+            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
+            if db_terms.exists():
+                category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
+            else:
+                # 2. Case-insensitive fallback lookup in the CONFIG dictionary
+                config_lexicon = CONFIG.get('lexicon', {})
+                matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
+                if matched_config_key:
+                    category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
+            # This check is now completely safe!
+
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
-                
                 # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
                 regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
                 try:
@@ -6066,24 +6335,59 @@ class LexiconsView(TemplateView):
                 except Exception:
                     compiled_category_re = None
                 
+
+                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
+                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
+                try:
+                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
+                except Exception:
+                    compiled_category_re = None
+
+                # Track seen posts to avoid duplicates
+                seen_post_ids = set()
+                seen_post_texts = set()
+
+                
                 for post in scan_pool:
                     if self._check_timeout(start_time):
                         scan_timed_out = True
                         break
+                    posts_scanned += 1
+                    if not post.original_text: 
+                        continue
                     
+
                     posts_scanned += 1
                     if not post.original_text: continue
+                    # Skip RT/retweet posts
+                    if post.original_text.strip().lower().startswith('rt ') or post.original_text.strip().lower().startswith('rt\n'):
+                        continue
+                    
+                    # Skip if we've already seen this post
+                    if post.id in seen_post_ids:
+                        continue
+
                     
                     text       = post.original_text
                     text_lower = text.lower()
                     
+
                     # Instantly drops unrelated records out of processing loop
                     if compiled_category_re and not compiled_category_re.search(text_lower):
                         continue
                         
+
+                    # Skip if we've already seen this exact text content
+                    text_hash = hash(text.strip())
+                    if text_hash in seen_post_texts:
+                        continue
+                    
+                    # Instantly drops unrelated records out of processing loop
+                    if compiled_category_re and not compiled_category_re.search(text_lower):
+                        continue
+
                     is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
                     matched_terms = []
-                    
                     for term_lower, meta in term_meta.items():
                         if term_lower not in text_lower:
                             continue
@@ -6091,11 +6395,20 @@ class LexiconsView(TemplateView):
                             continue
                         if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
                             continue
+
                         
+
+
                         matched_terms.append(meta['term'])
                         all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
-                    
                     if matched_terms:
+
+
+                        # Mark this post as seen
+                        seen_post_ids.add(post.id)
+                        seen_post_texts.add(text_hash)
+                        
+
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text,
@@ -6118,7 +6431,10 @@ class LexiconsView(TemplateView):
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
+
             
+
+
             for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
@@ -6137,8 +6453,14 @@ class LexiconsView(TemplateView):
         # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
         try:
             term_counts     = Counter([m['term']     for m in all_matches])
-            category_counts = Counter([m['category'] for m in all_matches])
+            raw_category_counts = Counter([m['category'] for m in all_matches])
             severity_counts = Counter([m['severity'] for m in all_matches])
+            
+            # Transform category keys to display names
+            category_counts = Counter()
+            for cat_key, count in raw_category_counts.items():
+                display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key)
+                category_counts[display_name] = count
             
             if selected_category and category_terms:
                 top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
@@ -6161,7 +6483,7 @@ class LexiconsView(TemplateView):
             category_counts     = Counter()
             severity_counts     = Counter()
         
-        # ── 6. Word cloud & 7. Targeted entities ───────────────────────────
+        # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
             try:
@@ -6202,7 +6524,10 @@ class LexiconsView(TemplateView):
                 logger.warning(f"Cache save failed: {e}")
         
         context.update(shared)
+
         context['selected_category'] = selected_category
+        context['selected_category'] = raw_category  # Keep original for UI highlighting
+
         context['category_terms'] = category_terms
         context['posts_with_terms'] = posts_with_terms[:100]
         
@@ -6611,6 +6936,10 @@ class LexiconManagementView(TemplateView):
             term__regex=r'^.$'
         ).order_by('category', 'severity')
 
+
+
+        
+
         # If DB is empty, seed from CONFIG (one-time migration)
         if not lexicon_terms.exists():
             for category, terms in CONFIG['lexicon'].items():
@@ -6623,12 +6952,17 @@ class LexiconManagementView(TemplateView):
                                 'severity': metadata.get('severity', 'medium'),
                                 'target_entity': metadata.get('target_entity', ''),
                                 'language': metadata.get('language', 'english'),
+
+
+                                'justification': '',  # Empty for CONFIG terms
+
                                 'is_election_related': True
                             }
                         )
             lexicon_terms = LexiconTerm.objects.exclude(
                 term__regex=r'^.$'
             ).order_by('category', 'severity')
+
 
         # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
@@ -6637,6 +6971,15 @@ class LexiconManagementView(TemplateView):
         # Only scan the most recent 3000 posts instead of all
         posts_to_scan = filtered_posts[:3000]
         
+
+        
+        # RESPECT THE GLOBAL DATE FILTER
+        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+        total_posts_in_filter = filtered_posts.count()
+        
+        # Only scan the most recent 3000 posts instead of all
+        posts_to_scan = filtered_posts[:3000]
+
         all_matches = []
         posts_scanned = 0
         
@@ -6652,6 +6995,7 @@ class LexiconManagementView(TemplateView):
                     logger.warning(f"Error scanning post {post.id}: {e}")
                     continue
 
+
         # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
 
@@ -6661,6 +7005,19 @@ class LexiconManagementView(TemplateView):
         # Determine filter state for the template text
         view_all = self.request.GET.get('view_all') == 'true'
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
+
+
+        
+        # Get distinct categories for filter dropdown
+        categories = lexicon_terms.values_list('category', flat=True).distinct()
+        
+        # Get scan results from session (if any) and clear immediately
+        scan_results = self.request.session.pop('scan_results', None)
+        
+        # Determine filter state for the template text
+        view_all = self.request.GET.get('view_all') == 'true'
+        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
+        
 
         context.update({
             'active_tab': 'lexicon_management',
@@ -6696,6 +7053,7 @@ class LexiconManagementView(TemplateView):
                         obj.severity = request.POST.get('severity', obj.severity)
                         obj.target_entity = request.POST.get('target_entity', '')
                         obj.language = request.POST.get('language', 'english')
+                        obj.justification = request.POST.get('justification', '')  
                         obj.save()
                         messages.success(request, "Term updated successfully!")
                         cache.delete("lexicon_dashboard_data_v2")
@@ -6726,6 +7084,7 @@ class LexiconManagementView(TemplateView):
                         'severity': request.POST.get('severity', 'medium'),
                         'target_entity': request.POST.get('target_entity', ''),
                         'language': request.POST.get('language', 'english'),
+                        'justification': request.POST.get('justification', ''),  
                         'is_election_related': True,
                     }
                 )
@@ -6733,6 +7092,9 @@ class LexiconManagementView(TemplateView):
                 cache.delete("lexicon_dashboard_data_v2")
             else:
                 messages.warning(request, "Term must be at least 2 characters long. Single characters are skipped.")
+
+
+        
 
         # Handle Scan Text
         elif action == 'scan_text':
@@ -6745,16 +7107,25 @@ class LexiconManagementView(TemplateView):
                 # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm(text)
 
+
                 # 3. Extract NEW trigger terms not in lexicon
                 new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
 
                 # 4. Fine-tuned AFRO-XLMR Model detection (Swapped out Gemma here)
+
+                
+                # 3. Extract NEW trigger terms not in lexicon
+                new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
+                
+                # 4. Fine-tuned AFRO-XLMR Model detection
+
                 try:
                     afro_result = detect_hate_speech_afro_xlmr(text)
                 except Exception as e:
                     logger.error(f"AFRO-XLMR detection failed: {e}")
                     afro_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'is_hate_speech': False, 'error': 'Model failed to compute'}
                 
+
                 # 5. Determine final verdict - AFRO-XLMR / LLM Priority Check
                 is_hate_speech = False
                 overall_severity_num = 1
@@ -6766,6 +7137,68 @@ class LexiconManagementView(TemplateView):
                 
                 afro_is_hate = afro_result.get('is_hate_speech', False)
                 afro_confidence = afro_result.get('confidence', 0)
+
+                # 5. Determine final verdict
+                is_hate_speech = False
+                overall_severity_num = 1
+                explanation = ""
+                
+                llm_is_hate = llm_result.get('is_hate_speech', False)
+                llm_confidence = llm_result.get('confidence', 0)
+                llm_explanation = llm_result.get('explanation', '').lower()
+                
+                afro_is_hate = afro_result.get('is_hate_speech', False)
+                afro_confidence = afro_result.get('confidence', 0)
+                
+                # SAFETY NET
+                hate_indicators = [
+                    'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
+                    'derogatory', 'discrimination', 'dangerous', 'threat',
+                    'ethnic cleansing', 'genocide', 'kill', 'attack', 'slaughter'
+                ]
+                
+                if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
+                    llm_is_hate = True
+                    llm_confidence = max(llm_confidence, 0.75)
+                
+                # PRIORITY 1: AFRO-XLMR
+                if afro_is_hate and afro_confidence >= 0.6:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_result.get('severity', 'medium'), 2)
+                    explanation = f"AFRO-XLMR Model detected hate speech ({afro_confidence*100:.0f}% confidence)."
+                
+                # PRIORITY 2: LLM
+                elif llm_is_hate and llm_confidence >= 0.6:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
+                    explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
+                
+                # PRIORITY 3: Lexicon
+                elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
+                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
+                
+                # PRIORITY 4: Default
+                else:
+                    is_hate_speech = False
+                    overall_severity_num = 1
+                    if lexicon_matches:
+                        explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
+                    else:
+                        explanation = "No hate speech detected by any method."
+                
+                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
+                
+                # Create combined analysis
+                analysis_parts = []
+                if llm_result.get('explanation'):
+                    analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
+                if lexicon_matches:
+                    terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
+                    analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
+                combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
+
                 
                 # SAFETY NET: If LLM explanation indicates hate speech, force flag
                 hate_indicators = [
@@ -6941,16 +7374,18 @@ class ProcessUploadView(View):
     def post(self, request):
         import os
         import uuid
-        import hashlib
         from django.utils import timezone
-        from django.core.cache import cache
         
-        logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
+        #  Match the HTML form's input names ('files' and 'platform')
+        uploaded_files = request.FILES.getlist('files')
+        data_type = request.POST.get('platform', 'generic')
+        source_name = request.POST.get('source_name', 'User Upload')
+        
+        logger.info(f"📥 Upload request: data_type={data_type}, source={source_name}")
         logger.info(f"📁 FILES: {list(request.FILES.keys())}")
         
-        uploaded_files = request.FILES.getlist('csv_files')
         if not uploaded_files:
-            messages.error(request, "No files received.")
+            messages.error(request, "No files received. Please check the file input name.")
             return redirect('upload_data')
         
         results = []
@@ -6967,130 +7402,109 @@ class ProcessUploadView(View):
                 # Save file
                 file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
                 full_path = os.path.join(settings.MEDIA_ROOT, file_path)
-                logger.info(f"🔄 Processing: {original_name} -> {unique_filename}")
+                logger.info(f"🔄 Processing: {original_name} -> {unique_filename} ({uploaded_file.size / 1024 / 1024:.2f} MB)")
                 
                 # Create upload record
                 upload = DataUpload.objects.create(
                     uploaded_file=file_path,
                     original_filename=original_name,
                     uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
-                    data_type=request.POST.get('data_type', 'custom'),
+                    data_type=data_type,
                     status='processing'
                 )
                 
-                # === STREAMLIT-STYLE DATA PROCESSING ===
-                data_type = upload.data_type
-                
-                # === LOAD CSV WITH APPROPRIATE HANDLING ===
+                # Use robust inline processing instead of the black-box process_uploaded_csv
                 if data_type == 'brandwatch':
                     df = pd.read_csv(full_path, sep=',', low_memory=False, on_bad_lines='skip', encoding_errors='ignore', skiprows=6)
                 else:
                     df = load_data_robustly(full_path)
                 
-                logger.info(f"📊 CSV Shape: {df.shape}")
-                logger.info(f"📋 CSV Columns: {list(df.columns)}")
+                logger.info(f"📊 Initial CSV Shape: {df.shape} | Columns: {list(df.columns)}")
                 
                 if df.empty:
-                    raise ValueError(f"Failed to load data from {original_name} - DataFrame is empty")
+                    raise ValueError("DataFrame is empty after loading")
                 
-                # === COMBINE/MAP DATA BASED ON SOURCE TYPE ===
+                # Combine/Map data based on source
                 if data_type == 'meltwater':
-                    combined_df = combine_social_media_data(meltwater_df=df, civicsignals_df=None)
+                    combined_df = combine_social_media_data(meltwater_df=df)
                 elif data_type == 'civicsignals':
-                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=df)
+                    combined_df = combine_social_media_data(civicsignals_df=df)
                 elif data_type == 'tiktok':
-                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, tiktok_df=df)
+                    combined_df = combine_social_media_data(tiktok_df=df)
                 elif data_type == 'openmeasure':
-                    combined_df = combine_social_media_data(meltwater_df=None, civicsignals_df=None, openmeasures_df=df)
+                    combined_df = combine_social_media_data(openmeasures_df=df)
                 elif data_type == 'brandwatch':
                     combined_df = combine_social_media_data(brandwatch_df=df)
                 else:
-                    # Custom/unknown format
                     combined_df = preprocess_dataframe(df)
                 
-                logger.info(f"📊 COMBINED DATA COLUMNS: {list(combined_df.columns)}")
-                logger.info(f"📊 COMBINED DATA SHAPE: {combined_df.shape}")
-                
-                # Ensure required columns exist
-                required_cols = ['account_id', 'original_text', 'URL', 'timestamp_share', 'Platform']
-                for col in required_cols:
-                    if col not in combined_df.columns:
-                        combined_df[col] = ''
-                        logger.warning(f"⚠️ Added missing column: {col}")
-                
-                # === FINAL PREPROCESSING ===
+                # Final preprocessing
                 processed_df = final_preprocess_and_map_columns(combined_df)
+                logger.info(f"📊 Processed Data Shape: {processed_df.shape} | Columns: {list(processed_df.columns)}")
                 
-                logger.info(f"📊 PROCESSED DATA COLUMNS: {list(processed_df.columns)}")
-                logger.info(f"📊 PROCESSED DATA SHAPE: {processed_df.shape}")
-                
-                # Parse timestamps with error handling
+                # Parse timestamps
                 if 'timestamp_share' in processed_df.columns:
                     processed_df['timestamp_share'] = processed_df['timestamp_share'].apply(
                         lambda x: parse_timestamp_robust(x) if pd.notna(x) else pd.NaT
                     )
                 
-                # === SAVE TO DATABASE ===
+                # Save to Database with detailed skip tracking
                 count = 0
                 urls_saved = 0
-                errors = []
+                skipped_empty = 0
+                skipped_dup = 0
                 
                 for idx, row in processed_df.iterrows():
                     try:
-                        # Skip if no content
-                        if not row.get('original_text') or pd.isna(row.get('original_text')) or str(row.get('original_text', '')).strip() == '':
+                        text_val = str(row.get('original_text', '')).strip()
+                        if not text_val or text_val.lower() in ['nan', 'none', '']:
+                            skipped_empty += 1
                             continue
                         
-                        # Check for duplicates
-                        cid = row.get('content_id')
-                        url_val = row.get('url') or row.get('URL')
+                        cid = str(row.get('content_id', '')).strip()
+                        url_val = str(row.get('url') or row.get('URL', '')).strip()
                         
-                        if cid and ProcessedPost.objects.filter(content_id=cid).exists():
+                        # Check duplicates
+                        if cid and cid.lower() != 'nan' and ProcessedPost.objects.filter(content_id=cid).exists():
+                            skipped_dup += 1
                             continue
-                        if url_val and str(url_val).startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
+                        if url_val.startswith('http') and ProcessedPost.objects.filter(url=url_val).exists():
+                            skipped_dup += 1
                             continue
                         
-                        # Get or create DataSource
-                        source_name = str(row.get('source_dataset', data_type))
                         source_obj, _ = DataSource.objects.get_or_create(name=source_name)
-                        
-                        # Prepare URL value
-                        url_value = str(url_val).strip()[:500] if url_val and str(url_val).startswith('http') else None
+                        url_value = url_val[:500] if url_val.startswith('http') else None
                         if url_value:
                             urls_saved += 1
-                        
-                        # Create post
+                        # Convert Pandas NaT to None for Django
+                        ts_val = row.get('timestamp_share')
+                        if pd.isna(ts_val) or str(ts_val) == 'NaT':
+                            ts_val = None
+                            
                         ProcessedPost.objects.create(
                             account_id=str(row.get('account_id', ''))[:100],
                             content_id=str(cid).strip()[:100] if cid else None,
                             original_text=str(row.get('original_text', '')).strip(),
                             url=url_value,
                             platform=str(row.get('Platform', 'Unknown')),
-                            timestamp_share=row.get('timestamp_share'),
+                            timestamp_share=ts_val,  # <--- NOW SAFE FOR DJANGO
                             source_dataset=source_obj,
                             is_election_related=is_election_related(str(row.get('original_text', '')))
                         )
                         count += 1
-                        
                     except Exception as row_error:
-                        errors.append(f"Row {idx}: {str(row_error)}")
-                        logger.error(f"❌ Error processing row {idx}: {row_error}")
+                        logger.error(f"❌ Row {idx} error: {row_error}")
                         continue
                 
-                logger.info(f"✅ Saved {count} posts, {urls_saved} with URLs from {original_name}")
-                if errors:
-                    logger.warning(f"⚠️ {len(errors)} rows failed to process")
+                logger.info(f"✅ Saved: {count} | Skipped Empty: {skipped_empty} | Skipped Duplicates: {skipped_dup}")
                 
                 # Update record
                 upload.status = 'completed'
-                upload.processing_log = f"Successfully processed {count} posts ({urls_saved} with URLs)"
-                if errors:
-                    upload.processing_log += f". {len(errors)} rows skipped."
+                upload.processing_log = f"Saved: {count}, Empty: {skipped_empty}, Duplicates: {skipped_dup}"
                 upload.records_processed = count
                 upload.save()
                 
                 results.append((original_name, True, f"Processed {count} posts", count))
-                logger.info(f"✅ {original_name}: Processed {count} posts")
                 
             except Exception as e:
                 logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
@@ -7100,20 +7514,16 @@ class ProcessUploadView(View):
                     upload.save()
                 results.append((uploaded_file.name, False, str(e), 0))
         
-        # === SHOW SUMMARY ===
+        # Show summary in UI
         success_count = sum(1 for _, s, _, c in results if s and c > 0)
         total_saved = sum(c for _, s, _, c in results if s)
-    
         
         if total_saved > 0:
-            if success_count == len([r for r in results if r[1]]):
-                messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully! Saved {total_saved} posts.")
-            else:
-                messages.warning(request, f"⚠️ {success_count}/{len(uploaded_files)} files succeeded. Saved {total_saved} posts total.")
+            messages.success(request, f"✅ Successfully saved {total_saved} new posts!")
         elif not any(s for _, s, _, _ in results):
-            messages.error(request, "❌ Failed to process any files. Check terminal logs for details.")
+            messages.error(request, "❌ Failed to process files. Check terminal logs for details.")
         else:
-            messages.info(request, "ℹ️ Upload completed. No new posts matched criteria (check logs for details).")
+            messages.warning(request, f"⚠️ File processed, but 0 new posts were saved. They may be duplicates or have empty text. Check logs.")
         
         return redirect('upload_data')
         
