@@ -775,7 +775,6 @@ def export_network_edges_with_tweets(request):
     
     return response
     
-@login_required
 def export_complete_network_csv(request):
     """Export COMPLETE network data - both nodes and edges with full metadata"""
     import csv
