@@ -1,0 +1,1495 @@
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights:  18%|█▊        | 36/201 [00:00<00:00, 350.43it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 1027.23it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 3936.51it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights:   3%|▎         | 7/201 [00:00<00:02, 68.53it/s]Loading weights:   8%|▊         | 17/201 [00:00<00:02, 85.74it/s]Loading weights:  13%|█▎        | 26/201 [00:00<00:02, 76.01it/s]Loading weights:  17%|█▋        | 34/201 [00:00<00:02, 71.62it/s]Loading weights:  24%|██▍       | 48/201 [00:00<00:01, 85.30it/s]Loading weights:  29%|██▉       | 59/201 [00:00<00:01, 92.16it/s]Loading weights:  34%|███▍      | 69/201 [00:00<00:01, 91.16it/s]Loading weights:  39%|███▉      | 79/201 [00:00<00:01, 90.37it/s]Loading weights:  44%|████▍     | 89/201 [00:01<00:01, 90.62it/s]Loading weights:  49%|████▉     | 99/201 [00:01<00:01, 85.81it/s]Loading weights:  54%|█████▎    | 108/201 [00:01<00:01, 80.45it/s]Loading weights:  59%|█████▊    | 118/201 [00:01<00:00, 85.59it/s]Loading weights:  63%|██████▎   | 127/201 [00:01<00:00, 76.64it/s]Loading weights:  72%|███████▏  | 144/201 [00:01<00:00, 99.82it/s]Loading weights:  80%|███████▉  | 160/201 [00:01<00:00, 110.49it/s]Loading weights:  86%|████████▌ | 172/201 [00:01<00:00, 97.08it/s] Loading weights:  91%|█████████ | 183/201 [00:02<00:00, 95.44it/s]Loading weights:  96%|█████████▌| 193/201 [00:02<00:00, 85.84it/s]Loading weights: 100%|██████████| 201/201 [00:02<00:00, 90.62it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 2570.10it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 3675.16it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 2340.86it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 6189.42it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 5764.99it/s]
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights:  22%|██▏       | 44/201 [00:00<00:00, 415.79it/s]Loading weights:  43%|████▎     | 86/201 [00:00<00:00, 290.01it/s]Loading weights:  72%|███████▏  | 145/201 [00:00<00:00, 394.44it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 455.40it/s]
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+LLM extraction failed: string indices must be integers, not 'str'
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights:   6%|▋         | 13/201 [00:00<00:01, 115.79it/s]Loading weights:  12%|█▏        | 25/201 [00:00<00:02, 86.24it/s] Loading weights:  17%|█▋        | 35/201 [00:00<00:01, 85.21it/s]Loading weights:  26%|██▌       | 52/201 [00:00<00:01, 101.05it/s]Loading weights:  31%|███▏      | 63/201 [00:00<00:01, 96.92it/s] Loading weights:  36%|███▋      | 73/201 [00:00<00:01, 95.01it/s]Loading weights:  41%|████▏     | 83/201 [00:00<00:01, 92.83it/s]Loading weights:  46%|████▋     | 93/201 [00:01<00:01, 82.15it/s]Loading weights:  52%|█████▏    | 104/201 [00:01<00:01, 86.54it/s]Loading weights:  56%|█████▌    | 113/201 [00:01<00:01, 80.29it/s]Loading weights:  61%|██████    | 122/201 [00:01<00:00, 79.03it/s]Loading weights:  65%|██████▍   | 130/201 [00:01<00:00, 74.76it/s]Loading weights:  70%|███████   | 141/201 [00:01<00:00, 83.03it/s]Loading weights:  75%|███████▍  | 150/201 [00:01<00:00, 74.99it/s]Loading weights:  80%|████████  | 161/201 [00:01<00:00, 79.13it/s]Loading weights:  85%|████████▍ | 170/201 [00:02<00:00, 78.37it/s]Loading weights:  90%|████████▉ | 180/201 [00:02<00:00, 82.14it/s]Loading weights:  94%|█████████▍| 189/201 [00:02<00:00, 77.92it/s]Loading weights:  98%|█████████▊| 197/201 [00:02<00:00, 73.01it/s]Loading weights: 100%|██████████| 201/201 [00:02<00:00, 83.01it/s]
+⏰ TIMEOUT: Scan stopped after 90.0s (limit: 90s)
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 5949.70it/s]
+⏰ TIMEOUT: Scan stopped after 90.0s (limit: 90s)
+Traceback (most recent call last):
+  File "/home/ubuntu/ethiopia-monitor/venv/bin/gunicorn", line 6, in <module>
+    sys.exit(run())
+             ^^^^^
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+    WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/app/base.py", line 235, in run
+    super().run()
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/app/base.py", line 71, in run
+    Arbiter(self).run()
+    ^^^^^^^^^^^^^
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/arbiter.py", line 63, in __init__
+    self.setup(app)
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/arbiter.py", line 139, in setup
+    self.app.wsgi()
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/app/base.py", line 66, in wsgi
+    self.callable = self.load()
+                    ^^^^^^^^^^^
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+    return self.load_wsgiapp()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+    return util.import_app(self.app_uri)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/gunicorn/util.py", line 411, in import_app
+    mod = importlib.import_module(module)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/election_monitor/wsgi.py", line 16, in <module>
+    application = get_wsgi_application()
+                  ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/django/core/wsgi.py", line 12, in get_wsgi_application
+    django.setup(set_prefix=False)
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/django/__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/django/apps/registry.py", line 91, in populate
+    app_config = AppConfig.create(entry)
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/ethiopia-monitor/venv/lib/python3.12/site-packages/django/apps/config.py", line 193, in create
+    import_module(entry)
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1310, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1310, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'huey'
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/bin/gunicorn", line 6, in <module>
+    sys.exit(run())
+             ^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+    WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/app/base.py", line 235, in run
+    super().run()
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/app/base.py", line 71, in run
+    Arbiter(self).run()
+    ^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/arbiter.py", line 63, in __init__
+    self.setup(app)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/arbiter.py", line 139, in setup
+    self.app.wsgi()
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/app/base.py", line 66, in wsgi
+    self.callable = self.load()
+                    ^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+    return self.load_wsgiapp()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+    return util.import_app(self.app_uri)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 411, in import_app
+    mod = importlib.import_module(module)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/election_monitor/wsgi.py", line 16, in <module>
+    application = get_wsgi_application()
+                  ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/core/wsgi.py", line 12, in get_wsgi_application
+    django.setup(set_prefix=False)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/__init__.py", line 24, in setup
+    apps.populate(settings.INSTALLED_APPS)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/apps/registry.py", line 91, in populate
+    app_config = AppConfig.create(entry)
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/apps/config.py", line 193, in create
+    import_module(entry)
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/huey/contrib/djhuey/__init__.py", line 78, in <module>
+    HUEY = RedisHuey(default_queue_name())
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/huey/api.py", line 107, in __init__
+    self.storage = self.create_storage()
+                   ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/huey/api.py", line 137, in create_storage
+    return self.get_storage(**self.storage_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/huey/api.py", line 149, in get_storage
+    return Storage(self.name, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/huey/storage.py", line 441, in __init__
+    raise ConfigurationError('"redis" python module not found, cannot '
+huey.exceptions.ConfigurationError: "redis" python module not found, cannot use Redis storage backend. Run "pip install redis" to install.
+/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django_q/conf.py:8: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+[2026-07-09 10:03:51 +0300] [823791] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 10:03:51 +0300] [823791] [INFO] Listening at: http://0.0.0.0:8505 (823791)
+[2026-07-09 10:03:51 +0300] [823791] [INFO] Using worker: gthread
+[2026-07-09 10:03:51 +0300] [823794] [INFO] Booting worker with pid: 823794
+[2026-07-09 10:03:51 +0300] [823791] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 10:04:23 +0300] [823791] [INFO] Handling signal: term
+[2026-07-09 10:04:23 +0300] [823794] [INFO] Worker exiting (pid: 823794)
+[2026-07-09 10:04:25 +0300] [823791] [INFO] Shutting down: Master
+/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django_q/conf.py:8: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+[2026-07-09 10:05:26 +0300] [824208] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 10:05:26 +0300] [824208] [INFO] Listening at: http://0.0.0.0:8505 (824208)
+[2026-07-09 10:05:26 +0300] [824208] [INFO] Using worker: gthread
+[2026-07-09 10:05:26 +0300] [824211] [INFO] Booting worker with pid: 824211
+[2026-07-09 10:05:26 +0300] [824208] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 10:13:13 +0300] [825719] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 10:13:13 +0300] [825719] [INFO] Listening at: http://0.0.0.0:8505 (825719)
+[2026-07-09 10:13:13 +0300] [825719] [INFO] Using worker: gthread
+[2026-07-09 10:13:13 +0300] [825722] [INFO] Booting worker with pid: 825722
+[2026-07-09 10:13:13 +0300] [825719] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+⏰ TIMEOUT: Scan stopped after 90.1s (limit: 90s)
+⏰ TIMEOUT: Scan stopped after 90.1s (limit: 90s)
+[2026-07-09 11:11:43 +0300] [825719] [INFO] Handling signal: term
+[2026-07-09 11:11:43 +0300] [825722] [INFO] Worker exiting (pid: 825722)
+[2026-07-09 11:11:45 +0300] [825719] [INFO] Shutting down: Master
+[2026-07-09 11:12:21 +0300] [830495] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 11:12:21 +0300] [830495] [INFO] Listening at: http://0.0.0.0:8505 (830495)
+[2026-07-09 11:12:21 +0300] [830495] [INFO] Using worker: gthread
+[2026-07-09 11:12:21 +0300] [830498] [INFO] Booting worker with pid: 830498
+[2026-07-09 11:12:21 +0300] [830495] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 11:24:52 +0300] [831340] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 11:24:52 +0300] [831340] [INFO] Listening at: http://0.0.0.0:8505 (831340)
+[2026-07-09 11:24:52 +0300] [831340] [INFO] Using worker: gthread
+[2026-07-09 11:24:52 +0300] [831343] [INFO] Booting worker with pid: 831343
+[2026-07-09 11:24:53 +0300] [831340] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 11:40:50 +0300] [831340] [INFO] Handling signal: term
+[2026-07-09 11:40:50 +0300] [831343] [INFO] Worker exiting (pid: 831343)
+[2026-07-09 11:40:52 +0300] [831340] [INFO] Shutting down: Master
+[2026-07-09 11:41:03 +0300] [832955] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 11:41:03 +0300] [832955] [INFO] Listening at: http://0.0.0.0:8505 (832955)
+[2026-07-09 11:41:03 +0300] [832955] [INFO] Using worker: gthread
+[2026-07-09 11:41:03 +0300] [832958] [INFO] Booting worker with pid: 832958
+[2026-07-09 11:41:03 +0300] [832955] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 11:53:14 +0300] [834049] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 11:53:14 +0300] [834049] [INFO] Listening at: http://0.0.0.0:8505 (834049)
+[2026-07-09 11:53:14 +0300] [834049] [INFO] Using worker: gthread
+[2026-07-09 11:53:14 +0300] [834052] [INFO] Booting worker with pid: 834052
+[2026-07-09 11:53:14 +0300] [834049] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 12:15:53 +0300] [834049] [INFO] Handling signal: term
+[2026-07-09 12:15:53 +0300] [834052] [INFO] Worker exiting (pid: 834052)
+[2026-07-09 12:15:54 +0300] [834049] [INFO] Shutting down: Master
+[2026-07-09 12:16:05 +0300] [836077] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 12:16:05 +0300] [836077] [INFO] Listening at: http://0.0.0.0:8505 (836077)
+[2026-07-09 12:16:05 +0300] [836077] [INFO] Using worker: gthread
+[2026-07-09 12:16:05 +0300] [836080] [INFO] Booting worker with pid: 836080
+[2026-07-09 12:16:05 +0300] [836077] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 12:24:06 +0300] [836524] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 12:24:06 +0300] [836524] [INFO] Listening at: http://0.0.0.0:8505 (836524)
+[2026-07-09 12:24:06 +0300] [836524] [INFO] Using worker: gthread
+[2026-07-09 12:24:06 +0300] [836527] [INFO] Booting worker with pid: 836527
+[2026-07-09 12:24:07 +0300] [836524] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 12:31:01 +0300] [837329] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 12:31:01 +0300] [837329] [INFO] Listening at: http://0.0.0.0:8505 (837329)
+[2026-07-09 12:31:01 +0300] [837329] [INFO] Using worker: gthread
+[2026-07-09 12:31:01 +0300] [837332] [INFO] Booting worker with pid: 837332
+[2026-07-09 12:31:02 +0300] [837329] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 12:39:07 +0300] [837329] [INFO] Handling signal: term
+[2026-07-09 12:39:07 +0300] [837332] [INFO] Worker exiting (pid: 837332)
+[2026-07-09 12:39:09 +0300] [837329] [INFO] Shutting down: Master
+[2026-07-09 12:39:17 +0300] [837784] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 12:39:17 +0300] [837784] [INFO] Listening at: http://0.0.0.0:8505 (837784)
+[2026-07-09 12:39:17 +0300] [837784] [INFO] Using worker: gthread
+[2026-07-09 12:39:17 +0300] [837787] [INFO] Booting worker with pid: 837787
+[2026-07-09 12:39:17 +0300] [837784] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 13:38:13 +0300] [842565] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 13:38:13 +0300] [842565] [INFO] Listening at: http://0.0.0.0:8505 (842565)
+[2026-07-09 13:38:13 +0300] [842565] [INFO] Using worker: gthread
+[2026-07-09 13:38:13 +0300] [842568] [INFO] Booting worker with pid: 842568
+[2026-07-09 13:38:13 +0300] [842565] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 13:50:21 +0300] [842565] [INFO] Handling signal: term
+[2026-07-09 13:50:21 +0300] [842568] [INFO] Worker exiting (pid: 842568)
+[2026-07-09 13:50:22 +0300] [842565] [INFO] Shutting down: Master
+[2026-07-09 13:50:28 +0300] [843767] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 13:50:28 +0300] [843767] [INFO] Listening at: http://0.0.0.0:8505 (843767)
+[2026-07-09 13:50:28 +0300] [843767] [INFO] Using worker: gthread
+[2026-07-09 13:50:28 +0300] [843770] [INFO] Booting worker with pid: 843770
+[2026-07-09 13:50:28 +0300] [843767] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+⏰ TIMEOUT: Scan stopped after 90.0s (limit: 90s)
+⏰ TIMEOUT: Scan stopped after 90.0s (limit: 90s)
+[2026-07-09 18:13:22 +0300] [843767] [INFO] Handling signal: term
+[2026-07-09 18:13:22 +0300] [843770] [INFO] Worker exiting (pid: 843770)
+[2026-07-09 18:13:24 +0300] [843767] [INFO] Shutting down: Master
+[2026-07-09 18:13:33 +0300] [864336] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 18:13:33 +0300] [864336] [INFO] Listening at: http://0.0.0.0:8505 (864336)
+[2026-07-09 18:13:33 +0300] [864336] [INFO] Using worker: gthread
+[2026-07-09 18:13:33 +0300] [864339] [INFO] Booting worker with pid: 864339
+[2026-07-09 18:13:34 +0300] [864336] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 18:26:11 +0300] [865567] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 18:26:11 +0300] [865567] [INFO] Listening at: http://0.0.0.0:8505 (865567)
+[2026-07-09 18:26:11 +0300] [865567] [INFO] Using worker: gthread
+[2026-07-09 18:26:11 +0300] [865570] [INFO] Booting worker with pid: 865570
+[2026-07-09 18:26:11 +0300] [865567] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 18:51:55 +0300] [865567] [INFO] Handling signal: term
+[2026-07-09 18:51:55 +0300] [865570] [INFO] Worker exiting (pid: 865570)
+[2026-07-09 18:51:57 +0300] [865567] [INFO] Shutting down: Master
+[2026-07-09 18:52:07 +0300] [867582] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 18:52:07 +0300] [867582] [INFO] Listening at: http://0.0.0.0:8505 (867582)
+[2026-07-09 18:52:07 +0300] [867582] [INFO] Using worker: gthread
+[2026-07-09 18:52:07 +0300] [867585] [INFO] Booting worker with pid: 867585
+[2026-07-09 18:52:07 +0300] [867582] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 19:23:16 +0300] [869981] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 19:23:16 +0300] [869981] [INFO] Listening at: http://0.0.0.0:8505 (869981)
+[2026-07-09 19:23:16 +0300] [869981] [INFO] Using worker: gthread
+[2026-07-09 19:23:16 +0300] [869984] [INFO] Booting worker with pid: 869984
+[2026-07-09 19:23:16 +0300] [869981] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+⏰ TIMEOUT: Scan stopped after 90.4s
+[2026-07-09 19:32:52 +0300] [869981] [INFO] Handling signal: term
+[2026-07-09 19:32:52 +0300] [869984] [INFO] Worker exiting (pid: 869984)
+[2026-07-09 19:32:54 +0300] [869981] [INFO] Shutting down: Master
+[2026-07-09 19:33:04 +0300] [870809] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 19:33:04 +0300] [870809] [INFO] Listening at: http://0.0.0.0:8505 (870809)
+[2026-07-09 19:33:04 +0300] [870809] [INFO] Using worker: gthread
+[2026-07-09 19:33:04 +0300] [870812] [INFO] Booting worker with pid: 870812
+[2026-07-09 19:33:04 +0300] [870809] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-09 20:01:27 +0300] [873193] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 20:01:27 +0300] [873193] [INFO] Listening at: http://0.0.0.0:8505 (873193)
+[2026-07-09 20:01:27 +0300] [873193] [INFO] Using worker: gthread
+[2026-07-09 20:01:27 +0300] [873197] [INFO] Booting worker with pid: 873197
+[2026-07-09 20:01:28 +0300] [873193] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1670: RuntimeWarning: DateTimeField ProcessedPost.timestamp_share received a naive datetime (2025-10-01 00:00:00) while time zone support is active.
+  warnings.warn(
+/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1670: RuntimeWarning: DateTimeField ProcessedPost.timestamp_share received a naive datetime (2026-07-09 00:00:00) while time zone support is active.
+  warnings.warn(
+/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1670: RuntimeWarning: DateTimeField ProcessedPost.timestamp_share received a naive datetime (2026-05-01 00:00:00) while time zone support is active.
+  warnings.warn(
+/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1670: RuntimeWarning: DateTimeField ProcessedPost.timestamp_share received a naive datetime (2026-07-09 00:00:00) while time zone support is active.
+  warnings.warn(
+[2026-07-10 09:08:12 +0300] [936705] [INFO] Starting gunicorn 26.0.0
+[2026-07-10 09:08:12 +0300] [936705] [INFO] Listening at: http://0.0.0.0:8505 (936705)
+[2026-07-10 09:08:12 +0300] [936705] [INFO] Using worker: gthread
+[2026-07-10 09:08:12 +0300] [936708] [INFO] Booting worker with pid: 936708
+[2026-07-10 09:08:12 +0300] [936705] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+⏰ TIMEOUT: Scan stopped after 90.4s
+[2026-07-10 12:18:24 +0300] [936705] [INFO] Handling signal: term
+[2026-07-10 12:18:24 +0300] [936708] [INFO] Worker exiting (pid: 936708)
+[2026-07-10 12:18:26 +0300] [936705] [INFO] Shutting down: Master
+[2026-07-10 12:20:27 +0300] [953632] [INFO] Starting gunicorn 26.0.0
+[2026-07-10 12:20:27 +0300] [953632] [INFO] Listening at: http://0.0.0.0:8505 (953632)
+[2026-07-10 12:20:27 +0300] [953632] [INFO] Using worker: gthread
+[2026-07-10 12:20:27 +0300] [953635] [INFO] Booting worker with pid: 953635
+[2026-07-10 12:20:27 +0300] [953632] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+⏰ TIMEOUT: Scan stopped after 90.0s
+⏰ TIMEOUT: Scan stopped after 90.1s
+[2026-07-10 12:54:45 +0300] [956754] [INFO] Starting gunicorn 26.0.0
+[2026-07-10 12:54:45 +0300] [956754] [INFO] Listening at: http://0.0.0.0:8505 (956754)
+[2026-07-10 12:54:45 +0300] [956754] [INFO] Using worker: gthread
+[2026-07-10 12:54:45 +0300] [956757] [INFO] Booting worker with pid: 956757
+[2026-07-10 12:54:45 +0300] [956754] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-10 13:01:42 +0300] [956754] [INFO] Handling signal: term
+[2026-07-10 13:01:42 +0300] [956757] [INFO] Worker exiting (pid: 956757)
+[2026-07-10 13:01:43 +0300] [956754] [INFO] Shutting down: Master
+[2026-07-10 13:01:57 +0300] [957561] [INFO] Starting gunicorn 26.0.0
+[2026-07-10 13:01:57 +0300] [957561] [INFO] Listening at: http://0.0.0.0:8505 (957561)
+[2026-07-10 13:01:57 +0300] [957561] [INFO] Using worker: gthread
+[2026-07-10 13:01:57 +0300] [957564] [INFO] Booting worker with pid: 957564
+[2026-07-10 13:01:57 +0300] [957561] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+⏰ TIMEOUT: Scan stopped after 90.0s
+[2026-07-13 16:12:06 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-13 16:13:00 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-13 16:29:31 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-13 16:30:24 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-13 16:46:59 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-13 16:47:48 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-13 17:04:24 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-13 17:05:13 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+⏰ TIMEOUT: Scan stopped after 90.1s
+[2026-07-14 17:52:12 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-14 17:52:16 +0300] [957564] [ERROR] Socket error processing request.
+Traceback (most recent call last):
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 479, in handle
+    keepalive = self.handle_request(req, conn)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 698, in handle_request
+    util.reraise(*sys.exc_info())
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 681, in reraise
+    raise value
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/workers/gthread.py", line 684, in handle_request
+    resp.write(item)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/http/wsgi.py", line 442, in write
+    util.write(self.sock, arg, self.chunked)
+  File "/home/ubuntu/Ethiopia_2026election_monitoring_tool/venv/lib/python3.12/site-packages/gunicorn/util.py", line 339, in write
+    sock.sendall(data)
+TimeoutError: [Errno 110] Connection timed out
+[2026-07-14 18:12:09 +0300] [957561] [INFO] Handling signal: term
+[2026-07-14 18:12:09 +0300] [957564] [INFO] Worker exiting (pid: 957564)
+[2026-07-14 18:12:11 +0300] [957561] [INFO] Shutting down: Master
+[2026-07-14 18:12:35 +0300] [1452770] [INFO] Starting gunicorn 26.0.0
+[2026-07-14 18:12:35 +0300] [1452770] [INFO] Listening at: http://0.0.0.0:8505 (1452770)
+[2026-07-14 18:12:35 +0300] [1452770] [INFO] Using worker: gthread
+[2026-07-14 18:12:35 +0300] [1452773] [INFO] Booting worker with pid: 1452773
+[2026-07-14 18:12:35 +0300] [1452770] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+Loading weights:   0%|          | 0/201 [00:00<?, ?it/s]Loading weights: 100%|██████████| 201/201 [00:00<00:00, 5761.09it/s]
+[2026-07-15 09:42:58 +0300] [1530674] [INFO] Starting gunicorn 26.0.0
+[2026-07-15 09:42:58 +0300] [1530674] [INFO] Listening at: http://0.0.0.0:8505 (1530674)
+[2026-07-15 09:42:58 +0300] [1530674] [INFO] Using worker: gthread
+[2026-07-15 09:42:58 +0300] [1530677] [INFO] Booting worker with pid: 1530677
+[2026-07-15 09:42:58 +0300] [1530674] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl
+[2026-07-15 09:45:24 +0300] [1530674] [INFO] Handling signal: term
+[2026-07-15 09:45:24 +0300] [1530677] [INFO] Worker exiting (pid: 1530677)
+[2026-07-15 09:45:25 +0300] [1530674] [INFO] Shutting down: Master
