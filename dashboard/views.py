@@ -6156,6 +6156,7 @@ class LexiconsView(TemplateView):
     GENERIC_TERMS_CONTEXT_MAP = {
         'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
         'ውጭ': ['ጣልቃ', 'ተዕኖ', 'ገንዘብ', 'ምርጫ', 'ሴራ', 'እጅ']
+    }
 
     # ─ CATEGORY DISPLAY NAME MAPPING ─────────────────────────────────────
     # Maps internal category keys to user-friendly display names.
