@@ -324,7 +324,7 @@ def parse_llm_translations(response_text):
     
     return translations
     
-@login_required
+
 def export_merged_gephi_csv(request):
     """Generates and downloads a Gephi-compatible CSV edge-list representing the coordination network"""
     import re
@@ -775,7 +775,6 @@ def export_network_edges_with_tweets(request):
     
     return response
     
-
 def export_complete_network_csv(request):
     """Export COMPLETE network data - both nodes and edges with full metadata"""
     import csv
@@ -6153,6 +6152,12 @@ class LexiconsView(TemplateView):
     CHUNK_SIZE = 1000           # Process posts in larger chunks
     CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
     
+    # Words that are too generic on their own and require secondary context markers
+    GENERIC_TERMS_CONTEXT_MAP = {
+        'foreign': ['interference', 'meddling', 'influence', 'election', 'funding', 'sponsored', 'agent', 'pressure'],
+        'ውጭ': ['ጣልቃ', 'ተዕኖ', 'ገንዘብ', 'ምርጫ', 'ሴራ', 'እጅ']
+    }
+
     # ─ CATEGORY DISPLAY NAME MAPPING ─────────────────────────────────────
     # Maps internal category keys to user-friendly display names.
     # Note: Using the internal key as the display name prevents any translation mismatches!
@@ -6192,6 +6197,9 @@ class LexiconsView(TemplateView):
         term_clean = term.strip().lower()
         if term_clean in self.GENERIC_TERMS_CONTEXT_MAP:
             required_contexts = self.GENERIC_TERMS_CONTEXT_MAP[term_clean]
+
+            # Verify if at least one context-strengthening word is present
+
             if not any(context in text_lower for context in required_contexts):
                 return False
         return True
@@ -6207,6 +6215,10 @@ class LexiconsView(TemplateView):
         for m in raw_matches:
             if len(m['term'].strip()) <= 1:
                 continue
+
+            # Context Check: filter out generic keywords lacking supporting intent context
+
+
             if not self._is_valid_context(m['term'], text_lower):
                 continue
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
@@ -6228,16 +6240,23 @@ class LexiconsView(TemplateView):
         context = super().get_context_data(**kwargs)
         
         # ── 1. URL params ────────────────────────────────────────────────
+        selected_category = self.request.GET.get('category', '').strip()
+
         raw_category = self.request.GET.get('category', '').strip()
+
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end   = self.request.GET.get('end_date', '')
         
+
+        # ── 2. Cache (overview only, keyed to date range) ─────────────────
+
         # Translate display name to internal key before processing.
         # Because most display names ARE the internal keys, this safely resolves everything.
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
         # ─ 2. Cache (overview only, keyed to date range) ─────────────────
+
         cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
         cached_data = cache.get(cache_key)
         
@@ -6285,6 +6304,15 @@ class LexiconsView(TemplateView):
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
+
+            
+            db_terms = LexiconTerm.objects.filter(category=selected_category)
+            if db_terms.exists():
+                category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
+            elif selected_category in CONFIG.get('lexicon', {}):
+                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items()]
+            
+
             # Initialize the variable to avoid UnboundLocalError
             category_terms = []
             # 1. Look up using case-insensitive check in DB
@@ -6298,6 +6326,7 @@ class LexiconsView(TemplateView):
                 if matched_config_key:
                     category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
             # This check is now completely safe!
+
             if category_terms:
                 term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
@@ -6307,9 +6336,18 @@ class LexiconsView(TemplateView):
                 except Exception:
                     compiled_category_re = None
                 
+
+                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
+                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
+                try:
+                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
+                except Exception:
+                    compiled_category_re = None
+
                 # Track seen posts to avoid duplicates
                 seen_post_ids = set()
                 seen_post_texts = set()
+
                 
                 for post in scan_pool:
                     if self._check_timeout(start_time):
@@ -6319,6 +6357,9 @@ class LexiconsView(TemplateView):
                     if not post.original_text: 
                         continue
                     
+
+                    posts_scanned += 1
+                    if not post.original_text: continue
                     # Skip RT/retweet posts
                     if post.original_text.strip().lower().startswith('rt ') or post.original_text.strip().lower().startswith('rt\n'):
                         continue
@@ -6326,10 +6367,17 @@ class LexiconsView(TemplateView):
                     # Skip if we've already seen this post
                     if post.id in seen_post_ids:
                         continue
+
                     
                     text       = post.original_text
                     text_lower = text.lower()
                     
+
+                    # Instantly drops unrelated records out of processing loop
+                    if compiled_category_re and not compiled_category_re.search(text_lower):
+                        continue
+                        
+
                     # Skip if we've already seen this exact text content
                     text_hash = hash(text.strip())
                     if text_hash in seen_post_texts:
@@ -6338,6 +6386,7 @@ class LexiconsView(TemplateView):
                     # Instantly drops unrelated records out of processing loop
                     if compiled_category_re and not compiled_category_re.search(text_lower):
                         continue
+
                     is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
                     matched_terms = []
                     for term_lower, meta in term_meta.items():
@@ -6347,13 +6396,20 @@ class LexiconsView(TemplateView):
                             continue
                         if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
                             continue
+
+                        
+
+
                         matched_terms.append(meta['term'])
                         all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
                     if matched_terms:
+
+
                         # Mark this post as seen
                         seen_post_ids.add(post.id)
                         seen_post_texts.add(text_hash)
                         
+
                         posts_with_terms.append({
                             'id':            post.id,
                             'text':          text,
@@ -6376,6 +6432,10 @@ class LexiconsView(TemplateView):
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
+
+            
+
+
             for post in scan_pool:
                 if self._check_timeout(start_time):
                     scan_timed_out = True
@@ -6465,7 +6525,10 @@ class LexiconsView(TemplateView):
                 logger.warning(f"Cache save failed: {e}")
         
         context.update(shared)
+
+        context['selected_category'] = selected_category
         context['selected_category'] = raw_category  # Keep original for UI highlighting
+
         context['category_terms'] = category_terms
         context['posts_with_terms'] = posts_with_terms[:100]
         
@@ -6865,7 +6928,7 @@ class NetworksView(TemplateView):
         
 class LexiconManagementView(TemplateView):
     template_name = 'dashboard/lexicon_management.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
@@ -6873,7 +6936,11 @@ class LexiconManagementView(TemplateView):
         lexicon_terms = LexiconTerm.objects.exclude(
             term__regex=r'^.$'
         ).order_by('category', 'severity')
+
+
+
         
+
         # If DB is empty, seed from CONFIG (one-time migration)
         if not lexicon_terms.exists():
             for category, terms in CONFIG['lexicon'].items():
@@ -6886,13 +6953,26 @@ class LexiconManagementView(TemplateView):
                                 'severity': metadata.get('severity', 'medium'),
                                 'target_entity': metadata.get('target_entity', ''),
                                 'language': metadata.get('language', 'english'),
+
+
                                 'justification': '',  # Empty for CONFIG terms
+
                                 'is_election_related': True
                             }
                         )
             lexicon_terms = LexiconTerm.objects.exclude(
                 term__regex=r'^.$'
             ).order_by('category', 'severity')
+
+
+        # RESPECT THE GLOBAL DATE FILTER
+        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+        total_posts_in_filter = filtered_posts.count()
+
+        # Only scan the most recent 3000 posts instead of all
+        posts_to_scan = filtered_posts[:3000]
+        
+
         
         # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
@@ -6900,6 +6980,7 @@ class LexiconManagementView(TemplateView):
         
         # Only scan the most recent 3000 posts instead of all
         posts_to_scan = filtered_posts[:3000]
+
         all_matches = []
         posts_scanned = 0
         
@@ -6914,6 +6995,19 @@ class LexiconManagementView(TemplateView):
                 except Exception as e:
                     logger.warning(f"Error scanning post {post.id}: {e}")
                     continue
+
+
+        # Get distinct categories for filter dropdown
+        categories = lexicon_terms.values_list('category', flat=True).distinct()
+
+        # Get scan results from session (if any) and clear immediately
+        scan_results = self.request.session.pop('scan_results', None)
+
+        # Determine filter state for the template text
+        view_all = self.request.GET.get('view_all') == 'true'
+        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
+
+
         
         # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
@@ -6925,6 +7019,7 @@ class LexiconManagementView(TemplateView):
         view_all = self.request.GET.get('view_all') == 'true'
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
         
+
         context.update({
             'active_tab': 'lexicon_management',
             'lexicon_terms': lexicon_terms,
@@ -6942,10 +7037,10 @@ class LexiconManagementView(TemplateView):
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
         return context
-    
+
     def post(self, request, *args, **kwargs):
         action = request.POST.get('action')
-        
+
         # Handle Edit Term
         if action == 'edit_term':
             term_id = request.POST.get('term_id')
@@ -6967,7 +7062,7 @@ class LexiconManagementView(TemplateView):
                         messages.warning(request, "Term must be at least 2 characters long.")
                 except LexiconTerm.DoesNotExist:
                     messages.error(request, "Term not found.")
-        
+
         # Handle Delete Term
         elif action == 'delete_term':
             term_id = request.POST.get('term_id')
@@ -6978,7 +7073,7 @@ class LexiconManagementView(TemplateView):
                     cache.delete("lexicon_dashboard_data_v2")
                 except Exception as e:
                     messages.error(request, f"Error: {e}")
-        
+
         # Handle Add Term
         elif action == 'add_term':
             term = request.POST.get('term', '').strip()
@@ -6998,7 +7093,10 @@ class LexiconManagementView(TemplateView):
                 cache.delete("lexicon_dashboard_data_v2")
             else:
                 messages.warning(request, "Term must be at least 2 characters long. Single characters are skipped.")
+
+
         
+
         # Handle Scan Text
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
@@ -7006,20 +7104,41 @@ class LexiconManagementView(TemplateView):
                 # 1. Lexicon-based detection
                 lexicon_matches = scan_text_for_lexicon_terms(text)
                 lexicon_risk = calculate_risk_score(lexicon_matches)
-                
+
                 # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm(text)
+
+
+                # 3. Extract NEW trigger terms not in lexicon
+                new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
+
+                # 4. Fine-tuned AFRO-XLMR Model detection (Swapped out Gemma here)
+
                 
                 # 3. Extract NEW trigger terms not in lexicon
                 new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
                 
                 # 4. Fine-tuned AFRO-XLMR Model detection
+
                 try:
                     afro_result = detect_hate_speech_afro_xlmr(text)
                 except Exception as e:
                     logger.error(f"AFRO-XLMR detection failed: {e}")
                     afro_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'is_hate_speech': False, 'error': 'Model failed to compute'}
                 
+
+                # 5. Determine final verdict - AFRO-XLMR / LLM Priority Check
+                is_hate_speech = False
+                overall_severity_num = 1
+                explanation = ""
+
+                llm_is_hate = llm_result.get('is_hate_speech', False)
+                llm_confidence = llm_result.get('confidence', 0)
+                llm_explanation = llm_result.get('explanation', '').lower()
+                
+                afro_is_hate = afro_result.get('is_hate_speech', False)
+                afro_confidence = afro_result.get('confidence', 0)
+
                 # 5. Determine final verdict
                 is_hate_speech = False
                 overall_severity_num = 1
@@ -7080,14 +7199,64 @@ class LexiconManagementView(TemplateView):
                     terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
                     analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
                 combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
+
                 
-                # Save to session
+                # SAFETY NET: If LLM explanation indicates hate speech, force flag
+                hate_indicators = [
+                    'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
+                    'derogatory', 'discrimination', 'dangerous', 'threat',
+                    'ethnic cleansing', 'genocide', 'kill', 'attack', 'slaughter'
+                ]
+                
+                if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
+                    llm_is_hate = True
+                    llm_confidence = max(llm_confidence, 0.75)
+                
+                # PRIORITY 1: AFRO-XLMR detects hate speech confidently
+                if afro_is_hate and afro_confidence >= 0.6:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_result.get('severity', 'medium'), 2)
+                    explanation = f"AFRO-XLMR Model detected hate speech ({afro_confidence*100:.0f}% confidence)."
+                
+                # PRIORITY 2: LLM says hate speech
+                elif llm_is_hate and llm_confidence >= 0.6:
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
+                    explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
+                
+                # PRIORITY 3: Lexicon finds high-risk terms
+                elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
+                    is_hate_speech = True
+                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
+                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
+                
+                # PRIORITY 4: Default to neutral
+                else:
+                    is_hate_speech = False
+                    overall_severity_num = 1
+                    if lexicon_matches:
+                        explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
+                    else:
+                        explanation = "No hate speech detected by any method."
+                
+                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
+                
+                # Create combined analysis field
+                analysis_parts = []
+                if llm_result.get('explanation'):
+                    analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
+                if lexicon_matches:
+                    terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
+                    analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
+                combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
+                
+                # Save data safely back to UI template context via session
                 request.session['scan_results'] = {
                     'text': text[:200] + '...' if len(text) > 200 else text,
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
-                    'afro_xlmr_result': afro_result,
+                    'afro_xlmr_result': afro_result,  # Replaces gemma_result key smoothly
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity_num],
                     'overall_confidence': round(max(llm_confidence, afro_confidence), 2),
@@ -7112,7 +7281,7 @@ class LexiconManagementView(TemplateView):
                         messages.success(request, "No hate speech detected.")
             else:
                 messages.warning(request, "Please enter text to scan")
-        
+
         return redirect('lexicon_management')
            
 class UploadDataView(TemplateView):
