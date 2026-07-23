@@ -75,3 +75,6 @@ dashboard/model_cache/
 !dashboard/model_cache/.gitkeep
 dashboard/model_cache/
 !dashboard/model_cache/.gitkeep
+*.pkl
+dashboard/models_cache/
+metrics.json
