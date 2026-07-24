@@ -50,7 +50,7 @@
             </a>
             <a href="{% url 'export_gephi_edges_csv' %}" 
                class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm shadow-sm">
-                📥 Download Edges Only
+                📥 Download Gephi ready data
             </a>
         </div>
     </div>
@@ -329,19 +329,41 @@
         processTrace(amplifierNodes, '#f59e0b', '🟠 Amplifier Accounts');
         processTrace(defaultNodes, '#10b981', '🟢 Other Handles');
 
+        // Dynamically compute canvas boundaries to avoid node clipping
+        const xVals = nodesToRender.map(n => n.x).filter(v => v !== undefined);
+        const yVals = nodesToRender.map(n => n.y).filter(v => v !== undefined);
+
+        const xMin = Math.min(...xVals), xMax = Math.max(...xVals);
+        const yMin = Math.min(...yVals), yMax = Math.max(...yVals);
+
+        const xPad = (xMax - xMin) * 0.18 || 1;
+        const yPad = (yMax - yMin) * 0.18 || 1;
+
         const layout = {
             showlegend: true,
             legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(15, 23, 42, 0.95)', font: { color: '#cbd5e1', size: 11 } },
             hovermode: 'closest',
-            margin: { t: 10, b: 10, l: 10, r: 10 },
-            xaxis: { showgrid: false, zeroline: false, showticklabels: false },
-            yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+            margin: { t: 30, b: 30, l: 30, r: 30 },
+            xaxis: { 
+                showgrid: false, 
+                zeroline: false, 
+                showticklabels: false,
+                range: [xMin - xPad, xMax + xPad],
+                autorange: false
+            },
+            yaxis: { 
+                showgrid: false, 
+                zeroline: false, 
+                showticklabels: false,
+                range: [yMin - yPad, yMax + yPad],
+                autorange: false
+            },
             plot_bgcolor: '#0f172a',
             paper_bgcolor: '#0f172a'
         };
 
         const targetDiv = document.getElementById('network-graph');
-        Plotly.newPlot(targetDiv, [...edgeTraces, ...nodeTraces], layout, { responsive: true });
+        Plotly.react(targetDiv, [...edgeTraces, ...nodeTraces], layout, { responsive: true, displayModeBar: false });
 
         targetDiv.on('plotly_click', function(data){
             if(data.points && data.points[0]) {
