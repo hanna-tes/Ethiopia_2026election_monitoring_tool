@@ -2747,15 +2747,17 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                     'label': src_key, 
                     'type': 'source', 
                     'group': 'source',
-                    'color': '#1e90ff',  # Force Blue for all Sources
-                    'size': 26,
+                    'color': '#1e90ff',  # Force Blue
+                    'size': 24,
                     'shape': 'dot',
                     'physics': True
                 })
                 existing_nodes.add(src_key.lower())
             
-        # Injects Amplifiers (Orange Nodes) and links them to every Source Node
-        for amp in amplifiers_list:
+        # Cap amplifiers shown in the visualization graph to 15 to fit canvas bounds
+        top_graph_amplifiers = amplifiers_list[:15]
+        
+        for amp in top_graph_amplifiers:
             amp_key = str(amp).strip()
             if amp_key.lower() not in existing_nodes:
                 graph_nodes.append({
@@ -2763,14 +2765,14 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                     'label': amp_key, 
                     'type': 'amplifier', 
                     'group': 'amplifier',
-                    'color': '#e67e22',  # Force Orange for Amplifiers
+                    'color': '#e67e22',  # Force Orange
                     'size': 14,
                     'shape': 'dot',
                     'physics': True
                 })
                 existing_nodes.add(amp_key.lower())
                 
-            # Create directional links from ALL sources to this amplifier
+            # Create directional links from sources to this amplifier
             for src in sources_list:
                 s_id = str(src).strip()
                 t_id = str(amp_key).strip()
@@ -2781,7 +2783,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                         'to': t_id,
                         'source': s_id,
                         'target': t_id,
-                        'length': 80,
+                        'length': 110,       
                         'arrows': 'to',
                         'width': 1.5
                     })
