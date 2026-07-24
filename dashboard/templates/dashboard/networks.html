@@ -24,7 +24,7 @@
         box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
     }
 
-    /* TTP Card - Non-clickable, static display */
+    /* TTP Card - Static display */
     .ttp-card-static {
         transition: none;
         cursor: default;
@@ -102,6 +102,12 @@
         </div>
     </div>
 
+    <!-- 💡 User Guidance Banner -->
+    <div class="mb-4 px-4 py-2.5 bg-blue-950/50 border border-blue-800/80 rounded-lg flex items-center gap-2 text-xs text-blue-200">
+        <span>💡</span>
+        <span><strong>What this network shows:</strong> This graph maps accounts (nodes) that frequently post identical text or share links together in synchronized bursts. Lines (edges) represent shared activity strength between accounts.</span>
+    </div>
+
     <div class="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
         <h4 class="text-sm font-semibold text-slate-200 mb-2">Network Legend</h4>
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
@@ -126,7 +132,7 @@
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
         <div class="lg:col-span-3 space-y-4">
             <div class="network-container">
-                <div id="network-graph" class="w-full h-[540px]"></div>
+                <div id="network-graph" class="w-full h-[600px]"></div>
                 {% if not network_graph_json or graph_stats.nodes == 0 %}
                 <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 rounded-xl text-center p-6">
                     <p class="text-xl mb-2 text-white">📊 No coordination groups matched</p>
@@ -149,7 +155,7 @@
             </div>
         </div>
 
-        <div class="border border-slate-700 rounded-xl p-4 bg-slate-800/60 shadow-sm flex flex-col" style="max-height: 540px;">
+        <div class="border border-slate-700 rounded-xl p-4 bg-slate-800/60 shadow-sm flex flex-col" style="max-height: 600px;">
             <div class="flex justify-between items-center mb-2">
                 <h3 class="text-md font-bold text-white">🔗 Networks ({{ coordination_groups|length }})</h3>
                 <button onclick="resetNetworkFilter()" class="text-[11px] text-blue-400 hover:underline">Reset</button>
@@ -268,7 +274,7 @@
     
     function scaleNodeSize(rawVal, groupVal) {
         const value = Math.max(parseFloat(rawVal) || 0, parseFloat(groupVal) || 0, 1);
-        return 12 + (Math.log10(value + 1) * 14);
+        return 12 + (Math.log10(value + 1) * 12);
     }
 
     function renderPlotlyNetwork(filteredNodes = null, filteredEdges = null) {
@@ -282,8 +288,8 @@
             y: [edge.source_y, edge.target_y, null],
             mode: 'lines',
             line: { 
-                width: Math.min(6, Math.max(1.2, (edge.weight || 1) * 1.5)), 
-                color: 'rgba(148, 163, 184, 0.22)' 
+                width: Math.min(4, Math.max(1, (edge.weight || 1) * 1.2)), 
+                color: 'rgba(148, 163, 184, 0.25)' 
             },
             hoverinfo: 'none',
             showlegend: false,
@@ -311,6 +317,7 @@
                 mode: 'markers+text',
                 text: labels,
                 textposition: 'top center',
+                cliponaxis: false,
                 textfont: { family: 'Inter, sans-serif', size: 10, color: '#f1f5f9' },
                 marker: {
                     size: rawSizes,
@@ -329,41 +336,40 @@
         processTrace(amplifierNodes, '#f59e0b', '🟠 Amplifier Accounts');
         processTrace(defaultNodes, '#10b981', '🟢 Other Handles');
 
-        // Dynamically compute canvas boundaries to avoid node clipping
-        const xVals = nodesToRender.map(n => n.x).filter(v => v !== undefined);
-        const yVals = nodesToRender.map(n => n.y).filter(v => v !== undefined);
-
-        const xMin = Math.min(...xVals), xMax = Math.max(...xVals);
-        const yMin = Math.min(...yVals), yMax = Math.max(...yVals);
-
-        const xPad = (xMax - xMin) * 0.18 || 1;
-        const yPad = (yMax - yMin) * 0.18 || 1;
-
         const layout = {
             showlegend: true,
-            legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(15, 23, 42, 0.95)', font: { color: '#cbd5e1', size: 11 } },
+            legend: { 
+                x: 0.02, 
+                y: 0.98, 
+                bgcolor: 'rgba(15, 23, 42, 0.75)', 
+                bordercolor: '#334155',
+                borderwidth: 1,
+                font: { color: '#cbd5e1', size: 10 } 
+            },
             hovermode: 'closest',
-            margin: { t: 30, b: 30, l: 30, r: 30 },
+            margin: { t: 40, b: 40, l: 40, r: 40 },
             xaxis: { 
                 showgrid: false, 
                 zeroline: false, 
                 showticklabels: false,
-                range: [xMin - xPad, xMax + xPad],
-                autorange: false
+                autorange: true
             },
             yaxis: { 
                 showgrid: false, 
                 zeroline: false, 
                 showticklabels: false,
-                range: [yMin - yPad, yMax + yPad],
-                autorange: false
+                autorange: true
             },
             plot_bgcolor: '#0f172a',
             paper_bgcolor: '#0f172a'
         };
 
         const targetDiv = document.getElementById('network-graph');
-        Plotly.react(targetDiv, [...edgeTraces, ...nodeTraces], layout, { responsive: true, displayModeBar: false });
+        Plotly.react(targetDiv, [...edgeTraces, ...nodeTraces], layout, { 
+            responsive: true, 
+            displayModeBar: true, 
+            scrollZoom: true 
+        });
 
         targetDiv.on('plotly_click', function(data){
             if(data.points && data.points[0]) {
