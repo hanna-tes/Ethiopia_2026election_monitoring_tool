@@ -71,9 +71,9 @@ _COMBINED_LEXICON_CACHE = None
 _CACHE_TIMESTAMP = 0
 
 def load_gemma_lora_model():
-    """Gemma LoRA model - DISABLED due to RAM limitations """
-    # TODO: Re-enable after upgrading EC2 instance to t3.xlarge (16GB RAM)
-    logger.warning("Gemma LoRA model is DISABLED - insufficient RAM (current: 8GB, required: 16GB+)")
+    """Gemma LoRA model - DISABLED """
+
+    logger.warning("Gemma LoRA model is DISABLED)")
     return None, None
 
 def get_combined_lexicon():
