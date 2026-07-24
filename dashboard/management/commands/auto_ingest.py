@@ -10,8 +10,9 @@ from django.utils import timezone
 from django.conf import settings
 
 from dashboard.models import ProcessedPost, DataSource
-# ⚠️ Adjust this import path to match your actual project structure
-from dashboard.csv_processor import load_brandwatch_data, map_columns_by_type, final_preprocess_and_map_columns
+from dashboard.utils.app_logging import log_event
+from dashboard.utils.csv_processor import map_columns_by_type
+from dashboard.views import final_preprocess_and_map_columns, queue_dashboard_analytics_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -48,25 +49,56 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('🚀 Starting automated data ingestion...'))
         batch_id = f"batch_{uuid.uuid4().hex[:8]}_{datetime.now().strftime('%Y%m%d')}"
         self.stdout.write(f"📦 Batch ID: {batch_id}")
+        log_event(
+            "Automated ingestion started",
+            event_type="cron.auto_ingest.started",
+            status="started",
+            source=options.get('source') or 'all',
+            metadata={"batch_id": batch_id, "test_mode": bool(options['test'])},
+        )
 
         if options['test']:
             self.stdout.write(self.style.WARNING('⚠️ TEST MODE: No data will be saved to the database.'))
 
         sources_to_run = [options['source']] if options['source'] else list(self.DATA_SOURCES.keys())
+        total_saved = 0
 
         for source_key in sources_to_run:
             if source_key not in self.DATA_SOURCES:
                 self.stdout.write(self.style.ERROR(f'❌ Unknown source: {source_key}'))
+                log_event(
+                    "Automated ingestion skipped unknown source",
+                    level="WARNING",
+                    event_type="cron.auto_ingest.skipped",
+                    status="skipped",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "reason": "unknown_source"},
+                )
                 continue
 
             config = self.DATA_SOURCES[source_key]
             url = config.get('url')
             if not url:
                 self.stdout.write(self.style.WARNING(f'️ Skipping {source_key}: No URL configured.'))
+                log_event(
+                    "Automated ingestion skipped source without URL",
+                    level="WARNING",
+                    event_type="cron.auto_ingest.skipped",
+                    status="skipped",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "reason": "missing_url"},
+                )
                 continue
 
             try:
                 self.stdout.write(f'📥 Fetching {source_key} from {url}...')
+                log_event(
+                    "Automated ingestion fetching source",
+                    event_type="cron.auto_ingest.fetch",
+                    status="started",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "url": url},
+                )
                 response = requests.get(url, timeout=120, headers={'User-Agent': 'EthiopiaElectionMonitor/1.0'})
                 response.raise_for_status()
 
@@ -79,26 +111,100 @@ class Command(BaseCommand):
                     on_bad_lines='skip'
                 )
                 self.stdout.write(f'✅ Downloaded {len(df)} raw rows for {source_key}')
+                log_event(
+                    "Automated ingestion downloaded source",
+                    event_type="cron.auto_ingest.downloaded",
+                    status="success",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "raw_rows": len(df), "status_code": response.status_code},
+                )
 
                 # Process DataFrame through your pipeline
                 processed_df = self._process_dataframe(df, config['type'])
                 if processed_df.empty:
                     self.stdout.write(self.style.WARNING(f'⚠️ {source_key} yielded 0 valid records after preprocessing.'))
+                    log_event(
+                        "Automated ingestion produced no valid records",
+                        level="WARNING",
+                        event_type="cron.auto_ingest.no_records",
+                        status="warning",
+                        source=source_key,
+                        metadata={"batch_id": batch_id},
+                    )
                     continue
 
                 self.stdout.write(f'✨ Preprocessed {len(processed_df)} records for {source_key}')
+                log_event(
+                    "Automated ingestion preprocessed records",
+                    event_type="cron.auto_ingest.preprocessed",
+                    status="success",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "processed_rows": len(processed_df)},
+                )
 
                 if not options['test']:
-                    self._save_to_database(processed_df, source_key, batch_id)
+                    saved_count = self._save_to_database(processed_df, source_key, batch_id)
+                    total_saved += saved_count
                     self.stdout.write(self.style.SUCCESS(f'💾 Saved {source_key} to database.'))
+                    log_event(
+                        "Automated ingestion saved records",
+                        event_type="cron.auto_ingest.saved",
+                        status="success",
+                        source=source_key,
+                        metadata={"batch_id": batch_id, "saved_records": saved_count},
+                    )
+                else:
+                    log_event(
+                        "Automated ingestion test mode completed without saving",
+                        event_type="cron.auto_ingest.test_complete",
+                        status="success",
+                        source=source_key,
+                        metadata={"batch_id": batch_id, "processed_rows": len(processed_df)},
+                    )
 
             except requests.RequestException as e:
                 self.stdout.write(self.style.ERROR(f'🌐 Network error for {source_key}: {e}'))
+                log_event(
+                    "Automated ingestion network error",
+                    level="ERROR",
+                    event_type="cron.auto_ingest.failed",
+                    status="failed",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "error": str(e)},
+                    exc_info=True,
+                )
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f'💥 Failed to process {source_key}: {e}'))
                 logger.exception(f'Auto-ingest failed for {source_key}')
+                log_event(
+                    "Automated ingestion failed",
+                    level="ERROR",
+                    event_type="cron.auto_ingest.failed",
+                    status="failed",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "error": str(e)},
+                    exc_info=True,
+                )
+
+        if total_saved > 0:
+            queue_dashboard_analytics_refresh(skip_narratives=True)
+            self.stdout.write(self.style.SUCCESS(f'📊 Queued dashboard analytics refresh for {total_saved} new records.'))
+            log_event(
+                "Automated ingestion queued analytics refresh",
+                event_type="cron.auto_ingest.analytics_refresh_queued",
+                status="success",
+                source=options.get('source') or 'all',
+                metadata={"batch_id": batch_id, "saved_records": total_saved, "skip_narratives": True},
+            )
 
         self.stdout.write(self.style.SUCCESS('✅ Automated ingestion complete.'))
+        log_event(
+            "Automated ingestion complete",
+            event_type="cron.auto_ingest.complete",
+            status="success",
+            source=options.get('source') or 'all',
+            metadata={"batch_id": batch_id},
+        )
 
     def _process_dataframe(self, df, data_type):
         """Apply your existing pipeline logic safely"""
@@ -122,6 +228,15 @@ class Command(BaseCommand):
             return processed_df.reset_index(drop=True)
         except Exception as e:
             logger.error(f"Processing failed for {data_type}: {e}")
+            log_event(
+                "Automated ingestion dataframe processing failed",
+                level="ERROR",
+                event_type="cron.auto_ingest.processing_failed",
+                status="failed",
+                source=data_type,
+                metadata={"error": str(e)},
+                exc_info=True,
+            )
             return pd.DataFrame()
 
     def _save_to_database(self, df, source_key, batch_id):
@@ -159,11 +274,21 @@ class Command(BaseCommand):
                 ))
             except Exception as e:
                 logger.warning(f"Skipping row due to error: {e}")
+                log_event(
+                    "Automated ingestion row skipped",
+                    level="WARNING",
+                    event_type="cron.auto_ingest.row_skipped",
+                    status="warning",
+                    source=source_key,
+                    metadata={"batch_id": batch_id, "error": str(e)},
+                )
                 continue
 
         if records:
             # Bulk insert for performance (batch_size=1000 prevents memory spikes)
             ProcessedPost.objects.bulk_create(records, batch_size=1000)
             self.stdout.write(f'✅ Successfully saved {len(records)} records.')
+            return len(records)
         else:
             self.stdout.write(self.style.WARNING('⚠️ No valid records to save.'))
+            return 0

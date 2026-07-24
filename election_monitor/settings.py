@@ -208,10 +208,12 @@ Q_CLUSTER = {
 }
 
 # ── REDIS CACHE ──────────────────────────────────────────────
+CFA_VALKEY_URL = env('CFA_VALKEY_URL', default='')
+REDIS_URL = env('REDIS_URL', default=CFA_VALKEY_URL or 'redis://127.0.0.1:6379/1')
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SOCKET_CONNECT_TIMEOUT": 5,
@@ -236,6 +238,46 @@ PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
 DATA_UPLOAD_MAX_MEMORY_SIZE = 534773760  # 510 MB (510 * 1024 * 1024)
 
 FILE_UPLOAD_MAX_MEMORY_SIZE = 26214400  # 25 MB
+
+# Logging
+DATABASE_LOG_LEVEL = env('DATABASE_LOG_LEVEL', default='INFO')
+DATABASE_LOG_HANDLER_ENABLED = env.bool('DATABASE_LOG_HANDLER_ENABLED', default=False)
+APPLICATION_LOG_RETENTION_DAYS = env.int('APPLICATION_LOG_RETENTION_DAYS', default=90)
+root_log_handlers = ['console']
+if DATABASE_LOG_HANDLER_ENABLED:
+    root_log_handlers.append('database')
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {
+            'format': '[{levelname}] {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'database': {
+            'class': 'dashboard.utils.app_logging.DatabaseLogHandler',
+            'level': DATABASE_LOG_LEVEL,
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': root_log_handlers,
+        'level': env('LOG_LEVEL', default='INFO'),
+    },
+    'loggers': {
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
 
 # Gama model
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

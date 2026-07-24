@@ -20,8 +20,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -42,6 +42,16 @@ services:
       mc anonymous set download local/ethiopian-election-monitor-media
       "
 
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   web:
     build: .
     depends_on:
@@ -49,11 +59,15 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     environment:
       SECRET_KEY: local-dev-secret
       DEBUG: "1"
       ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
       CSRF_TRUSTED_ORIGINS: http://localhost,http://127.0.0.1
+      CFA_VALKEY_URL: redis://redis:6379/1
+      REDIS_URL: redis://redis:6379/1
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_NAME: ethiopia_election_db
@@ -63,13 +77,45 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
       AWS_STORAGE_BUCKET_NAME: ethiopian-election-monitor-media
       AWS_S3_ENDPOINT_URL: http://minio:9000
-      AWS_S3_CUSTOM_DOMAIN: localhost:9000/ethiopian-election-monitor-media
+      AWS_S3_CUSTOM_DOMAIN: localhost:${MINIO_API_PORT:-9000}/ethiopian-election-monitor-media
       AWS_S3_REGION_NAME: eu-west-1
       AWS_S3_ADDRESSING_STYLE: path
       AWS_QUERYSTRING_AUTH: "0"
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
+
+  worker:
+    build: .
+    command: ["python", "manage.py", "qcluster"]
+    depends_on:
+      web:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: local-dev-secret
+      DEBUG: "1"
+      ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+      CSRF_TRUSTED_ORIGINS: http://localhost,http://127.0.0.1
+      DJANGO_COLLECTSTATIC: "0"
+      DJANGO_MIGRATE: "0"
+      CFA_VALKEY_URL: redis://redis:6379/1
+      REDIS_URL: redis://redis:6379/1
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ethiopia_election_db
+      DB_USER: ethiopia_user
+      DB_PASSWORD: ethiopia_password
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_STORAGE_BUCKET_NAME: ethiopian-election-monitor-media
+      AWS_S3_ENDPOINT_URL: http://minio:9000
+      AWS_S3_CUSTOM_DOMAIN: localhost:${MINIO_API_PORT:-9000}/ethiopian-election-monitor-media
+      AWS_S3_REGION_NAME: eu-west-1
+      AWS_S3_ADDRESSING_STYLE: path
+      AWS_QUERYSTRING_AUTH: "0"
 
 volumes:
   postgres-data:
   minio-data:
+  redis-data:

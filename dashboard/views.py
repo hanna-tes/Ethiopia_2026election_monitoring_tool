@@ -34,13 +34,22 @@ import networkx as nx
 import plotly.express as px
 import plotly.graph_objects as go
 from django.utils import timezone
-from .models import ProcessedPost, NarrativeCluster, PEP, LexiconTerm, DataUpload
+from .models import (
+    DashboardAnalyticsSnapshot,
+    DataUpload,
+    LexiconTerm,
+    NarrativeCluster,
+    PEP,
+    PostLexiconMatch,
+    ProcessedPost,
+)
 from .utils.llm_service import safe_llm_call, summarize_cluster_ethiopia
 from .utils.data_loader import load_data_robustly, load_peps_from_github
 from .utils.csv_processor import process_uploaded_csv, map_columns_by_type, preprocess_dataframe
 from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_score, generate_lexicon_analytics
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
+from .utils.app_logging import log_event
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 from .utils.data_loader import parse_timestamp_robust
@@ -4534,7 +4543,83 @@ def get_election_posts_queryset(request):
             end_date = end_dt
     
     return queryset.order_by('-timestamp_share'), start_date, end_date
-    
+
+
+def _date_key(value):
+    if hasattr(value, 'date'):
+        return value.date().isoformat()
+    return str(value) if value else ''
+
+
+def build_analytics_snapshot_key(kind, start_date, end_date, view_all=False, category=''):
+    start_key = _date_key(start_date)
+    end_key = _date_key(end_date)
+    category_key = category or 'all'
+    return f"{kind}:{start_key}:{end_key}:{int(bool(view_all))}:{category_key}"
+
+
+def get_analytics_snapshot(kind, start_date, end_date, view_all=False, category='', allow_latest_fallback=False):
+    key = build_analytics_snapshot_key(kind, start_date, end_date, view_all, category)
+    category_key = category or 'all'
+    shape_suffix = f":{int(bool(view_all))}:{category_key}"
+    snapshot = (
+        DashboardAnalyticsSnapshot.objects
+        .filter(key=key)
+        .values('payload', 'generated_at')
+        .first()
+    )
+    if not snapshot and allow_latest_fallback:
+        snapshot = (
+            DashboardAnalyticsSnapshot.objects
+            .filter(kind=kind, key__endswith=shape_suffix)
+            .values('payload', 'generated_at')
+            .order_by('-generated_at')
+            .first()
+        )
+    if not snapshot:
+        return {}, None
+    return snapshot['payload'] or {}, snapshot['generated_at']
+
+
+def get_materialized_lexicon_matches(posts_queryset, category=''):
+    matches = PostLexiconMatch.objects.filter(post__in=posts_queryset)
+    if category:
+        matches = matches.filter(category__iexact=category)
+    return matches
+
+
+def empty_trend_analysis(message='Analytics are being prepared.'):
+    return {
+        'chart_json': None,
+        'trending_categories': [],
+        'total_categories_tracked': 0,
+        'total_posts_scanned': 0,
+        'spikes_detected': [],
+        'spike_alerts': [],
+        'message': message,
+        'total_spikes': 0,
+        'has_significant_spikes': False,
+    }
+
+
+def queue_dashboard_analytics_refresh(skip_narratives=True, skip_home=False, skip_lexicons=False):
+    try:
+        from django_q.tasks import async_task
+
+        args = ['refresh_dashboard_analytics']
+        if skip_lexicons:
+            args.append('--skip-lexicons')
+        if skip_home:
+            args.append('--skip-home')
+        if skip_narratives:
+            args.append('--skip-narratives')
+        async_task('django.core.management.call_command', *args)
+        logger.info("Queued dashboard analytics refresh")
+        return True
+    except Exception as exc:
+        logger.warning(f"Could not queue dashboard analytics refresh: {exc}")
+        return False
+
 def get_risk_actors_insight(posts_queryset, limit=8):
     """
     Identify risk actors based on:
@@ -6039,10 +6124,19 @@ class HomeView(BaseTabMixin, TemplateView):
             'total_records': sum(u.records_processed for u in recent_uploads),
         }
         
-        # ── 8. TREND ANALYSIS ─────────────────────────────────────────
+        # ── 8. PRECOMPUTED ANALYTICS ──────────────────────────────────
         start_str = start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date)
         end_str = end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date)
-        trend_analysis = get_category_trend_analysis(posts, days_back=90, cache_suffix=f"{start_str}_{end_str}")
+        analytics_payload, analytics_generated_at = get_analytics_snapshot(
+            'home',
+            start_date,
+            end_date,
+            view_all=view_all,
+            allow_latest_fallback=not view_all and not req_start and not req_end,
+        )
+        trend_analysis = analytics_payload.get('trend_analysis') or empty_trend_analysis()
+        risk_actors = analytics_payload.get('risk_actors', [])
+        top_hashtags = analytics_payload.get('top_hashtags', [])
         
         # ── 9. BUILD CONTEXT ──────────────────────────────────────────
         context.update({
@@ -6057,9 +6151,11 @@ class HomeView(BaseTabMixin, TemplateView):
             },
             'charts': charts,
             'upload_summary': upload_summary,
-            'risk_actors': get_risk_actors_insight(posts),
-            'top_hashtags': get_top_hashtags(posts),
+            'risk_actors': risk_actors,
+            'top_hashtags': top_hashtags,
             'trend_analysis': trend_analysis,
+            'analytics_generated_at': analytics_generated_at,
+            'analytics_pending': not bool(analytics_payload),
             'start_date': start_str,
             'end_date': end_str,
         })
@@ -6072,6 +6168,8 @@ class HomeView(BaseTabMixin, TemplateView):
             'risk_actors': context['risk_actors'],
             'top_hashtags': context['top_hashtags'],
             'trend_analysis': context['trend_analysis'],
+            'analytics_generated_at': context['analytics_generated_at'].isoformat() if context['analytics_generated_at'] else None,
+            'analytics_pending': context['analytics_pending'],
             'start_date': context['start_date'],
             'end_date': context['end_date'],
             'upload_summary': {
@@ -6104,27 +6202,24 @@ class NarrativesView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # ── CHECK CACHE FIRST ──────────────────────────────────────
-        #view_all = self.request.GET.get('view_all') == 'true'
-        #req_start = self.request.GET.get('start_date', '')
-        #req_end = self.request.GET.get('end_date', '')
-        
-        #cache_key = f"narratives_view_v1_{req_start}_{req_end}_{view_all}"
-       # cached_data = cache.get(cache_key)
-        
-        #if cached_data:
-        #    logger.info("✅ NarrativesView: Serving from cache")
-         #   return cached_data
-        
-        #context = super().get_context_data(**kwargs)
-
+        view_all = self.request.GET.get('view_all') == 'true'
+        req_start = self.request.GET.get('start_date', '')
+        req_end = self.request.GET.get('end_date', '')
         # Reuse date filtering helper
         queryset, start_date, end_date = get_election_posts_queryset(
             self.request
         )
 
-        # Generate narratives from filtered data
-        context['summaries'] = get_ethiopia_summaries(queryset)
+        payload, generated_at = get_analytics_snapshot(
+            'narratives',
+            start_date,
+            end_date,
+            view_all=view_all,
+            allow_latest_fallback=not view_all and not req_start and not req_end,
+        )
+        context['summaries'] = payload.get('summaries', [])
+        context['analytics_generated_at'] = generated_at
+        context['analytics_pending'] = not bool(payload)
         context['total_posts'] = queryset.count()
 
         # Date range display
@@ -6146,10 +6241,6 @@ class NarrativesView(TemplateView):
             .all()
             .order_by('-uploaded_at')[:12]
         )
-        # ── SAVE TO CACHE (1 hour) ────────────────────────────────
-        #cache.set(cache_key, context, 3600)
-        #logger.info(f"💾 NarrativesView: Cached for 1 hour")
-        
         return context
 
 class LexiconsView(TemplateView):
@@ -6244,54 +6335,21 @@ class LexiconsView(TemplateView):
         return False
 
     def get_context_data(self, **kwargs):
-        import time
-        start_time = time.time()
         context = super().get_context_data(**kwargs)
         
         # ── 1. URL params ────────────────────────────────────────────────
-        selected_category = self.request.GET.get('category', '').strip()
-
         raw_category = self.request.GET.get('category', '').strip()
-
         view_all = self.request.GET.get('view_all') == 'true'
-        req_start = self.request.GET.get('start_date', '')
-        req_end   = self.request.GET.get('end_date', '')
-        
-
-        # ── 2. Cache (overview only, keyed to date range) ─────────────────
-
-        # Translate display name to internal key before processing.
-        # Because most display names ARE the internal keys, this safely resolves everything.
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
-        # ─ 2. Cache (overview only, keyed to date range) ─────────────────
-
-        cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
-        cached_data = cache.get(cache_key)
-        
-        if cached_data and not selected_category:
-            logger.info("✅ LexiconsView: Serving from cache (instant load)")
-            context.update(cached_data)
-            context['lexicon_term_count'] = self._get_lexicon_term_count()
-            context['selected_category'] = ''
-            context['category_terms']    = []
-            context['posts_with_terms']  = []
-            context['scan_timed_out']    = False
-            return context
-        
-        # ── 3. Fetch posts ────────────────────────────────────────────────
+        # ── 2. Fetch posts and materialized detections ────────────────────
         try:
-            _, start_date, end_date = get_election_posts_queryset(self.request)
-            
-            # Build database conditions dynamically
-            query_filters = {}
-            if not view_all:
-                query_filters['timestamp_share__range'] = (start_date, end_date)
-                
-            filtered_posts = ProcessedPost.objects.filter(
-                **query_filters
-            ).exclude(platform__icontains='media').exclude(platform__icontains='news').order_by('-timestamp_share')
-            
+            filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+            filtered_posts = (
+                filtered_posts
+                .exclude(platform__icontains='media')
+                .exclude(platform__icontains='news')
+            )
             total_posts = filtered_posts.count()
         except Exception as e:
             logger.error(f"LexiconsView error: {e}")
@@ -6299,205 +6357,79 @@ class LexiconsView(TemplateView):
         
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
-        
-        # Expand limits safely. Category view gets 10k, Overview gets 5k to prevent timeouts.
-        effective_limit = 10000 if selected_category else self.SCAN_LIMIT
-        scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
-        
-        category_terms  = []
+
+        matches_qs = get_materialized_lexicon_matches(filtered_posts, category=selected_category)
+        total_matches = matches_qs.count()
+        posts_scanned = matches_qs.values('post_id').distinct().count()
+        analytics_pending = total_matches == 0 and total_posts > 0
+
+        category_terms = []
         posts_with_terms = []
-        all_matches     = []
-        posts_scanned   = 0
-        scan_timed_out  = False
-        
-        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
-            logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
-
-            
-            db_terms = LexiconTerm.objects.filter(category=selected_category)
-            if db_terms.exists():
-                category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
-            elif selected_category in CONFIG.get('lexicon', {}):
-                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items()]
-            
-
-            # Initialize the variable to avoid UnboundLocalError
-            category_terms = []
-            # 1. Look up using case-insensitive check in DB
             db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
-                # 2. Case-insensitive fallback lookup in the CONFIG dictionary
                 config_lexicon = CONFIG.get('lexicon', {})
                 matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
                 if matched_config_key:
                     category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
-            # This check is now completely safe!
 
-            if category_terms:
-                term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
-                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
-                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
-                try:
-                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
-                except Exception:
-                    compiled_category_re = None
-                
+            grouped_posts = defaultdict(lambda: {
+                'matched_terms': set(),
+                'post': None,
+            })
+            for match in matches_qs.select_related('post').order_by('-post__timestamp_share')[:500]:
+                item = grouped_posts[match.post_id]
+                item['post'] = match.post
+                item['matched_terms'].add(match.term)
 
-                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
-                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
-                try:
-                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
-                except Exception:
-                    compiled_category_re = None
+            for post_id, item in list(grouped_posts.items())[:100]:
+                post = item['post']
+                posts_with_terms.append({
+                    'id': post_id,
+                    'text': post.original_text,
+                    'platform': post.platform,
+                    'timestamp': post.timestamp_share,
+                    'url': post.url,
+                    'matched_terms': list(item['matched_terms'])[:5],
+                    'detected_by': 'Lexicon',
+                    'confidence': 1.0,
+                    'model_category': selected_category,
+                })
 
-                # Track seen posts to avoid duplicates
-                seen_post_ids = set()
-                seen_post_texts = set()
+        category_counts = Counter()
+        for row in matches_qs.values('category').annotate(count=Count('id')).order_by('-count'):
+            display_name = self.CATEGORY_DISPLAY_NAMES.get(row['category'], row['category'])
+            category_counts[display_name] = row['count']
 
-                
-                for post in scan_pool:
-                    if self._check_timeout(start_time):
-                        scan_timed_out = True
-                        break
-                    posts_scanned += 1
-                    if not post.original_text: 
-                        continue
-                    
+        severity_counts = Counter({
+            row['severity']: row['count']
+            for row in matches_qs.values('severity').annotate(count=Count('id')).order_by('-count')
+        })
 
-                    posts_scanned += 1
-                    if not post.original_text: continue
-                    # Skip RT/retweet posts
-                    if post.original_text.strip().lower().startswith('rt ') or post.original_text.strip().lower().startswith('rt\n'):
-                        continue
-                    
-                    # Skip if we've already seen this post
-                    if post.id in seen_post_ids:
-                        continue
-
-                    
-                    text       = post.original_text
-                    text_lower = text.lower()
-                    
-
-                    # Instantly drops unrelated records out of processing loop
-                    if compiled_category_re and not compiled_category_re.search(text_lower):
-                        continue
-                        
-
-                    # Skip if we've already seen this exact text content
-                    text_hash = hash(text.strip())
-                    if text_hash in seen_post_texts:
-                        continue
-                    
-                    # Instantly drops unrelated records out of processing loop
-                    if compiled_category_re and not compiled_category_re.search(text_lower):
-                        continue
-
-                    is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
-                    matched_terms = []
-                    for term_lower, meta in term_meta.items():
-                        if term_lower not in text_lower:
-                            continue
-                        if not self._is_valid_context(meta['term'], text_lower):
-                            continue
-                        if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
-                            continue
-
-                        
-
-
-                        matched_terms.append(meta['term'])
-                        all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
-                    if matched_terms:
-
-
-                        # Mark this post as seen
-                        seen_post_ids.add(post.id)
-                        seen_post_texts.add(text_hash)
-                        
-
-                        posts_with_terms.append({
-                            'id':            post.id,
-                            'text':          text,
-                            'platform':      post.platform,
-                            'timestamp':     post.timestamp_share,
-                            'url':           post.url,
-                            'matched_terms': list(set(matched_terms))[:5],
-                            'detected_by':   'Lexicon',
-                            'confidence':    1.0,
-                            'model_category': selected_category,
-                        })
-                
-                # LLM translations block
-                unique_foreign_terms = {t for p in posts_with_terms for t in p.get('matched_terms', []) if re.search(r'[^\x00-\x7F]', t)}
-                if unique_foreign_terms:
-                    translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
-                    for p_dict in posts_with_terms:
-                        p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
-
-        # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
-        else:
-            logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
-
-            
-
-
-            for post in scan_pool:
-                if self._check_timeout(start_time):
-                    scan_timed_out = True
-                    break
-                
-                posts_scanned += 1
-                if not post.original_text: continue
-                
-                try:
-                    matches = self._scan_post(post.original_text)
-                    if matches: 
-                        all_matches.extend(matches)
-                except Exception as e: 
-                    continue
-        
-        # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
-        try:
-            term_counts     = Counter([m['term']     for m in all_matches])
-            raw_category_counts = Counter([m['category'] for m in all_matches])
-            severity_counts = Counter([m['severity'] for m in all_matches])
-            
-            # Transform category keys to display names
-            category_counts = Counter()
-            for cat_key, count in raw_category_counts.items():
-                display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key)
-                category_counts[display_name] = count
-            
-            if selected_category and category_terms:
-                top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
-            else:
-                top_terms_with_meta = []
-                for term, count in term_counts.most_common(15):
-                    if len(term.strip()) <= 1: continue
-                    metadata = {}
-                    for cat, terms in CONFIG.get('lexicon', {}).items():
-                        if term in terms: 
-                            metadata = terms[term]
-                            break
-                    if not metadata:
-                        db_t = LexiconTerm.objects.filter(term=term).first()
-                        if db_t: metadata = {'severity': db_t.severity, 'target_entity': db_t.target_entity, 'language': db_t.language}
-                    top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
-        except Exception as e:
-            logger.error(f"LexiconsView: aggregation error: {e}")
-            top_terms_with_meta = []
-            category_counts     = Counter()
-            severity_counts     = Counter()
+        term_rows = matches_qs.values(
+            'term', 'severity', 'target_entity', 'language'
+        ).annotate(count=Count('id')).order_by('-count')[:50]
+        top_terms_with_meta = [
+            {
+                'term': row['term'],
+                'count': row['count'],
+                'metadata': {
+                    'severity': row['severity'],
+                    'target_entity': row['target_entity'],
+                    'language': row['language'],
+                },
+            }
+            for row in term_rows
+            if len(row['term'].strip()) > 1
+        ]
         
         # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
-        if all_matches and not selected_category:
+        if top_terms_with_meta and not selected_category:
             try:
-                valid_terms = [{'term': t, 'count': c} for t, c in term_counts.most_common(50) if len(t.strip()) > 1]
+                valid_terms = [{'term': item['term'], 'count': item['count']} for item in top_terms_with_meta]
                 wc = generate_trigger_wordcloud({'top_terms': valid_terms})
                 if wc: wordcloud_base64 = wordcloud_to_base64(wc)
             except Exception: pass
@@ -6505,34 +6437,24 @@ class LexiconsView(TemplateView):
         targeted_entities = []
         if not selected_category:
             try:
-                entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE)\b', r'\b(Amhara|Tigray|Oromo|Somali)\b']
-                entities_found = Counter()
-                for m in all_matches:
-                    for pattern in entity_patterns:
-                        for match in re.findall(pattern, m['term'], re.IGNORECASE):
-                            entities_found[match.strip()] += 1
-                targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
+                targeted_entities = [
+                    {'entity': row['target_entity'], 'count': row['count']}
+                    for row in matches_qs.exclude(target_entity='').values('target_entity').annotate(count=Count('id')).order_by('-count')[:10]
+                ]
             except Exception: pass
         
         # ── 8. Build context ───────────────────────────────────────────────
         shared = {
             'active_tab': 'lexicons', 'top_terms': top_terms_with_meta,
             'category_counts': dict(category_counts), 'severity_counts': dict(severity_counts),
-            'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
+            'total_matches': total_matches, 'posts_scanned': posts_scanned,
             'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
-            'scan_timed_out': scan_timed_out, 'wordcloud_base64': wordcloud_base64,
-            'targeted_entities': targeted_entities
+            'scan_timed_out': False, 'wordcloud_base64': wordcloud_base64,
+            'targeted_entities': targeted_entities,
+            'analytics_pending': analytics_pending,
         }
-        
-        # ── CACHE (only simple data, no model instances) ───────
-        if not selected_category:
-            try:
-                cache.set(cache_key, shared, self.CACHE_DURATION)
-                logger.info(f"💾 LexiconsView cached for {self.CACHE_DURATION}s")
-            except Exception as e:
-                logger.warning(f"Cache save failed: {e}")
-        
+
         context.update(shared)
 
         context['selected_category'] = selected_category
@@ -6978,33 +6900,6 @@ class LexiconManagementView(TemplateView):
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
 
-        # Only scan the most recent 3000 posts instead of all
-        posts_to_scan = filtered_posts[:3000]
-        
-
-        
-        # RESPECT THE GLOBAL DATE FILTER
-        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-        total_posts_in_filter = filtered_posts.count()
-        
-        # Only scan the most recent 3000 posts instead of all
-        posts_to_scan = filtered_posts[:3000]
-
-        all_matches = []
-        posts_scanned = 0
-        
-        # Scan only the limited dataset
-        for post in posts_to_scan.iterator():
-            if post.original_text:
-                try:
-                    matches = scan_text_for_lexicon_terms(post.original_text)
-                    if matches:
-                        all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
-                        posts_scanned += 1
-                except Exception as e:
-                    logger.warning(f"Error scanning post {post.id}: {e}")
-                    continue
-
 
         # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
@@ -7017,31 +6912,31 @@ class LexiconManagementView(TemplateView):
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 
 
-        
-        # Get distinct categories for filter dropdown
-        categories = lexicon_terms.values_list('category', flat=True).distinct()
-        
-        # Get scan results from session (if any) and clear immediately
-        scan_results = self.request.session.pop('scan_results', None)
-        
-        # Determine filter state for the template text
-        view_all = self.request.GET.get('view_all') == 'true'
-        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
-        
+        total_terms = lexicon_terms.count()
+        critical_count = lexicon_terms.filter(severity='critical').count()
+        amharic_count = lexicon_terms.filter(language='amharic').count()
+        paginator = Paginator(lexicon_terms, 100)
+        page_obj = paginator.get_page(self.request.GET.get('page'))
+
+        matches_qs = get_materialized_lexicon_matches(filtered_posts)
+        total_matches = matches_qs.count()
+        posts_scanned = matches_qs.values('post_id').distinct().count()
 
         context.update({
             'active_tab': 'lexicon_management',
-            'lexicon_terms': lexicon_terms,
+            'lexicon_terms': page_obj.object_list,
+            'page_obj': page_obj,
             'categories': categories,
-            'total_terms': lexicon_terms.count(),
-            'critical_count': lexicon_terms.filter(severity='critical').count(),
-            'amharic_count': lexicon_terms.filter(language='amharic').count(),
+            'total_terms': total_terms,
+            'critical_count': critical_count,
+            'amharic_count': amharic_count,
             'scan_results': scan_results,
-            'total_matches': len(all_matches),
+            'total_matches': total_matches,
             'posts_scanned': posts_scanned,
             'total_posts': total_posts_in_filter,
             'view_all': view_all,
             'has_custom_date_filter': has_custom_date_filter,
+            'analytics_pending': total_matches == 0 and total_posts_in_filter > 0,
             'start_date': start_date.date().isoformat() if hasattr(start_date, 'date') else start_date,
             'end_date': end_date.date().isoformat() if hasattr(end_date, 'date') else end_date,
         })
@@ -7067,6 +6962,7 @@ class LexiconManagementView(TemplateView):
                         obj.save()
                         messages.success(request, "Term updated successfully!")
                         cache.delete("lexicon_dashboard_data_v2")
+                        queue_dashboard_analytics_refresh(skip_narratives=True, skip_home=True)
                     else:
                         messages.warning(request, "Term must be at least 2 characters long.")
                 except LexiconTerm.DoesNotExist:
@@ -7080,6 +6976,7 @@ class LexiconManagementView(TemplateView):
                     LexiconTerm.objects.filter(id=term_id).delete()
                     messages.success(request, "Term deleted successfully.")
                     cache.delete("lexicon_dashboard_data_v2")
+                    queue_dashboard_analytics_refresh(skip_narratives=True, skip_home=True)
                 except Exception as e:
                     messages.error(request, f"Error: {e}")
 
@@ -7100,6 +6997,7 @@ class LexiconManagementView(TemplateView):
                 )
                 messages.success(request, "Term added successfully!")
                 cache.delete("lexicon_dashboard_data_v2")
+                queue_dashboard_analytics_refresh(skip_narratives=True, skip_home=True)
             else:
                 messages.warning(request, "Term must be at least 2 characters long. Single characters are skipped.")
 
@@ -7312,6 +7210,18 @@ class UploadDataView(TemplateView):
         
         logger.info(f"📥 Upload request: data_type={request.POST.get('data_type')}, source={request.POST.get('source_name')}")
         logger.info(f"📁 FILES: {list(request.FILES.keys())}")
+        log_event(
+            "Upload request received",
+            event_type="upload",
+            status="started",
+            actor=request.user.username if request.user.is_authenticated else "anonymous",
+            request_path=request.path,
+            metadata={
+                "data_type": request.POST.get("data_type"),
+                "source_name": request.POST.get("source_name"),
+                "file_count": len(request.FILES.getlist("csv_files")),
+            },
+        )
         
         uploaded_files = request.FILES.getlist('csv_files')
         if not uploaded_files:
@@ -7370,6 +7280,8 @@ class UploadDataView(TemplateView):
         
         # Show summary in UI
         success_count = sum(1 for _, s, _, _ in results if s)
+        if success_count > 0:
+            queue_dashboard_analytics_refresh(skip_narratives=True)
         if success_count == len(uploaded_files):
             messages.success(request, f"✅ All {len(uploaded_files)} files processed successfully!")
         elif success_count > 0:
@@ -7413,6 +7325,17 @@ class ProcessUploadView(View):
                 # through storage so local files and S3-compatible stores both work.
                 file_path = default_storage.save(f'uploads/{unique_filename}', uploaded_file)
                 logger.info(f"🔄 Processing: {original_name} -> {unique_filename} ({uploaded_file.size / 1024 / 1024:.2f} MB)")
+                log_event(
+                    "Upload file saved to storage",
+                    event_type="upload.file_saved",
+                    status="success",
+                    actor=request.user.username if request.user.is_authenticated else "anonymous",
+                    source=original_name,
+                    object_type="file",
+                    object_id=file_path,
+                    request_path=request.path,
+                    metadata={"stored_path": file_path, "data_type": request.POST.get("data_type", "custom")},
+                )
                 
                 # Create upload record
                 upload = DataUpload.objects.create(
@@ -7421,6 +7344,17 @@ class ProcessUploadView(View):
                     uploaded_by=request.user.username if request.user.is_authenticated else 'anonymous',
                     data_type=data_type,
                     status='processing'
+                )
+                log_event(
+                    "Upload database record created",
+                    event_type="upload.record_created",
+                    status="success",
+                    actor=upload.uploaded_by,
+                    source=original_name,
+                    object_type="DataUpload",
+                    object_id=str(upload.id),
+                    request_path=request.path,
+                    metadata={"data_type": upload.data_type},
                 )
 
                 # === STREAMLIT-STYLE DATA PROCESSING ===
@@ -7434,6 +7368,19 @@ class ProcessUploadView(View):
                         df = load_data_robustly(stored_file, original_name=original_name)
 
                 logger.info(f"📊 Initial CSV Shape: {df.shape} | Columns: {list(df.columns)}")
+                logger.info(f"📊 CSV Shape: {df.shape}")
+                logger.info(f"📋 CSV Columns: {list(df.columns)}")
+                log_event(
+                    "Upload CSV loaded",
+                    event_type="upload.csv_loaded",
+                    status="success",
+                    actor=upload.uploaded_by,
+                    source=original_name,
+                    object_type="DataUpload",
+                    object_id=str(upload.id),
+                    request_path=request.path,
+                    metadata={"rows": int(df.shape[0]), "columns": list(df.columns), "data_type": data_type},
+                )
                 
                 if df.empty:
                     raise ValueError("DataFrame is empty after loading")
@@ -7451,12 +7398,47 @@ class ProcessUploadView(View):
                     combined_df = combine_social_media_data(brandwatch_df=df)
                 else:
                     combined_df = preprocess_dataframe(df)
+
+                logger.info(f"📊 COMBINED DATA COLUMNS: {list(combined_df.columns)}")
+                logger.info(f"📊 COMBINED DATA SHAPE: {combined_df.shape}")
+                log_event(
+                    "Upload data combined",
+                    event_type="upload.combined",
+                    status="success",
+                    actor=upload.uploaded_by,
+                    source=original_name,
+                    object_type="DataUpload",
+                    object_id=str(upload.id),
+                    request_path=request.path,
+                    metadata={"rows": int(combined_df.shape[0]), "columns": list(combined_df.columns), "data_type": data_type},
+                )
+
+                # Ensure required columns exist
+                required_cols = ['account_id', 'original_text', 'URL', 'timestamp_share', 'Platform']
+                for col in required_cols:
+                    if col not in combined_df.columns:
+                        combined_df[col] = ''
+                        logger.warning(f"⚠️ Added missing column: {col}")
                 
-                # Final preprocessing
+                # === FINAL PREPROCESSING ===
                 processed_df = final_preprocess_and_map_columns(combined_df)
                 logger.info(f"📊 Processed Data Shape: {processed_df.shape} | Columns: {list(processed_df.columns)}")
+
+                logger.info(f"📊 PROCESSED DATA COLUMNS: {list(processed_df.columns)}")
+                logger.info(f"📊 PROCESSED DATA SHAPE: {processed_df.shape}")
+                log_event(
+                    "Upload data preprocessed",
+                    event_type="upload.preprocessed",
+                    status="success",
+                    actor=upload.uploaded_by,
+                    source=original_name,
+                    object_type="DataUpload",
+                    object_id=str(upload.id),
+                    request_path=request.path,
+                    metadata={"rows": int(processed_df.shape[0]), "columns": list(processed_df.columns), "data_type": data_type},
+                )
                 
-                # Parse timestamps
+                # Parse timestamps with error handling
                 if 'timestamp_share' in processed_df.columns:
                     processed_df['timestamp_share'] = processed_df['timestamp_share'].apply(
                         lambda x: parse_timestamp_robust(x) if pd.notna(x) else pd.NaT
@@ -7467,6 +7449,7 @@ class ProcessUploadView(View):
                 urls_saved = 0
                 skipped_empty = 0
                 skipped_dup = 0
+                errors = []
                 
                 for idx, row in processed_df.iterrows():
                     try:
@@ -7507,7 +7490,20 @@ class ProcessUploadView(View):
                         )
                         count += 1
                     except Exception as row_error:
-                        logger.error(f"❌ Row {idx} error: {row_error}")
+                        errors.append(f"Row {idx}: {str(row_error)}")
+                        logger.error(f"❌ Error processing row {idx}: {row_error}")
+                        log_event(
+                            "Upload row failed",
+                            level="ERROR",
+                            event_type="upload.row_failed",
+                            status="failed",
+                            actor=upload.uploaded_by,
+                            source=original_name,
+                            object_type="DataUpload",
+                            object_id=str(upload.id),
+                            request_path=request.path,
+                            metadata={"row_index": int(idx), "error": str(row_error)},
+                        )
                         continue
                 
                 logger.info(f"✅ Saved: {count} | Skipped Empty: {skipped_empty} | Skipped Duplicates: {skipped_dup}")
@@ -7519,6 +7515,18 @@ class ProcessUploadView(View):
                 upload.save()
                 
                 results.append((original_name, True, f"Processed {count} posts", count))
+                logger.info(f"✅ {original_name}: Processed {count} posts")
+                log_event(
+                    "Upload processing completed",
+                    event_type="upload.completed",
+                    status="success",
+                    actor=upload.uploaded_by,
+                    source=original_name,
+                    object_type="DataUpload",
+                    object_id=str(upload.id),
+                    request_path=request.path,
+                    metadata={"records_processed": count, "urls_saved": urls_saved, "row_errors": len(errors)},
+                )
                 
             except Exception as e:
                 logger.error(f"❌ Upload failed for {uploaded_file.name}: {str(e)}", exc_info=True)
@@ -7526,6 +7534,24 @@ class ProcessUploadView(View):
                     upload.status = 'failed'
                     upload.processing_log = str(e)
                     upload.save()
+                    object_id = str(upload.id)
+                    actor = upload.uploaded_by
+                else:
+                    object_id = ''
+                    actor = request.user.username if request.user.is_authenticated else 'anonymous'
+                log_event(
+                    "Upload processing failed",
+                    level="ERROR",
+                    event_type="upload.failed",
+                    status="failed",
+                    actor=actor,
+                    source=uploaded_file.name,
+                    object_type="DataUpload",
+                    object_id=object_id,
+                    request_path=request.path,
+                    metadata={"error": str(e)},
+                    exc_info=True,
+                )
                 results.append((uploaded_file.name, False, str(e), 0))
         
         # Show summary in UI
@@ -7533,11 +7559,20 @@ class ProcessUploadView(View):
         total_saved = sum(c for _, s, _, c in results if s)
         
         if total_saved > 0:
+            queue_dashboard_analytics_refresh(skip_narratives=True)
             messages.success(request, f"✅ Successfully saved {total_saved} new posts!")
         elif not any(s for _, s, _, _ in results):
             messages.error(request, "❌ Failed to process files. Check terminal logs for details.")
         else:
             messages.warning(request, f"⚠️ File processed, but 0 new posts were saved. They may be duplicates or have empty text. Check logs.")
+        log_event(
+            "Upload request finished",
+            event_type="upload.summary",
+            status="success" if total_saved > 0 else "warning",
+            actor=request.user.username if request.user.is_authenticated else "anonymous",
+            request_path=request.path,
+            metadata={"files": len(uploaded_files), "success_count": success_count, "total_saved": total_saved},
+        )
         
         return redirect('upload_data')
         
