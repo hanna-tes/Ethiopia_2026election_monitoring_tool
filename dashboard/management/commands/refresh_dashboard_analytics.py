@@ -6,11 +6,12 @@ from django.db import transaction
 from django.db.models import Max, Min
 from django.utils import timezone
 
-from dashboard.models import DashboardAnalyticsSnapshot, PostLexiconMatch, ProcessedPost
+from dashboard.models import DashboardAnalyticsSnapshot, PEP, PostLexiconMatch, ProcessedPost
 from dashboard.utils.app_logging import log_event
 from dashboard.views import (
     build_analytics_snapshot_key,
     get_category_trend_analysis,
+    get_enhanced_pep_analysis,
     get_ethiopia_summaries,
     get_risk_actors_insight,
     get_top_hashtags,
@@ -31,6 +32,7 @@ class Command(BaseCommand):
         parser.add_argument('--skip-lexicons', action='store_true', help='Skip materialized lexicon detections.')
         parser.add_argument('--skip-home', action='store_true', help='Skip home analytics snapshot.')
         parser.add_argument('--skip-narratives', action='store_true', help='Skip narrative summaries snapshot.')
+        parser.add_argument('--skip-peps', action='store_true', help='Skip PEP mention analysis snapshot.')
         parser.add_argument('--batch-size', type=int, default=500, help='Bulk insert batch size for lexicon matches.')
 
     def handle(self, *args, **options):
@@ -63,6 +65,9 @@ class Command(BaseCommand):
 
         if not options['skip_narratives']:
             self.refresh_narratives_snapshot(posts, start_date, end_date, view_all)
+
+        if not options['skip_peps']:
+            self.refresh_peps_snapshot(posts, start_date, end_date, view_all)
 
         duration_ms = int((timezone.now() - started_at).total_seconds() * 1000)
         log_event(
@@ -134,6 +139,15 @@ class Command(BaseCommand):
             'summaries': get_ethiopia_summaries(posts),
         }
         self.save_snapshot('narratives', start_date, end_date, view_all, payload)
+
+    def refresh_peps_snapshot(self, posts, start_date, end_date, view_all):
+        self.stdout.write("Refreshing PEP mention analysis snapshot...")
+        active_peps = PEP.objects.filter(is_active=True).order_by('name')
+        election_posts = posts.filter(is_election_related=True).order_by('-timestamp_share')
+        payload = {
+            'pep_analysis': get_enhanced_pep_analysis(election_posts, active_peps, limit=8),
+        }
+        self.save_snapshot('peps', start_date, end_date, view_all, payload)
 
     def save_snapshot(self, kind, start_date, end_date, view_all, payload):
         key = build_analytics_snapshot_key(kind, start_date, end_date, view_all=view_all)

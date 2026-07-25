@@ -5569,6 +5569,9 @@ def analyze_pep_sentiment_groq(sample_texts, pep_name):
     """Use Groq to analyze the actual sentiment/criticality of posts mentioning a PEP"""
     if not sample_texts:
         return "Neutral"
+
+    if not getattr(settings, 'GROQ_API_KEY', ''):
+        return "Neutral"
     
     try:
         from groq import Groq
@@ -6650,15 +6653,17 @@ class PEPsView(TemplateView):
         # Remove duplicates
         rc_member_names = list(set(rc_member_names))
         
-        # 4. Get election-related posts for analysis
-        election_posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
-        
-        # 5. Generate ENHANCED PEP analysis with Groq sentiment analysis
-        pep_analysis_data = get_enhanced_pep_analysis(
-          election_posts, 
-          active_peps, 
-          limit=8  # Show top 8 mentioned officials
+        # 4. Read generated PEP mention analysis from the background refresh.
+        end_date = timezone.now()
+        start_date = end_date - timedelta(days=90)
+        pep_payload, pep_generated_at = get_analytics_snapshot(
+            'peps',
+            start_date,
+            end_date,
+            view_all=False,
+            allow_latest_fallback=True,
         )
+        pep_analysis_data = pep_payload.get('pep_analysis', [])
         
         # 6. Build context for the template
         context.update({
@@ -6675,6 +6680,7 @@ class PEPsView(TemplateView):
             'last_pep_sync': PEP.objects.aggregate(last=Max('last_updated'))['last'],
             'active_tab': 'peps',
             'pep_analysis': pep_analysis_data,  # For the PEPs analysis tab
+            'pep_analysis_generated_at': pep_generated_at,
         })
         # ── SAVE TO CACHE (20 minutes) ────────────────────────────
         #cache.set(cache_key, context, 1200)
@@ -7621,13 +7627,18 @@ class PEPsAnalysisView(TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # Get election-related posts
-        posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
-        active_peps = PEP.objects.filter(is_active=True).order_by('name')
-        
-        # Generate enhanced analysis
-        context['pep_analysis'] = get_enhanced_pep_analysis(posts, active_peps, limit=8)
+
+        end_date = timezone.now()
+        start_date = end_date - timedelta(days=90)
+        pep_payload, pep_generated_at = get_analytics_snapshot(
+            'peps',
+            start_date,
+            end_date,
+            view_all=False,
+            allow_latest_fallback=True,
+        )
+        context['pep_analysis'] = pep_payload.get('pep_analysis', [])
+        context['pep_analysis_generated_at'] = pep_generated_at
         context['active_tab'] = 'peps'
         
         return context
