@@ -29,6 +29,20 @@ cd ethiopian-election-monitor
 docker compose up -d --build
 ```
 
+By default, set up realistic local data from the legacy EC2 PostgreSQL database:
+
+```bash
+./scripts/restore_legacy_db.sh
+```
+
+This requires CFA AWS access through the `cfa-bootstrap` profile and temporary SSH access through EC2 Instance Connect. It does not print or require database passwords.
+
+To run an empty-database smoke test instead, skip the restore:
+
+```bash
+SKIP_LEGACY_RESTORE=1 ./scripts/restore_legacy_db.sh
+```
+
 Open:
 
 - App: http://127.0.0.1:8000/
@@ -207,38 +221,38 @@ docker compose exec web python manage.py refresh_dashboard_analytics --skip-narr
 
 The real-time text scanner in `/lexicon-management/` still runs live when a user submits text. The refresh command only removes broad page-wide scans from ordinary browsing.
 
-## Optional: Restore Legacy EC2 Data Locally
+## Default: Restore Legacy EC2 Data Locally
 
-The normal Docker setup starts with an empty PostgreSQL database. That is enough to confirm the app, worker, Redis, Postgres, and MinIO all start correctly.
+The normal Docker setup starts with an empty PostgreSQL database, then the default testing path restores the legacy EC2 database into Docker so the dashboards can be tested with realistic data.
 
-For realistic dashboard testing, restore a dump of the legacy EC2 PostgreSQL database into Docker. A CFA engineer with AWS access can create the dump from the legacy host without exposing database passwords:
+Use the restore helper:
 
 ```bash
-aws --profile cfa-bootstrap ec2-instance-connect send-ssh-public-key \
-  --region eu-west-1 \
-  --instance-id i-06c3aa3b62651dc87 \
-  --availability-zone eu-west-1a \
-  --instance-os-user ubuntu \
-  --ssh-public-key file://$HOME/.ssh/id_ed25519.pub
-
-ssh ubuntu@52.49.201.188 \
-  'sudo -u postgres pg_dump -Fc ethiopia_election_db' \
-  > /tmp/ethiopia_election_db.dump
+./scripts/restore_legacy_db.sh
 ```
 
-Restore it into the Docker database:
+The script:
+
+- authorizes your local SSH public key temporarily with EC2 Instance Connect
+- streams a `pg_dump` from the legacy EC2 host
+- replaces the local Docker PostgreSQL database with that dump
+- runs migrations
+- refreshes precomputed analytics with narratives skipped for local safety
+- restarts the local web and worker containers
+
+You can override the defaults if needed:
 
 ```bash
-docker compose stop web worker
-docker compose exec -T postgres dropdb -U ethiopia_user --if-exists ethiopia_election_db
-docker compose exec -T postgres createdb -U ethiopia_user ethiopia_election_db
-docker compose exec -T postgres pg_restore -U ethiopia_user -d ethiopia_election_db --no-owner --no-acl < /tmp/ethiopia_election_db.dump
-docker compose run --rm -e DJANGO_COLLECTSTATIC=0 web python manage.py migrate
-docker compose run --rm -e DJANGO_COLLECTSTATIC=0 web python manage.py refresh_dashboard_analytics --skip-narratives
-docker compose up -d web worker
+AWS_PROFILE_NAME=cfa-bootstrap SSH_PUBLIC_KEY_PATH=$HOME/.ssh/id_ed25519.pub ./scripts/restore_legacy_db.sh
 ```
 
 If you used alternate ports, keep the same `APP_PORT`, `MINIO_API_PORT`, and `MINIO_CONSOLE_PORT` variables on every `docker compose` command.
+
+To skip legacy data and keep an empty local database:
+
+```bash
+SKIP_LEGACY_RESTORE=1 ./scripts/restore_legacy_db.sh
+```
 
 ## LLM or Coding Agent Setup Instructions
 
@@ -255,13 +269,13 @@ Steps:
 3. Run docker compose up -d --build.
 4. Wait until the web, worker, postgres, minio, and redis services are running.
 5. Wait until http://127.0.0.1:8000/health/ returns {"status": "ok"}. Retry every 3 seconds until it is ready.
-6. Verify http://127.0.0.1:8000/networks/ returns HTTP 200.
-7. Confirm Django is using PostgreSQL, not SQLite.
-8. Run docker compose exec web python manage.py refresh_dashboard_analytics --skip-narratives.
-9. Verify http://127.0.0.1:8000/lexicons/, http://127.0.0.1:8000/lexicon-management/, and http://127.0.0.1:8000/peps/ return HTTP 200.
-10. Confirm uploads use the S3-compatible Django storage backend backed by MinIO.
-11. Confirm Django cache uses redis://redis:6379/1.
-12. If realistic dashboard data is required, ask a CFA engineer for a legacy Postgres dump or ask them to run the "Optional: Restore Legacy EC2 Data Locally" steps in this README. Do not make Postgres public.
+6. Restore the legacy EC2 database by running ./scripts/restore_legacy_db.sh.
+7. If the tester does not have CFA AWS access and only needs an empty smoke test, run SKIP_LEGACY_RESTORE=1 ./scripts/restore_legacy_db.sh instead.
+8. Verify http://127.0.0.1:8000/networks/ returns HTTP 200.
+9. Confirm Django is using PostgreSQL, not SQLite.
+10. Verify http://127.0.0.1:8000/lexicons/, http://127.0.0.1:8000/lexicon-management/, and http://127.0.0.1:8000/peps/ return HTTP 200.
+11. Confirm uploads use the S3-compatible Django storage backend backed by MinIO.
+12. Confirm Django cache uses redis://redis:6379/1.
 
 Local URLs:
 - App: http://127.0.0.1:8000/
