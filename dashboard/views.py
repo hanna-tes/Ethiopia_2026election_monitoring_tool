@@ -18,7 +18,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
-from .utils.hate_speech_detector import get_hate_speech_detector
 from .utils.json_loader import get_disarm_ttp_reference
 from django.shortcuts import render, redirect
 from django.contrib import messages
@@ -50,8 +49,6 @@ from .utils.lexicon_engine import scan_text_for_lexicon_terms, calculate_risk_sc
 from .utils.election_filter import is_election_related
 from .utils.wordcloud import generate_trigger_wordcloud, wordcloud_to_base64
 from .utils.app_logging import log_event
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans
 from .utils.data_loader import parse_timestamp_robust
 from .utils.csv_processor import combine_social_media_data
 from .models import ProcessedPost, DataSource
@@ -61,10 +58,7 @@ from .models import ElectionOfficeholder
 from django.shortcuts import render, get_object_or_404
 from .models import MonitoringReport
 from typing import List, Dict, Any, Optional
-from sklearn.metrics.pairwise import cosine_similarity
-from scipy.sparse import csr_matrix
 from django.contrib.auth.decorators import login_required
-from .utils.afro_xlmr_detector import get_detector
 from .detectors import is_election_related
 
 
@@ -2620,7 +2614,10 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             
     if len(valid_texts) < 2:
         return []
-        
+
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
     # 3. Vectorized TF-IDF Calculation & Similarity Matching
     vectorizer = TfidfVectorizer(
         max_features=2000, 

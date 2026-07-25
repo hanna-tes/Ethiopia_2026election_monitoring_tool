@@ -62,6 +62,12 @@ Then open:
 - App: http://127.0.0.1:8010/
 - MinIO console: http://localhost:9101/
 
+If that alternate app port is also busy, choose another high local port, for example:
+
+```bash
+APP_PORT=18021 MINIO_API_PORT=19120 MINIO_CONSOLE_PORT=19121 docker compose up -d --build
+```
+
 ### Stop Everything
 
 ```bash
@@ -95,6 +101,12 @@ docker compose ps
 ```
 
 You should see `web`, `worker`, `postgres`, `minio`, and `redis` running.
+
+On first startup, the `web` container may show as running before Gunicorn is ready. If the first health check fails, wait a few seconds and retry:
+
+```bash
+until curl -fsS http://127.0.0.1:8000/health/; do sleep 3; done
+```
 
 ## Local Services
 
@@ -185,6 +197,7 @@ This command:
 - materializes per-post lexicon detections for the `/lexicons/` page
 - prepares home-page trend, hashtag, and risk-actor summaries
 - prepares narrative summaries for `/narratives/`
+- prepares PEP/PIP mention analysis for `/peps/` and `/peps/analysis/`
 
 For a faster local smoke test that skips narrative LLM/clustering work:
 
@@ -193,6 +206,39 @@ docker compose exec web python manage.py refresh_dashboard_analytics --skip-narr
 ```
 
 The real-time text scanner in `/lexicon-management/` still runs live when a user submits text. The refresh command only removes broad page-wide scans from ordinary browsing.
+
+## Optional: Restore Legacy EC2 Data Locally
+
+The normal Docker setup starts with an empty PostgreSQL database. That is enough to confirm the app, worker, Redis, Postgres, and MinIO all start correctly.
+
+For realistic dashboard testing, restore a dump of the legacy EC2 PostgreSQL database into Docker. A CFA engineer with AWS access can create the dump from the legacy host without exposing database passwords:
+
+```bash
+aws --profile cfa-bootstrap ec2-instance-connect send-ssh-public-key \
+  --region eu-west-1 \
+  --instance-id i-06c3aa3b62651dc87 \
+  --availability-zone eu-west-1a \
+  --instance-os-user ubuntu \
+  --ssh-public-key file://$HOME/.ssh/id_ed25519.pub
+
+ssh ubuntu@52.49.201.188 \
+  'sudo -u postgres pg_dump -Fc ethiopia_election_db' \
+  > /tmp/ethiopia_election_db.dump
+```
+
+Restore it into the Docker database:
+
+```bash
+docker compose stop web worker
+docker compose exec -T postgres dropdb -U ethiopia_user --if-exists ethiopia_election_db
+docker compose exec -T postgres createdb -U ethiopia_user ethiopia_election_db
+docker compose exec -T postgres pg_restore -U ethiopia_user -d ethiopia_election_db --no-owner --no-acl < /tmp/ethiopia_election_db.dump
+docker compose run --rm -e DJANGO_COLLECTSTATIC=0 web python manage.py migrate
+docker compose run --rm -e DJANGO_COLLECTSTATIC=0 web python manage.py refresh_dashboard_analytics --skip-narratives
+docker compose up -d web worker
+```
+
+If you used alternate ports, keep the same `APP_PORT`, `MINIO_API_PORT`, and `MINIO_CONSOLE_PORT` variables on every `docker compose` command.
 
 ## LLM or Coding Agent Setup Instructions
 
@@ -208,13 +254,14 @@ Steps:
 2. Change into the repo.
 3. Run docker compose up -d --build.
 4. Wait until the web, worker, postgres, minio, and redis services are running.
-5. Verify http://127.0.0.1:8000/health/ returns {"status": "ok"}.
+5. Wait until http://127.0.0.1:8000/health/ returns {"status": "ok"}. Retry every 3 seconds until it is ready.
 6. Verify http://127.0.0.1:8000/networks/ returns HTTP 200.
 7. Confirm Django is using PostgreSQL, not SQLite.
 8. Run docker compose exec web python manage.py refresh_dashboard_analytics --skip-narratives.
-9. Verify http://127.0.0.1:8000/lexicons/ and http://127.0.0.1:8000/lexicon-management/ return HTTP 200.
+9. Verify http://127.0.0.1:8000/lexicons/, http://127.0.0.1:8000/lexicon-management/, and http://127.0.0.1:8000/peps/ return HTTP 200.
 10. Confirm uploads use the S3-compatible Django storage backend backed by MinIO.
 11. Confirm Django cache uses redis://redis:6379/1.
+12. If realistic dashboard data is required, ask a CFA engineer for a legacy Postgres dump or ask them to run the "Optional: Restore Legacy EC2 Data Locally" steps in this README. Do not make Postgres public.
 
 Local URLs:
 - App: http://127.0.0.1:8000/
