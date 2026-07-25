@@ -13,6 +13,7 @@ The simplest way to run the app locally is Docker Compose. This starts:
 - PostgreSQL database inside Docker
 - MinIO, a local S3-compatible object store, for uploads
 - Redis inside Docker for cache and Django-Q background jobs
+- a one-time local setup job that restores the bundled legacy PostgreSQL data and refreshes precomputed analytics
 
 ### Requirements
 
@@ -29,18 +30,28 @@ cd ethiopian-election-monitor
 docker compose up -d --build
 ```
 
-By default, set up realistic local data from the legacy EC2 PostgreSQL database:
+That single command starts the containers, restores the bundled legacy PostgreSQL dump into local Docker by default, runs migrations, creates a local admin user, prepares the fast dashboard analytics, and starts the web and worker containers.
 
-```bash
-./scripts/restore_legacy_db.sh
+No CFA AWS access is needed for local setup.
+
+Default local admin login:
+
+```text
+URL: http://127.0.0.1:8000/admin/
+Username: admin
+Password: admin12345
 ```
 
-This requires CFA AWS access through the `cfa-bootstrap` profile and temporary SSH access through EC2 Instance Connect. It does not print or require database passwords.
-
-To run an empty-database smoke test instead, skip the restore:
+To choose your own local admin credentials, keep it as one command:
 
 ```bash
-SKIP_LEGACY_RESTORE=1 ./scripts/restore_legacy_db.sh
+DJANGO_SUPERUSER_USERNAME=myadmin DJANGO_SUPERUSER_PASSWORD='choose-a-local-password' docker compose up -d --build
+```
+
+To run an empty-database smoke test instead, opt out of the bundled restore on the same command:
+
+```bash
+SKIP_LEGACY_RESTORE=1 docker compose up -d --build
 ```
 
 Open:
@@ -63,7 +74,7 @@ The local S3 bucket is created automatically:
 ethiopian-election-monitor-media
 ```
 
-The first build is large because the image includes PyTorch and Transformers for the AFRO-XLMR detector.
+The first build is large because the image includes PyTorch and Transformers for the AFRO-XLMR detector. The first startup can also take a few minutes because Docker restores the bundled database and precomputes local analytics before the web app starts.
 
 If another local project is already using ports `8000`, `9000`, or `9001`, use alternate host ports:
 
@@ -116,7 +127,7 @@ docker compose ps
 
 You should see `web`, `worker`, `postgres`, `minio`, and `redis` running.
 
-On first startup, the `web` container may show as running before Gunicorn is ready. If the first health check fails, wait a few seconds and retry:
+On first startup, Docker may spend a few minutes in the `db-restore` and `app-setup` services before `web` starts. If the first health check fails, wait a few seconds and retry:
 
 ```bash
 until curl -fsS http://127.0.0.1:8000/health/; do sleep 3; done
@@ -133,6 +144,8 @@ until curl -fsS http://127.0.0.1:8000/health/; do sleep 3; done
 | MinIO S3 API | http://localhost:9000/ | S3-compatible API |
 | PostgreSQL | `postgres:5432` | Internal Docker network only |
 | Redis | `redis:6379` | Internal Docker network only |
+| Bundled DB restore | `db-restore` service | Restores `docker/backups/ethiopia_election_db.dump` unless `SKIP_LEGACY_RESTORE=1` |
+| Local app setup | `app-setup` service | Runs migrations and refreshes precomputed analytics before `web` starts |
 
 PostgreSQL and Redis are intentionally not exposed on host ports. The app connects to them inside the Docker network using `postgres:5432` and `redis:6379`, which is closer to how it will work in ECS/Fargate.
 
@@ -154,6 +167,10 @@ Important variables:
 | `DB_NAME` | PostgreSQL database name |
 | `DB_USER` | PostgreSQL user |
 | `DB_PASSWORD` | PostgreSQL password |
+| `DJANGO_SUPERUSER_USERNAME` | Local admin username created by Docker setup; defaults to `admin` |
+| `DJANGO_SUPERUSER_EMAIL` | Local admin email created by Docker setup; defaults to `admin@example.local` |
+| `DJANGO_SUPERUSER_PASSWORD` | Local admin password created by Docker setup; defaults to `admin12345` |
+| `RESET_LOCAL_ADMIN_PASSWORD` | Set to `1` to reset an existing local admin user's password during setup |
 | `CFA_VALKEY_URL` | Redis-compatible URL for CFA managed Valkey in deployment |
 | `REDIS_URL` | Redis URL fallback; local Docker points it at `redis://redis:6379/1` |
 | `AWS_STORAGE_BUCKET_NAME` | Enables S3-compatible media storage |
@@ -221,37 +238,40 @@ docker compose exec web python manage.py refresh_dashboard_analytics --skip-narr
 
 The real-time text scanner in `/lexicon-management/` still runs live when a user submits text. The refresh command only removes broad page-wide scans from ordinary browsing.
 
-## Default: Restore Legacy EC2 Data Locally
+## Bundled Legacy Data
 
-The normal Docker setup starts with an empty PostgreSQL database, then the default testing path restores the legacy EC2 database into Docker so the dashboards can be tested with realistic data.
+The normal Docker setup restores a bundled PostgreSQL dump into local Docker so the dashboards can be tested with realistic data immediately.
 
-Use the restore helper:
+The dump lives at:
 
-```bash
-./scripts/restore_legacy_db.sh
+```text
+docker/backups/ethiopia_election_db.dump
 ```
 
-The script:
+The bundled dump excludes local admin users, Django sessions, admin logs, and Django-Q task payload data. Docker setup creates a fresh local admin user after restore instead.
 
-- authorizes your local SSH public key temporarily with EC2 Instance Connect
-- streams a `pg_dump` from the legacy EC2 host
-- replaces the local Docker PostgreSQL database with that dump
-- runs migrations
-- refreshes precomputed analytics with narratives skipped for local safety
-- restarts the local web and worker containers
-
-You can override the defaults if needed:
+It is restored automatically by:
 
 ```bash
-AWS_PROFILE_NAME=cfa-bootstrap SSH_PUBLIC_KEY_PATH=$HOME/.ssh/id_ed25519.pub ./scripts/restore_legacy_db.sh
+docker compose up -d --build
 ```
 
-If you used alternate ports, keep the same `APP_PORT`, `MINIO_API_PORT`, and `MINIO_CONSOLE_PORT` variables on every `docker compose` command.
-
-To skip legacy data and keep an empty local database:
+To skip bundled data and keep an empty local database:
 
 ```bash
-SKIP_LEGACY_RESTORE=1 ./scripts/restore_legacy_db.sh
+SKIP_LEGACY_RESTORE=1 docker compose up -d --build
+```
+
+To force the bundled dump and analytics to rebuild after you have already started the stack:
+
+```bash
+FORCE_LEGACY_RESTORE=1 FORCE_ANALYTICS_REFRESH=1 docker compose up -d --build
+```
+
+To reset the local admin password too:
+
+```bash
+RESET_LOCAL_ADMIN_PASSWORD=1 DJANGO_SUPERUSER_PASSWORD='new-local-password' docker compose up -d --build
 ```
 
 ## LLM or Coding Agent Setup Instructions
@@ -266,21 +286,24 @@ Use Docker Compose as the primary setup path. Do not create a manual local datab
 Steps:
 1. Clone git@github.com:CodeForAfrica/ethiopian-election-monitor.git.
 2. Change into the repo.
-3. Run docker compose up -d --build.
-4. Wait until the web, worker, postgres, minio, and redis services are running.
-5. Wait until http://127.0.0.1:8000/health/ returns {"status": "ok"}. Retry every 3 seconds until it is ready.
-6. Restore the legacy EC2 database by running ./scripts/restore_legacy_db.sh.
-7. If the tester does not have CFA AWS access and only needs an empty smoke test, run SKIP_LEGACY_RESTORE=1 ./scripts/restore_legacy_db.sh instead.
-8. Verify http://127.0.0.1:8000/networks/ returns HTTP 200.
-9. Confirm Django is using PostgreSQL, not SQLite.
-10. Verify http://127.0.0.1:8000/lexicons/, http://127.0.0.1:8000/lexicon-management/, and http://127.0.0.1:8000/peps/ return HTTP 200.
-11. Confirm uploads use the S3-compatible Django storage backend backed by MinIO.
-12. Confirm Django cache uses redis://redis:6379/1.
+3. Ask the tester what local Django admin username and password they want to use. If they do not care, use username admin and password admin12345.
+4. Run one Docker command, including the chosen admin credentials, for example: DJANGO_SUPERUSER_USERNAME=admin DJANGO_SUPERUSER_PASSWORD='admin12345' docker compose up -d --build.
+5. Wait while Docker builds the image, restores the bundled local PostgreSQL dump, runs migrations, creates the local admin user, refreshes precomputed analytics, and starts the web and worker containers. This can take a few minutes on first setup.
+6. Wait until http://127.0.0.1:8000/health/ returns {"status": "ok"}. Retry every 3 seconds until it is ready.
+7. Verify http://127.0.0.1:8000/networks/ returns HTTP 200.
+8. Confirm Django is using PostgreSQL, not SQLite.
+9. Verify http://127.0.0.1:8000/lexicons/, http://127.0.0.1:8000/lexicon-management/, and http://127.0.0.1:8000/peps/ return HTTP 200.
+10. Confirm uploads use the S3-compatible Django storage backend backed by MinIO.
+11. Confirm Django cache uses redis://redis:6379/1.
+12. At the end, show the tester their local URLs and the admin username/password they chose.
+
+The default setup does not need CFA AWS access. If the tester wants an empty local database instead of the bundled data, run SKIP_LEGACY_RESTORE=1 docker compose up -d --build.
 
 Local URLs:
 - App: http://127.0.0.1:8000/
 - Networks: http://127.0.0.1:8000/networks/
 - Health: http://127.0.0.1:8000/health/
+- Admin: http://127.0.0.1:8000/admin/
 - MinIO console: http://localhost:9001/
 
 MinIO credentials:

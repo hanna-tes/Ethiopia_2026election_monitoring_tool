@@ -73,5 +73,8 @@ __pycache__/
 
 dashboard/model_cache/
 !dashboard/model_cache/.gitkeep
+
+!docker/backups/
+!docker/backups/ethiopia_election_db.dump
 dashboard/model_cache/
 !dashboard/model_cache/.gitkeep
