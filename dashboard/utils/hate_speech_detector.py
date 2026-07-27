@@ -2,8 +2,16 @@
 import os
 import logging
 import numpy as np
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+try:
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+    ML_DEPS_AVAILABLE = True
+except ImportError:
+    torch = None
+    AutoTokenizer = None
+    AutoModelForSequenceClassification = None
+    ML_DEPS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +126,10 @@ _detector_instance = None
 def get_hate_speech_detector():
     global _detector_instance
     if _detector_instance is None:
+        if not ML_DEPS_AVAILABLE:
+            logger.warning("AFRO-XLMR detector disabled because torch/transformers are not installed.")
+            return None
+
         # We will place your model files in this folder on EC2
         _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         model_path = os.path.join(_BASE_DIR, 'models_cache', 'afro_xlmr')
