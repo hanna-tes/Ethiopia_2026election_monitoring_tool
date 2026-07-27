@@ -127,7 +127,7 @@ docker compose ps
 
 You should see `web`, `worker`, `postgres`, `minio`, and `redis` running.
 
-On first startup, Docker may spend a few minutes in the `db-restore` and `app-setup` services before `web` starts. If the first health check fails, wait a few seconds and retry:
+On first startup, Docker may spend a few minutes in the `db-restore` and `app-setup` services before `web` starts. The setup step also refreshes the precomputed dashboard analytics, including the Trending Narratives clusters. If the first health check fails, wait a few seconds and retry:
 
 ```bash
 until curl -fsS http://127.0.0.1:8000/health/; do sleep 3; done
@@ -145,7 +145,7 @@ until curl -fsS http://127.0.0.1:8000/health/; do sleep 3; done
 | PostgreSQL | `postgres:5432` | Internal Docker network only |
 | Redis | `redis:6379` | Internal Docker network only |
 | Bundled DB restore | `db-restore` service | Restores `docker/backups/ethiopia_election_db.dump` unless `SKIP_LEGACY_RESTORE=1` |
-| Local app setup | `app-setup` service | Runs migrations and refreshes precomputed analytics before `web` starts |
+| Local app setup | `app-setup` service | Runs migrations and refreshes precomputed analytics, including narrative clusters, before `web` starts |
 
 PostgreSQL and Redis are intentionally not exposed on host ports. The app connects to them inside the Docker network using `postgres:5432` and `redis:6379`, which is closer to how it will work in ECS/Fargate.
 
