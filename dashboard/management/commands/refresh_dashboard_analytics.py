@@ -2,7 +2,6 @@ import json
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
-from django.conf import settings
 from django.db import transaction
 from django.db.models import Max, Min
 from django.utils import timezone
@@ -34,14 +33,10 @@ class Command(BaseCommand):
         parser.add_argument('--skip-home', action='store_true', help='Skip home analytics snapshot.')
         parser.add_argument('--skip-narratives', action='store_true', help='Skip narrative summaries snapshot.')
         parser.add_argument('--skip-peps', action='store_true', help='Skip PEP mention analysis snapshot.')
-        parser.add_argument('--skip-llm', action='store_true', help='Disable external LLM calls during this refresh.')
         parser.add_argument('--batch-size', type=int, default=500, help='Bulk insert batch size for lexicon matches.')
 
     def handle(self, *args, **options):
         started_at = timezone.now()
-        if options['skip_llm']:
-            settings.DISABLE_LLM_CALLS = True
-            settings.GROQ_API_KEY = ''
         view_all = options['view_all']
         posts = ProcessedPost.objects.all().order_by('-timestamp_share')
 

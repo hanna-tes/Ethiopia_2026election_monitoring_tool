@@ -28,7 +28,7 @@ scheduledJobs:
     description: Refresh precomputed dashboard analytics, including narrative clusters.
     targetService: ethiopian-election-monitor
     containerName: web
-    command: ["python", "manage.py", "refresh_dashboard_analytics", "--skip-llm"]
+    command: ["python", "manage.py", "refresh_dashboard_analytics"]
     schedule: "cron(0 4 * * ? *)"
     timezone: "Africa/Kampala"
     capacityMode: spot

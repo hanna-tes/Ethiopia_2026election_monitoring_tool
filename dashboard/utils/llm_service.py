@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 def get_groq_client():
     if not settings.GROQ_API_KEY:
-        logger.warning("⚠️ GROQ_API_KEY not configured")
         return None
     try:
         return Groq(api_key=settings.GROQ_API_KEY)
@@ -18,9 +17,6 @@ def get_groq_client():
 
 
 def safe_llm_call(prompt, max_tokens=2048, model=None):
-    if getattr(settings, 'DISABLE_LLM_CALLS', False):
-        return None
-
     client = get_groq_client()
     if not client:
         return None
