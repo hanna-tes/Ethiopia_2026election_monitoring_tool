@@ -18,6 +18,9 @@ def get_groq_client():
 
 
 def safe_llm_call(prompt, max_tokens=2048, model=None):
+    if getattr(settings, 'DISABLE_LLM_CALLS', False):
+        return None
+
     client = get_groq_client()
     if not client:
         return None
