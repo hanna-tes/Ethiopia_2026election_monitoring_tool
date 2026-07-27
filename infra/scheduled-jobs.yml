@@ -25,10 +25,10 @@ scheduledJobs:
     concurrencyPolicy: replace
 
   - name: refresh-analytics
-    description: Refresh precomputed dashboard analytics without live narrative clustering.
+    description: Refresh precomputed dashboard analytics, including narrative clusters.
     targetService: ethiopian-election-monitor
     containerName: web
-    command: ["python", "manage.py", "refresh_dashboard_analytics", "--skip-narratives"]
+    command: ["python", "manage.py", "refresh_dashboard_analytics"]
     schedule: "cron(0 4 * * ? *)"
     timezone: "Africa/Kampala"
     capacityMode: spot

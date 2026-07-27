@@ -99,7 +99,7 @@ services:
       needs_refresh=$$(python manage.py shell -c \"from dashboard.models import DashboardAnalyticsSnapshot, PostLexiconMatch, ProcessedPost; posts = ProcessedPost.objects.count(); matches = PostLexiconMatch.objects.count(); snapshots = DashboardAnalyticsSnapshot.objects.count(); print(int(posts == 0 or matches == 0 or snapshots == 0))\");
       if [ \"$${FORCE_ANALYTICS_REFRESH:-0}\" = \"1\" ] || [ \"$${needs_refresh}\" = \"1\" ]; then
         echo 'Refreshing precomputed analytics for local startup...';
-        python manage.py refresh_dashboard_analytics --skip-narratives;
+        python manage.py refresh_dashboard_analytics;
       else
         echo 'Precomputed analytics already available.';
       fi;
