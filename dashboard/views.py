@@ -57,7 +57,7 @@ from scipy.sparse import csr_matrix
 from django.contrib.auth.decorators import login_required
 from .utils.afro_xlmr_detector import get_detector
 from .detectors import is_election_related
-
+from dashboard.utils.analytics_engine import get_analytics_snapshot
 
 
 logger = logging.getLogger(__name__)
@@ -75,45 +75,6 @@ def load_gemma_lora_model():
     # TODO: Re-enable after upgrading EC2 instance to t3.xlarge (16GB RAM)
     logger.warning("Gemma LoRA model is DISABLED - insufficient RAM (current: 8GB, required: 16GB+)")
     return None, None
-
-def get_filter_cache_key(prefix: str, query_params: dict) -> str:
-    """
-    Generates a unique, reproducible cache key based on query parameters.
-    """
-    # Extract relevant filter keys and normalize them
-    normalized_params = {
-        'view_all': str(query_params.get('view_all', '')).lower() in ['true', '1'],
-        'start_date': query_params.get('start_date', ''),
-        'end_date': query_params.get('end_date', ''),
-        'platform': query_params.get('platform', ''),
-        'topic': query_params.get('topic', ''),
-        'tone': query_params.get('tone', ''),
-    }
-    
-    # Sort keys so parameter order in URL doesn't alter the key
-    param_str = json.dumps(normalized_params, sort_keys=True)
-    param_hash = hashlib.md5(param_str.encode('utf-8')).hexdigest()
-    
-    return f"analytics_{prefix}_{param_hash}"
-
-def get_analytics_snapshot(snapshot_type, request_params):
-    cache_key = get_filter_cache_key(snapshot_type, request_params)
-    
-    # 1. Try retrieving from low-level cache
-    cached_payload = cache.get(cache_key)
-    if cached_payload:
-        return cached_payload, cached_payload.get('generated_at')
-
-    # 2. Check persistent DB Snapshot table if applicable
-    # (Optional fallback to latest general snapshot if filtering allows)
-    
-    # 3. Cache Miss: Compute on-demand for the filtered QuerySet
-    payload = compute_filtered_analytics(snapshot_type, request_params)
-    
-    # 4. Save result in cache (caches for 2hr)
-    cache.set(cache_key, payload, timeout=7200)
-    
-    return payload, payload.get('generated_at')
 
 def get_combined_lexicon():
     """
@@ -6143,27 +6104,20 @@ class NarrativesView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # ── CHECK CACHE FIRST ──────────────────────────────────────
-        #view_all = self.request.GET.get('view_all') == 'true'
-        #req_start = self.request.GET.get('start_date', '')
-        #req_end = self.request.GET.get('end_date', '')
-        
-        #cache_key = f"narratives_view_v1_{req_start}_{req_end}_{view_all}"
-       # cached_data = cache.get(cache_key)
-        
-        #if cached_data:
-        #    logger.info("✅ NarrativesView: Serving from cache")
-         #   return cached_data
-        
-        #context = super().get_context_data(**kwargs)
 
         # Reuse date filtering helper
         queryset, start_date, end_date = get_election_posts_queryset(
             self.request
         )
+        
+        # Query-aware cached snapshot fetcher
+        payload, generated_at = get_analytics_snapshot(
+            'narratives', 
+            request_params=self.request.GET.dict()
+        )
 
-        # Generate narratives from filtered data
-        context['summaries'] = get_ethiopia_summaries(queryset)
+        context['summaries'] = payload.get('summaries', [])
+        context['generated_at'] = generated_at
         context['total_posts'] = queryset.count()
 
         # Date range display
@@ -6185,12 +6139,8 @@ class NarrativesView(TemplateView):
             .all()
             .order_by('-uploaded_at')[:12]
         )
-        # ── SAVE TO CACHE (1 hour) ────────────────────────────────
-        #cache.set(cache_key, context, 3600)
-        #logger.info(f"💾 NarrativesView: Cached for 1 hour")
         
         return context
-
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
