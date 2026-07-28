@@ -6056,23 +6056,41 @@ class HomeView(BaseTabMixin, TemplateView):
     def get_context_data(self, **kwargs):
         # ── 1. CHECK CACHE FIRST ──────────────────────────────────────
         view_all = self.request.GET.get('view_all') == 'true'
-        req_start = self.request.GET.get('start_date', '')
-        req_end = self.request.GET.get('end_date', '')
         
-        # Use v2 to invalidate any old broken caches
-        cache_key = f"home_dashboard_v2_{req_start}_{req_end}_{view_all}"
+        # Check standard and alternative query param names for dates
+        req_start = (
+            self.request.GET.get('start_date') 
+            or self.request.GET.get('start') 
+            or self.request.GET.get('from', '')
+        ).strip()
+        
+        req_end = (
+            self.request.GET.get('end_date') 
+            or self.request.GET.get('end') 
+            or self.request.GET.get('to', '')
+        ).strip()
+        
+        # Unique cache key based on non-empty query parameters
+        cache_key = f"home_dashboard_v3_{req_start}_{req_end}_{view_all}"
         cached_data = cache.get(cache_key)
         
         if cached_data:
-            logger.info("✅ HomeView: Serving from cache")
+            logger.info(f"✅ HomeView: Serving from cache (key: {cache_key})")
             context = super().get_context_data(**kwargs)
             context.update(cached_data)
             return context
         
         context = super().get_context_data(**kwargs)
         
-        # ── 2. GET FILTERED QUERYSET (now defaults to 3 months) ───────
+        # ── 2. GET FILTERED QUERYSET ──────────────────────────────────
         queryset, start_date, end_date = get_election_posts_queryset(self.request)
+        
+        # Ensure date filters from GET parameters are explicitly enforced on the queryset
+        if req_start:
+            queryset = queryset.filter(timestamp_share__gte=req_start)
+        if req_end:
+            queryset = queryset.filter(timestamp_share__lte=req_end)
+
         posts = queryset
         total_posts = posts.count()
         
@@ -6226,7 +6244,6 @@ class HomeView(BaseTabMixin, TemplateView):
         })
         
         # ── 10. SAVE TO CACHE (30 minutes) ────────────────────────────
-        # Create a cacheable copy without unpicklable objects (like Django model instances)
         cacheable_context = {
             'metrics': context['metrics'],
             'charts': context['charts'],
@@ -6240,7 +6257,6 @@ class HomeView(BaseTabMixin, TemplateView):
             'upload_summary': {
                 'show': upload_summary['show'],
                 'total_records': upload_summary['total_records'],
-                # Convert model instances to dictionaries to prevent pickle errors
                 'files': [
                     {
                         'id': u.id,
@@ -6260,7 +6276,7 @@ class HomeView(BaseTabMixin, TemplateView):
         except Exception as e:
             logger.warning(f"⚠️ HomeView: Failed to save to cache: {e}")
         
-        return context     
+        return context
         
 class NarrativesView(TemplateView):
     template_name = 'dashboard/narratives.html'
