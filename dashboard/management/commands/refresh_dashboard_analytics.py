@@ -51,7 +51,6 @@ class Command(BaseCommand):
         parser.add_argument('--skip-narratives', action='store_true', help='Skip narrative summaries snapshot.')
         parser.add_argument('--skip-peps', action='store_true', help='Skip PEP mention analysis snapshot.')
         parser.add_argument('--batch-size', type=int, default=500, help='Bulk insert batch size for lexicon matches.')
-        parser.add_argument('--skip-home', action='store_true', help='Skip home analytics snapshot.')
         parser.add_argument('--skip-narratives', action='store_true', help='Skip narrative summaries snapshot.')
         parser.add_argument('--skip-peps', action='store_true', help='Skip PEP mention analysis snapshot.')
 
