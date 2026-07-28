@@ -5,6 +5,13 @@ from io import StringIO
 from datetime import datetime
 from django.utils import timezone
 
+
+def rewind_file(file_obj):
+    try:
+        file_obj.seek(0)
+    except (AttributeError, OSError):
+        pass
+
 def parse_timestamp_robust(timestamp):
     """
     Standardizes various timestamp formats found in Meltwater, 
@@ -56,6 +63,7 @@ def load_data_robustly(file_path, original_name=None):
     """
     # Attempt 1: Try Meltwater Style (UTF-16, Tab Separated)
     try:
+        rewind_file(file_path)
         df = pd.read_csv(file_path, encoding='utf-16', sep='\t', low_memory=False, on_bad_lines='skip')
         if len(df.columns) > 1:
             if original_name:
@@ -66,6 +74,7 @@ def load_data_robustly(file_path, original_name=None):
 
     # Attempt 2: Try Standard CSV (UTF-8)
     try:
+        rewind_file(file_path)
         df = pd.read_csv(file_path, encoding='utf-8', low_memory=False, on_bad_lines='skip')
         if len(df.columns) > 1:
             return df
@@ -74,6 +83,7 @@ def load_data_robustly(file_path, original_name=None):
 
     # Attempt 3: Try UTF-8 with Byte Order Mark (BOM)
     try:
+        rewind_file(file_path)
         df = pd.read_csv(file_path, encoding='utf-8-sig', low_memory=False, on_bad_lines='skip')
         if len(df.columns) > 1:
             return df
@@ -82,6 +92,7 @@ def load_data_robustly(file_path, original_name=None):
 
     # Attempt 4: Last resort (Latin-1)
     try:
+        rewind_file(file_path)
         df = pd.read_csv(file_path, encoding='latin1', low_memory=False, on_bad_lines='skip')
         return df
     except Exception as e:

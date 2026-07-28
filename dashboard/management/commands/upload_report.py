@@ -3,6 +3,7 @@ import re
 import logging
 from django.core.management.base import BaseCommand
 from dashboard.models import MonitoringReport
+from dashboard.utils.app_logging import log_event
 from dashboard.utils.llm_service import safe_llm_call
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,14 @@ Summary:"""
         return summary if len(summary) > 50 else full_text[:300] + "..."
     except Exception as e:
         logger.error(f"LLM summary failed: {e}")
+        log_event(
+            "Report upload LLM summary failed",
+            level="ERROR",
+            event_type="command.upload_report.summary_failed",
+            status="failed",
+            metadata={"error": str(e)},
+            exc_info=True,
+        )
         # Fallback: first 300 chars
         return full_text[:300] + "..." if full_text else "Summary not available."
 
@@ -80,6 +89,14 @@ JSON:"""
             return match.group()
     except Exception as e:
         logger.error(f"LLM risk assessment failed: {e}")
+        log_event(
+            "Report upload LLM risk assessment failed",
+            level="ERROR",
+            event_type="command.upload_report.risk_failed",
+            status="failed",
+            metadata={"error": str(e)},
+            exc_info=True,
+        )
     
     # Fallback keyword scan
     t = full_text.lower()
@@ -105,10 +122,24 @@ class Command(BaseCommand):
         file_path = options['file_path']
         if not os.path.exists(file_path):
             self.stderr.write(f"❌ File not found: {file_path}")
+            log_event(
+                "Report upload skipped missing file",
+                level="ERROR",
+                event_type="command.upload_report.missing_file",
+                status="failed",
+                source=file_path,
+            )
             return
 
         title = options['title'] or os.path.splitext(os.path.basename(file_path))[0].replace('_', ' ').title()
         full_report_url = options.get('url', '').strip()
+        log_event(
+            "Report upload started",
+            event_type="command.upload_report.started",
+            status="started",
+            source=file_path,
+            metadata={"title": title, "analyst": options['analyst'], "report_type": options['type'], "has_url": bool(full_report_url)},
+        )
         
         self.stdout.write(f"📄 Processing: {title}")
         self.stdout.write("🔍 Extracting text from document...")
@@ -117,17 +148,46 @@ class Command(BaseCommand):
             raw_text = extract_text(file_path)
             if not raw_text or len(raw_text.strip()) < 100:
                 self.stderr.write("⚠️ Could not extract meaningful text.")
+                log_event(
+                    "Report upload could not extract meaningful text",
+                    level="WARNING",
+                    event_type="command.upload_report.extract_empty",
+                    status="warning",
+                    source=file_path,
+                    metadata={"title": title, "characters": len(raw_text or "")},
+                )
                 return
             
             self.stdout.write(f"✅ Extracted {len(raw_text):,} characters")
+            log_event(
+                "Report upload extracted text",
+                event_type="command.upload_report.extracted",
+                status="success",
+                source=file_path,
+                metadata={"title": title, "characters": len(raw_text)},
+            )
             
             # Generate executive summary via LLM
             self.stdout.write("🤖 Generating AI executive summary...")
             summary = generate_executive_summary(raw_text)
+            log_event(
+                "Report upload generated summary",
+                event_type="command.upload_report.summary",
+                status="success",
+                source=file_path,
+                metadata={"title": title, "summary_length": len(summary)},
+            )
             
             # Assess risk level
             self.stdout.write("🤖 Assessing contextual risk level...")
             risk_level = assess_risk_level(raw_text)
+            log_event(
+                "Report upload assessed risk",
+                event_type="command.upload_report.risk",
+                status="success",
+                source=file_path,
+                metadata={"title": title, "risk_level": risk_level},
+            )
             
             # Save to database - SIMPLE & CLEAN
             report = MonitoringReport.objects.create(
@@ -162,8 +222,26 @@ class Command(BaseCommand):
             if full_report_url:
                 self.stdout.write(f"🔗 Full Report: {full_report_url}")
             self.stdout.write(f"🔗 View: http://localhost:8505/investigative-reports/")
+            log_event(
+                "Report upload completed",
+                event_type="command.upload_report.completed",
+                status="success",
+                source=file_path,
+                object_type="MonitoringReport",
+                object_id=str(report.id),
+                metadata={"title": title, "risk_level": risk_level, "has_url": bool(full_report_url)},
+            )
             
         except Exception as e:
             self.stderr.write(f"❌ Error: {e}")
             import traceback
             traceback.print_exc()
+            log_event(
+                "Report upload failed",
+                level="ERROR",
+                event_type="command.upload_report.failed",
+                status="failed",
+                source=file_path,
+                metadata={"title": title, "error": str(e)},
+                exc_info=True,
+            )

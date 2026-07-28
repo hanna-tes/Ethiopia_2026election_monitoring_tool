@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import MonitoringReport
+from .models import ApplicationLog, DashboardAnalyticsSnapshot, MonitoringReport, PostLexiconMatch
 
 @admin.register(MonitoringReport)
 class MonitoringReportAdmin(admin.ModelAdmin):
@@ -23,3 +23,69 @@ class MonitoringReportAdmin(admin.ModelAdmin):
         }),
     
     )
+
+
+@admin.register(ApplicationLog)
+class ApplicationLogAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'level', 'status', 'event_type', 'source', 'object_type', 'object_id', 'short_message')
+    list_filter = ('level', 'status', 'event_type', 'source', 'created_at')
+    search_fields = ('message', 'logger_name', 'source', 'object_id', 'actor', 'request_path')
+    readonly_fields = (
+        'created_at',
+        'level',
+        'logger_name',
+        'event_type',
+        'status',
+        'message',
+        'actor',
+        'source',
+        'object_type',
+        'object_id',
+        'request_path',
+        'duration_ms',
+        'metadata',
+        'traceback',
+    )
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def short_message(self, obj):
+        return obj.message[:120]
+
+
+@admin.register(DashboardAnalyticsSnapshot)
+class DashboardAnalyticsSnapshotAdmin(admin.ModelAdmin):
+    list_display = ('kind', 'key', 'start_date', 'end_date', 'generated_at', 'source')
+    list_filter = ('kind', 'source', 'generated_at')
+    search_fields = ('key',)
+    readonly_fields = ('key', 'kind', 'start_date', 'end_date', 'payload', 'generated_at', 'source')
+    date_hierarchy = 'generated_at'
+    ordering = ('-generated_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PostLexiconMatch)
+class PostLexiconMatchAdmin(admin.ModelAdmin):
+    list_display = ('detected_at', 'term', 'category', 'severity', 'post_id')
+    list_filter = ('category', 'severity', 'detected_at')
+    search_fields = ('term', 'post__account_id', 'post__original_text')
+    readonly_fields = ('post', 'term', 'category', 'severity', 'target_entity', 'language', 'detected_at')
+    date_hierarchy = 'detected_at'
+    ordering = ('-detected_at',)
+
+    def has_add_permission(self, request):
+        return False
