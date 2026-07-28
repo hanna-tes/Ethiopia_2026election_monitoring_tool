@@ -1,65 +1,80 @@
 import hashlib
 import json
-from django.utils import timezone
-from django.core.cache import cache
+from collections import Counter
 
-# Import your data models and relevant processing functions
-# Adjust imports below based on where your Post model and functions are defined
-from dashboard.models import SocialMediaPost  # Or whatever your Post model is named
-# from dashboard.utils.election_filter import ... 
+from django.core.cache import cache
+from django.utils import timezone
+
+from dashboard.models import ProcessedPost
+
+
+def build_analytics_snapshot_key(kind, start_date=None, end_date=None, view_all=False):
+    """
+    Builds a deterministic, unique cache key based on snapshot kind and filter bounds.
+    Matches the original cache key generation scheme.
+    """
+    start_key = start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date or '')
+    end_key = end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date or '')
+    raw_key = f"{kind}:{start_key}:{end_key}:{bool(view_all)}"
+    digest = hashlib.md5(raw_key.encode('utf-8')).hexdigest()
+    return f"analytics_snapshot:{kind}:{digest}"
 
 
 def get_filter_cache_key(prefix: str, query_params: dict) -> str:
-    """Generates a unique cache key based on query parameters."""
-    normalized_params = {
-        'view_all': str(query_params.get('view_all', '')).lower() in ['true', '1'],
-        'start_date': query_params.get('start_date', ''),
-        'end_date': query_params.get('end_date', ''),
-        'platform': query_params.get('platform', ''),
-        'topic': query_params.get('topic', ''),
-        'tone': query_params.get('tone', ''),
-    }
-    param_str = json.dumps(normalized_params, sort_keys=True)
-    param_hash = hashlib.md5(param_str.encode('utf-8')).hexdigest()
-    return f"analytics_{prefix}_{param_hash}"
+    """
+    Convenience alias for build_analytics_snapshot_key to support query-param dict signatures.
+    """
+    return build_analytics_snapshot_key(
+        kind=prefix,
+        start_date=query_params.get('start_date'),
+        end_date=query_params.get('end_date'),
+        view_all=str(query_params.get('view_all', '')).lower() in ['true', '1']
+    )
 
 
 def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
-    """Calculates trending narratives, risk actors, or hashtags for a filtered QuerySet."""
-    qs = SocialMediaPost.objects.all()
-    
-    # 1. Date Filters
-    if params.get('start_date'):
-        qs = qs.filter(created_at__gte=params['start_date'])
-    if params.get('end_date'):
-        qs = qs.filter(created_at__lte=params['end_date'])
-        
-    # 2. Category / Platform Filters
-    if params.get('platform'):
-        qs = qs.filter(platform=params['platform'])
-    if params.get('topic'):
-        qs = qs.filter(topic=params['topic'])
-        
-    # 3. View All vs Paginated Limit
-    is_view_all = str(params.get('view_all', '')).lower() in ['true', '1']
-    if not is_view_all:
-        qs = qs[:1000]  # Cap standard query length for speed
+    """
+    Calculates analytics snapshots using the original PR computation logic.
+    Imports helper functions locally to prevent circular import errors.
+    """
+    from dashboard.views import (
+        get_category_trend_analysis,
+        get_ethiopia_summaries,
+        get_risk_actors_insight,
+        get_top_hashtags,
+    )
 
-    # 4. Generate snapshot payload
-    if snapshot_type == 'narratives':
-        # Add your narrative clustering/summarization logic or helper function call here
-        summaries = [] 
+    qs = ProcessedPost.objects.all().order_by('-timestamp_share')
+
+    # Apply date bounds if present
+    if params.get('start_date'):
+        qs = qs.filter(timestamp_share__gte=params['start_date'])
+    if params.get('end_date'):
+        qs = qs.filter(timestamp_share__lte=params['end_date'])
+
+    # Apply platform filter if present
+    if params.get('platform'):
+        qs = qs.filter(platform__iexact=params['platform'])
+
+    view_all = str(params.get('view_all', '')).lower() in ['true', '1']
+
+    if snapshot_type == 'home':
+        start_key = str(params.get('start_date', ''))
+        end_key = str(params.get('end_date', ''))
         return {
-            'summaries': summaries, 
+            'risk_actors': get_risk_actors_insight(qs),
+            'top_hashtags': get_top_hashtags(qs),
+            'trend_analysis': get_category_trend_analysis(
+                qs,
+                days_back=90,
+                cache_suffix=f"{start_key}_{end_key}"
+            ),
             'generated_at': timezone.now()
         }
-    
-    elif snapshot_type == 'home':
-        # Add your trend, risk actor, and hashtag calculation logic or call existing utils here
+
+    elif snapshot_type == 'narratives':
         return {
-            'trend_analysis': {},
-            'risk_actors': [],
-            'top_hashtags': [],
+            'summaries': get_ethiopia_summaries(qs),
             'generated_at': timezone.now()
         }
 
@@ -67,18 +82,21 @@ def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
 
 
 def get_analytics_snapshot(snapshot_type: str, request_params: dict):
-    """Tiered fetch: Low-level Cache -> Live On-Demand Fallback."""
-    cache_key = get_filter_cache_key(snapshot_type, request_params)
-    
-    # Check cache first
+    """
+    Tiered fetch: Checks low-level Django Cache first, falls back on computing dynamically.
+    """
+    cache_key = build_analytics_snapshot_key(
+        kind=snapshot_type,
+        start_date=request_params.get('start_date'),
+        end_date=request_params.get('end_date'),
+        view_all=str(request_params.get('view_all', '')).lower() in ['true', '1']
+    )
+
     cached_payload = cache.get(cache_key)
     if cached_payload:
         return cached_payload, cached_payload.get('generated_at')
 
-    # Cache miss: compute dynamically
     payload = compute_filtered_analytics(snapshot_type, request_params)
-    
-    # Save to cache for 30 minutes
-    cache.set(cache_key, payload, timeout=1800)
-    
+    cache.set(cache_key, payload, timeout=86400)
+
     return payload, payload.get('generated_at')

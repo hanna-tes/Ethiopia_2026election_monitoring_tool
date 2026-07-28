@@ -79,45 +79,6 @@ def load_gemma_lora_model():
     logger.warning("Gemma LoRA model is DISABLED)")
     return None, None
 
-def get_filter_cache_key(prefix: str, query_params: dict) -> str:
-    """
-    Generates a unique, reproducible cache key based on query parameters.
-    """
-    # Extract relevant filter keys and normalize them
-    normalized_params = {
-        'view_all': str(query_params.get('view_all', '')).lower() in ['true', '1'],
-        'start_date': query_params.get('start_date', ''),
-        'end_date': query_params.get('end_date', ''),
-        'platform': query_params.get('platform', ''),
-        'topic': query_params.get('topic', ''),
-        'tone': query_params.get('tone', ''),
-    }
-    
-    # Sort keys so parameter order in URL doesn't alter the key
-    param_str = json.dumps(normalized_params, sort_keys=True)
-    param_hash = hashlib.md5(param_str.encode('utf-8')).hexdigest()
-    
-    return f"analytics_{prefix}_{param_hash}"
-
-def get_analytics_snapshot(snapshot_type, request_params):
-    cache_key = get_filter_cache_key(snapshot_type, request_params)
-    
-    # 1. Try retrieving from low-level cache
-    cached_payload = cache.get(cache_key)
-    if cached_payload:
-        return cached_payload, cached_payload.get('generated_at')
-
-    # 2. Check persistent DB Snapshot table if applicable
-    # (Optional fallback to latest general snapshot if filtering allows)
-    
-    # 3. Cache Miss: Compute on-demand for the filtered QuerySet
-    payload = compute_filtered_analytics(snapshot_type, request_params)
-    
-    # 4. Save result in cache (caches for 2hr)
-    cache.set(cache_key, payload, timeout=7200)
-    
-    return payload, payload.get('generated_at')
-
 def get_combined_lexicon():
     """
     Merges CONFIG lexicon with Database lexicon terms.
@@ -2653,14 +2614,11 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             
     if len(valid_texts) < 2:
         return []
-<<<<<<< HEAD
-        
 =======
-
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
 
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
     # 3. Vectorized TF-IDF Calculation & Similarity Matching
     vectorizer = TfidfVectorizer(
         max_features=2000, 
@@ -2799,26 +2757,25 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                     'type': 'source', 
                     'group': 'source',
 <<<<<<< HEAD
+<<<<<<< HEAD
                     'color': '#1e90ff',  # Force Blue
                     'size': 24,
 =======
                     'color': '#1e90ff',  # Force Blue for all Sources
+                    'size': 26,=======
+                    'color': '#1e90ff',  # Force Blue for all Sources
                     'size': 26,
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
                     'shape': 'dot',
                     'physics': True
                 })
                 existing_nodes.add(src_key.lower())
             
-<<<<<<< HEAD
-        # Cap amplifiers shown in the visualization graph to 15 to fit canvas bounds
-        top_graph_amplifiers = amplifiers_list[:15]
-        
-        for amp in top_graph_amplifiers:
-=======
+        # Injects Amplifiers (Orange Nodes) and links them to every Source Node
+        for amp in amplifiers_list:=======
         # Injects Amplifiers (Orange Nodes) and links them to every Source Node
         for amp in amplifiers_list:
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
             amp_key = str(amp).strip()
             if amp_key.lower() not in existing_nodes:
                 graph_nodes.append({
@@ -2833,11 +2790,9 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 })
                 existing_nodes.add(amp_key.lower())
                 
-<<<<<<< HEAD
-            # Create directional links from sources to this amplifier
-=======
+            # Create directional links from ALL sources to this amplifier=======
             # Create directional links from ALL sources to this amplifier
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
             for src in sources_list:
                 s_id = str(src).strip()
                 t_id = str(amp_key).strip()
@@ -2848,11 +2803,9 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                         'to': t_id,
                         'source': s_id,
                         'target': t_id,
-<<<<<<< HEAD
-                        'length': 110,       
-=======
+                        'length': 80,=======
                         'length': 80,
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
                         'arrows': 'to',
                         'width': 1.5
                     })
@@ -6401,43 +6354,15 @@ class LexiconsView(TemplateView):
         context = super().get_context_data(**kwargs)
         
         # ── 1. URL params ────────────────────────────────────────────────
-        selected_category = self.request.GET.get('category', '').strip()
-
         raw_category = self.request.GET.get('category', '').strip()
-
         view_all = self.request.GET.get('view_all') == 'true'
-<<<<<<< HEAD
-        req_start = self.request.GET.get('start_date', '')
-        req_end   = self.request.GET.get('end_date', '')
-        
-
-        # ── 2. Cache (overview only, keyed to date range) ─────────────────
-
-        # Translate display name to internal key before processing.
-        # Because most display names ARE the internal keys, this safely resolves everything.
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
-        # ─ 2. Cache (overview only, keyed to date range) ─────────────────
-
-        cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
-        cached_data = cache.get(cache_key)
-        
-        if cached_data and not selected_category:
-            logger.info("✅ LexiconsView: Serving from cache (instant load)")
-            context.update(cached_data)
-            context['lexicon_term_count'] = self._get_lexicon_term_count()
-            context['selected_category'] = ''
-            context['category_terms']    = []
-            context['posts_with_terms']  = []
-            context['scan_timed_out']    = False
-            return context
-        
-        # ── 3. Fetch posts ────────────────────────────────────────────────
-=======
+        # ── 2. Fetch posts and materialized detections ────────────────────=======
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
         # ── 2. Fetch posts and materialized detections ────────────────────
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
             filtered_posts = (
@@ -6461,23 +6386,8 @@ class LexiconsView(TemplateView):
         category_terms = []
         posts_with_terms = []
         if selected_category:
-<<<<<<< HEAD
-            logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
-
-            
-            db_terms = LexiconTerm.objects.filter(category=selected_category)
-            if db_terms.exists():
-                category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
-            elif selected_category in CONFIG.get('lexicon', {}):
-                category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in CONFIG['lexicon'][selected_category].items()]
-            
-
-            # Initialize the variable to avoid UnboundLocalError
-            category_terms = []
-            # 1. Look up using case-insensitive check in DB
-=======
 >>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
-            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
+=======            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
@@ -6485,167 +6395,7 @@ class LexiconsView(TemplateView):
                 matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
                 if matched_config_key:
                     category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
-<<<<<<< HEAD
-            # This check is now completely safe!
-
-            if category_terms:
-                term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
-                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
-                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
-                try:
-                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
-                except Exception:
-                    compiled_category_re = None
-                
-
-                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
-                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
-                try:
-                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
-                except Exception:
-                    compiled_category_re = None
-
-                # Track seen posts to avoid duplicates
-                seen_post_ids = set()
-                seen_post_texts = set()
-
-                
-                for post in scan_pool:
-                    if self._check_timeout(start_time):
-                        scan_timed_out = True
-                        break
-                    posts_scanned += 1
-                    if not post.original_text: 
-                        continue
-                    
-
-                    posts_scanned += 1
-                    if not post.original_text: continue
-                    # Skip RT/retweet posts
-                    if post.original_text.strip().lower().startswith('rt ') or post.original_text.strip().lower().startswith('rt\n'):
-                        continue
-                    
-                    # Skip if we've already seen this post
-                    if post.id in seen_post_ids:
-                        continue
-
-                    
-                    text       = post.original_text
-                    text_lower = text.lower()
-                    
-
-                    # Instantly drops unrelated records out of processing loop
-                    if compiled_category_re and not compiled_category_re.search(text_lower):
-                        continue
-                        
-
-                    # Skip if we've already seen this exact text content
-                    text_hash = hash(text.strip())
-                    if text_hash in seen_post_texts:
-                        continue
-                    
-                    # Instantly drops unrelated records out of processing loop
-                    if compiled_category_re and not compiled_category_re.search(text_lower):
-                        continue
-
-                    is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
-                    matched_terms = []
-                    for term_lower, meta in term_meta.items():
-                        if term_lower not in text_lower:
-                            continue
-                        if not self._is_valid_context(meta['term'], text_lower):
-                            continue
-                        if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
-                            continue
-
-                        
-
-
-                        matched_terms.append(meta['term'])
-                        all_matches.append({'term': meta['term'], 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
-                    if matched_terms:
-
-
-                        # Mark this post as seen
-                        seen_post_ids.add(post.id)
-                        seen_post_texts.add(text_hash)
-                        
-
-                        posts_with_terms.append({
-                            'id':            post.id,
-                            'text':          text,
-                            'platform':      post.platform,
-                            'timestamp':     post.timestamp_share,
-                            'url':           post.url,
-                            'matched_terms': list(set(matched_terms))[:5],
-                            'detected_by':   'Lexicon',
-                            'confidence':    1.0,
-                            'model_category': selected_category,
-                        })
-                
-                # LLM translations block
-                unique_foreign_terms = {t for p in posts_with_terms for t in p.get('matched_terms', []) if re.search(r'[^\x00-\x7F]', t)}
-                if unique_foreign_terms:
-                    translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
-                    for p_dict in posts_with_terms:
-                        p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
-
-        # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
-        else:
-            logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
-
-            
-
-
-            for post in scan_pool:
-                if self._check_timeout(start_time):
-                    scan_timed_out = True
-                    break
-                
-                posts_scanned += 1
-                if not post.original_text: continue
-                
-                try:
-                    matches = self._scan_post(post.original_text)
-                    if matches: 
-                        all_matches.extend(matches)
-                except Exception as e: 
-                    continue
-        
-        # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
-        try:
-            term_counts     = Counter([m['term']     for m in all_matches])
-            raw_category_counts = Counter([m['category'] for m in all_matches])
-            severity_counts = Counter([m['severity'] for m in all_matches])
-            
-            # Transform category keys to display names
-            category_counts = Counter()
-            for cat_key, count in raw_category_counts.items():
-                display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key)
-                category_counts[display_name] = count
-            
-            if selected_category and category_terms:
-                top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
-            else:
-                top_terms_with_meta = []
-                for term, count in term_counts.most_common(15):
-                    if len(term.strip()) <= 1: continue
-                    metadata = {}
-                    for cat, terms in CONFIG.get('lexicon', {}).items():
-                        if term in terms: 
-                            metadata = terms[term]
-                            break
-                    if not metadata:
-                        db_t = LexiconTerm.objects.filter(term=term).first()
-                        if db_t: metadata = {'severity': db_t.severity, 'target_entity': db_t.target_entity, 'language': db_t.language}
-                    top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
-        except Exception as e:
-            logger.error(f"LexiconsView: aggregation error: {e}")
-            top_terms_with_meta = []
-            category_counts     = Counter()
-            severity_counts     = Counter()
 =======
-
             grouped_posts = defaultdict(lambda: {
                 'matched_terms': set(),
                 'post': None,
@@ -6695,7 +6445,7 @@ class LexiconsView(TemplateView):
             for row in term_rows
             if len(row['term'].strip()) > 1
         ]
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
         
         # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
@@ -7172,37 +6922,12 @@ class LexiconManagementView(TemplateView):
 
 
 <<<<<<< HEAD
-        # RESPECT THE GLOBAL DATE FILTER
+<<<<<<< HEAD
+=======        # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
 
-        # Only scan the most recent 3000 posts instead of all
-        posts_to_scan = filtered_posts[:3000]
-        
-
-        
-        # RESPECT THE GLOBAL DATE FILTER
-        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-        total_posts_in_filter = filtered_posts.count()
-        
-        # Only scan the most recent 3000 posts instead of all
-        posts_to_scan = filtered_posts[:3000]
-
-        all_matches = []
-        posts_scanned = 0
-        
-        # Scan only the limited dataset
-        for post in posts_to_scan.iterator():
-            if post.original_text:
-                try:
-                    matches = scan_text_for_lexicon_terms(post.original_text)
-                    if matches:
-                        all_matches.extend([m for m in matches if len(m['term'].strip()) > 1])
-                        posts_scanned += 1
-                except Exception as e:
-                    logger.warning(f"Error scanning post {post.id}: {e}")
-                    continue
-
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
 
         # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
@@ -7215,29 +6940,25 @@ class LexiconManagementView(TemplateView):
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 
 
-        
-=======
-        # RESPECT THE GLOBAL DATE FILTER
-        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-        total_posts_in_filter = filtered_posts.count()
-
-
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
-        # Get distinct categories for filter dropdown
-        categories = lexicon_terms.values_list('category', flat=True).distinct()
-
-        # Get scan results from session (if any) and clear immediately
-        scan_results = self.request.session.pop('scan_results', None)
-
-        # Determine filter state for the template text
-        view_all = self.request.GET.get('view_all') == 'true'
-        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 <<<<<<< HEAD
         
 =======
+        # RESPECT THE GLOBAL DATE FILTER
+        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
+        total_posts_in_filter = filtered_posts.count()
+
+        # Get distinct categories for filter dropdown
+        categories = lexicon_terms.values_list('category', flat=True).distinct()
+
+        # Get scan results from session (if any) and clear immediately
+        scan_results = self.request.session.pop('scan_results', None)
+
+        # Determine filter state for the template text
+        view_all = self.request.GET.get('view_all') == 'true'
+        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 
 
-        total_terms = lexicon_terms.count()
+=======        total_terms = lexicon_terms.count()
         critical_count = lexicon_terms.filter(severity='critical').count()
         amharic_count = lexicon_terms.filter(language='amharic').count()
         paginator = Paginator(lexicon_terms, 100)
@@ -7246,7 +6967,10 @@ class LexiconManagementView(TemplateView):
         matches_qs = get_materialized_lexicon_matches(filtered_posts)
         total_matches = matches_qs.count()
         posts_scanned = matches_qs.values('post_id').distinct().count()
+<<<<<<< HEAD
 >>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
+=======
+>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
 
         context.update({
             'active_tab': 'lexicon_management',

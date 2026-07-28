@@ -78,12 +78,11 @@ dashboard/model_cache/
 !docker/backups/ethiopia_election_db.dump
 dashboard/model_cache/
 !dashboard/model_cache/.gitkeep
-
-*.pkl
-dashboard/models_cache/
-metrics.json
-
+<<<<<<< HEAD
 # Local-only CFA deploy helper. Keep machine/account-specific deployment
 # scripts out of PRs; use the GitHub workflow for shared deploy automation.
 scripts/deploy-locally.sh
-
+=======
+*.pkl
+dashboard/models_cache/
+metrics.json>>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
