@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 def get_groq_client():
     if not settings.GROQ_API_KEY:
-        logger.warning("⚠️ GROQ_API_KEY not configured")
         return None
     try:
         return Groq(api_key=settings.GROQ_API_KEY)
