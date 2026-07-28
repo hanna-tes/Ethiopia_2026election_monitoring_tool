@@ -1,5 +1,4 @@
 import json
-<<<<<<< HEAD
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
@@ -19,7 +18,6 @@ from dashboard.views import (
     scan_text_for_lexicon_terms,
 )
 
-=======
 import logging
 from datetime import timedelta
 
@@ -36,7 +34,7 @@ from dashboard.utils.analytics_engine import (
 
 logger = logging.getLogger(__name__)
 
->>>>>>> 0d4cdfcc6b4e8393ca27c8cef8a34903a70074b0
+
 
 def json_safe(value):
     return json.loads(json.dumps(value, default=str))
@@ -48,17 +46,14 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--days', type=int, default=90, help='Number of recent days to precompute.')
         parser.add_argument('--view-all', action='store_true', help='Precompute using all available posts.')
-<<<<<<< HEAD
         parser.add_argument('--skip-lexicons', action='store_true', help='Skip materialized lexicon detections.')
         parser.add_argument('--skip-home', action='store_true', help='Skip home analytics snapshot.')
         parser.add_argument('--skip-narratives', action='store_true', help='Skip narrative summaries snapshot.')
         parser.add_argument('--skip-peps', action='store_true', help='Skip PEP mention analysis snapshot.')
         parser.add_argument('--batch-size', type=int, default=500, help='Bulk insert batch size for lexicon matches.')
-=======
         parser.add_argument('--skip-home', action='store_true', help='Skip home analytics snapshot.')
         parser.add_argument('--skip-narratives', action='store_true', help='Skip narrative summaries snapshot.')
         parser.add_argument('--skip-peps', action='store_true', help='Skip PEP mention analysis snapshot.')
->>>>>>> 0d4cdfcc6b4e8393ca27c8cef8a34903a70074b0
 
     def handle(self, *args, **options):
         started_at = timezone.now()
@@ -74,7 +69,7 @@ class Command(BaseCommand):
             start_date = end_date - timedelta(days=options['days'])
             posts = posts.filter(timestamp_share__gte=start_date)
 
-<<<<<<< HEAD
+
         log_event(
             'Refreshing dashboard analytics',
             event_type='analytics_refresh',
@@ -188,7 +183,7 @@ class Command(BaseCommand):
                 'source': 'refresh_dashboard_analytics',
             },
         )
-=======
+
         logger.info(f"Refreshing dashboard analytics | view_all={view_all} | days={options['days']}")
 
         # 1. Refresh Home Snapshot
@@ -258,4 +253,4 @@ class Command(BaseCommand):
         }
         cache.set(key, snapshot_data, timeout=86400)
         self.stdout.write(self.style.SUCCESS(f"Saved {kind} snapshot to cache key: {key}"))
->>>>>>> 0d4cdfcc6b4e8393ca27c8cef8a34903a70074b0
+
