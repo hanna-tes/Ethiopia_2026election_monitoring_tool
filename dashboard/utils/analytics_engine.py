@@ -27,10 +27,11 @@ def get_filter_cache_key(prefix: str, query_params: dict) -> str:
 def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
     """
     Calculates trending narratives, risk actors, or hashtags for a filtered QuerySet.
+    Preserves all original calculation logic while safely handling QuerySet slicing.
     """
-   
     from dashboard.views import get_ethiopia_summaries, scan_text_for_lexicon_terms
 
+    # Base QuerySet
     qs = ProcessedPost.objects.all()
 
     # 1. Apply Date Filters (using timestamp_share)
@@ -43,20 +44,26 @@ def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
     if params.get('platform'):
         qs = qs.filter(platform__iexact=params['platform'])
 
-    # 3. Handle View All vs Sliced Evaluation
     is_view_all = str(params.get('view_all', '')).lower() in ['true', '1']
-    eval_qs = qs if is_view_all else qs[:1000]
 
-    # 4. Generate Snapshot Payload based on type
+    # 3. Generate Snapshot Payload based on type
     if snapshot_type == 'narratives':
-        summaries = get_ethiopia_summaries(eval_qs)
+        # Pass unsliced `qs` so `get_ethiopia_summaries` can safely run its internal .filter() and .exclude()
+        summaries = get_ethiopia_summaries(qs)
+        
+        # Calculate count safely
+        total_count = qs.count() if is_view_all else min(qs.count(), 1000)
+        
         return {
             'summaries': summaries,
-            'total_analyzed': eval_qs.count() if is_view_all else len(eval_qs),
+            'total_analyzed': total_count,
             'generated_at': timezone.now()
         }
 
     elif snapshot_type == 'home':
+        # Slice for evaluation only when iterating post objects
+        eval_qs = qs if is_view_all else qs[:1000]
+
         # Platform distribution
         platform_counts = dict(Counter(
             eval_qs.values_list('platform', flat=True)
@@ -87,10 +94,12 @@ def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
         # Deduplicate risk actors by account_id
         unique_risk_actors = {actor['account_id']: actor for actor in risk_actors}
 
+        total_posts = qs.count() if is_view_all else min(qs.count(), 1000)
+
         return {
             'trend_analysis': {
                 'platform_distribution': platform_counts,
-                'total_posts': eval_qs.count() if is_view_all else len(eval_qs)
+                'total_posts': total_posts
             },
             'risk_actors': list(unique_risk_actors.values())[:10],
             'top_hashtags': hashtag_counter.most_common(10),
@@ -114,7 +123,11 @@ def get_analytics_snapshot(snapshot_type: str, request_params: dict):
     # Cache miss: compute dynamically
     payload = compute_filtered_analytics(snapshot_type, request_params)
 
-    # Save to Redis / Cache store for 2hr
+    # Save to Redis / Cache store for 2 hours
     cache.set(cache_key, payload, timeout=7200)
 
     return payload, payload.get('generated_at')
+
+
+# Backward compatibility alias
+build_analytics_snapshot_key = get_filter_cache_key
