@@ -60,7 +60,7 @@ from .models import MonitoringReport
 from typing import List, Dict, Any, Optional
 from django.contrib.auth.decorators import login_required
 from .detectors import is_election_related
-from dashboard.utils.analytics_engine import get_analytics_snapshot
+
 
 
 logger = logging.getLogger(__name__)
@@ -6202,25 +6202,14 @@ class NarrativesView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-<<<<<<< HEAD
         view_all = self.request.GET.get('view_all') == 'true'
         req_start = self.request.GET.get('start_date', '')
         req_end = self.request.GET.get('end_date', '')
-=======
-
->>>>>>> 0d4cdfcc6b4e8393ca27c8cef8a34903a70074b0
         # Reuse date filtering helper
         queryset, start_date, end_date = get_election_posts_queryset(
             self.request
         )
-        
-        # Query-aware cached snapshot fetcher
-        payload, generated_at = get_analytics_snapshot(
-            'narratives', 
-            request_params=self.request.GET.dict()
-        )
 
-<<<<<<< HEAD
         payload, generated_at = get_analytics_snapshot(
             'narratives',
             start_date,
@@ -6231,10 +6220,6 @@ class NarrativesView(TemplateView):
         context['summaries'] = payload.get('summaries', [])
         context['analytics_generated_at'] = generated_at
         context['analytics_pending'] = not bool(payload)
-=======
-        context['summaries'] = payload.get('summaries', [])
-        context['generated_at'] = generated_at
->>>>>>> 0d4cdfcc6b4e8393ca27c8cef8a34903a70074b0
         context['total_posts'] = queryset.count()
 
         # Date range display
@@ -6256,11 +6241,8 @@ class NarrativesView(TemplateView):
             .all()
             .order_by('-uploaded_at')[:12]
         )
-<<<<<<< HEAD
-=======
-        
->>>>>>> 0d4cdfcc6b4e8393ca27c8cef8a34903a70074b0
         return context
+
 class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
