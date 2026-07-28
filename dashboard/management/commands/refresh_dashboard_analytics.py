@@ -6,7 +6,7 @@ from django.db import transaction
 from django.db.models import Max, Min
 from django.utils import timezone
 
-from dashboard.models import DashboardAnalyticsSnapshot, PEP, PostLexiconMatch, ProcessedPost
+from dashboard.models import PEP, ProcessedPost
 from dashboard.utils.app_logging import log_event
 from dashboard.views import (
     build_analytics_snapshot_key,
