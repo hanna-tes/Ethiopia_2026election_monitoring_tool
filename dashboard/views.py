@@ -60,6 +60,8 @@ from .models import MonitoringReport
 from typing import List, Dict, Any, Optional
 from django.contrib.auth.decorators import login_required
 from .detectors import is_election_related
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 
@@ -1675,7 +1677,7 @@ def get_ethiopia_summaries(posts_queryset, max_clusters=15):
     Generates IMI-style structured summaries with Ethiopia-specific topic/tone mapping.
     Uses clustering + LLM with robust fallback when model fails.
     """
-    from sklearn.feature_extraction.text import TfidfVectorizer
+    
     from sklearn.cluster import DBSCAN
     from collections import defaultdict, Counter
     import re
@@ -2614,11 +2616,10 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
             
     if len(valid_texts) < 2:
         return []
-=======
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
 
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
+   
+
+
     # 3. Vectorized TF-IDF Calculation & Similarity Matching
     vectorizer = TfidfVectorizer(
         max_features=2000, 
