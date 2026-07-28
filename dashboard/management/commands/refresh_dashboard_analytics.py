@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import timedelta
 
 from django.core.cache import cache
@@ -7,16 +8,12 @@ from django.db.models import Max, Min
 from django.utils import timezone
 
 from dashboard.models import PEP, ProcessedPost
-import logging
-logger = logging.getLogger(__name__)
-from dashboard.views import (
-    build_analytics_snapshot_key,
-    get_category_trend_analysis,
-    get_enhanced_pep_analysis,
-    get_ethiopia_summaries,
-    get_risk_actors_insight,
-    get_top_hashtags,
+from dashboard.utils.analytics_engine import (
+    compute_filtered_analytics,
+    get_filter_cache_key,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def json_safe(value):
@@ -47,62 +44,69 @@ class Command(BaseCommand):
             start_date = end_date - timedelta(days=options['days'])
             posts = posts.filter(timestamp_share__gte=start_date)
 
-        log_event(
-            'Refreshing dashboard analytics',
-            event_type='analytics_refresh',
-            status='started',
-            source='refresh_dashboard_analytics',
-            metadata={'view_all': view_all, 'days': options['days']},
-        )
+        logger.info(f"Refreshing dashboard analytics | view_all={view_all} | days={options['days']}")
 
+        # 1. Refresh Home Snapshot
         if not options['skip_home']:
-            self.refresh_home_snapshot(posts, start_date, end_date, view_all)
+            self.refresh_home_snapshot(start_date, end_date, view_all)
 
+        # 2. Refresh Narratives Snapshot
         if not options['skip_narratives']:
-            self.refresh_narratives_snapshot(posts, start_date, end_date, view_all)
+            self.refresh_narratives_snapshot(start_date, end_date, view_all)
 
+        # 3. Refresh PEPs Snapshot
         if not options['skip_peps']:
-            self.refresh_peps_snapshot(posts, start_date, end_date, view_all)
+            self.refresh_peps_snapshot(start_date, end_date, view_all)
 
         duration_ms = int((timezone.now() - started_at).total_seconds() * 1000)
-        log_event(
-            'Dashboard analytics refresh completed',
-            event_type='analytics_refresh',
-            status='success',
-            source='refresh_dashboard_analytics',
-            duration_ms=duration_ms,
-        )
+        logger.info(f"Dashboard analytics refresh completed in {duration_ms}ms")
         self.stdout.write(self.style.SUCCESS(f"Dashboard analytics refreshed in {duration_ms}ms"))
 
-    def refresh_home_snapshot(self, posts, start_date, end_date, view_all):
+    def refresh_home_snapshot(self, start_date, end_date, view_all):
         self.stdout.write("Refreshing home analytics snapshot...")
-        start_key = start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date)
-        end_key = end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date)
-        payload = {
-            'risk_actors': get_risk_actors_insight(posts),
-            'top_hashtags': get_top_hashtags(posts),
-            'trend_analysis': get_category_trend_analysis(posts, days_back=90, cache_suffix=f"{start_key}_{end_key}"),
+        params = {
+            'start_date': start_date.isoformat() if hasattr(start_date, 'isoformat') else str(start_date),
+            'end_date': end_date.isoformat() if hasattr(end_date, 'isoformat') else str(end_date),
+            'view_all': 'true' if view_all else 'false'
         }
-        self.save_snapshot('home', start_date, end_date, view_all, payload)
+        payload = compute_filtered_analytics('home', params)
+        self.save_snapshot('home', params, payload)
 
-    def refresh_narratives_snapshot(self, posts, start_date, end_date, view_all):
+    def refresh_narratives_snapshot(self, start_date, end_date, view_all):
         self.stdout.write("Refreshing narrative summaries snapshot...")
-        payload = {
-            'summaries': get_ethiopia_summaries(posts),
+        params = {
+            'start_date': start_date.isoformat() if hasattr(start_date, 'isoformat') else str(start_date),
+            'end_date': end_date.isoformat() if hasattr(end_date, 'isoformat') else str(end_date),
+            'view_all': 'true' if view_all else 'false'
         }
-        self.save_snapshot('narratives', start_date, end_date, view_all, payload)
+        payload = compute_filtered_analytics('narratives', params)
+        self.save_snapshot('narratives', params, payload)
 
-    def refresh_peps_snapshot(self, posts, start_date, end_date, view_all):
+    def refresh_peps_snapshot(self, start_date, end_date, view_all):
         self.stdout.write("Refreshing PEP mention analysis snapshot...")
+        # Import dynamically if PEP analysis is handled via helper to break cycles
+        from dashboard.views import get_enhanced_pep_analysis
+        
         active_peps = PEP.objects.filter(is_active=True).order_by('name')
-        election_posts = posts.filter(is_election_related=True).order_by('-timestamp_share')
+        election_posts = ProcessedPost.objects.filter(is_election_related=True).order_by('-timestamp_share')
+        
+        if not view_all:
+            start_date_calc = timezone.now() - timedelta(days=90)
+            election_posts = election_posts.filter(timestamp_share__gte=start_date_calc)
+
+        params = {
+            'start_date': start_date.isoformat() if hasattr(start_date, 'isoformat') else str(start_date),
+            'end_date': end_date.isoformat() if hasattr(end_date, 'isoformat') else str(end_date),
+            'view_all': 'true' if view_all else 'false'
+        }
+        
         payload = {
             'pep_analysis': get_enhanced_pep_analysis(election_posts, active_peps, limit=8),
         }
-        self.save_snapshot('peps', start_date, end_date, view_all, payload)
+        self.save_snapshot('peps', params, payload)
 
-    def save_snapshot(self, kind, start_date, end_date, view_all, payload):
-        key = build_analytics_snapshot_key(kind, start_date, end_date, view_all=view_all)
+    def save_snapshot(self, kind, params, payload):
+        key = get_filter_cache_key(kind, params)
         snapshot_data = {
             'payload': json_safe(payload),
             'generated_at': timezone.now().isoformat(),
