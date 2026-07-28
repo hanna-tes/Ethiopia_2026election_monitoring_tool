@@ -4,11 +4,13 @@ from collections import Counter
 from django.utils import timezone
 from django.core.cache import cache
 from dashboard.models import ProcessedPost
-from dashboard.views import get_ethiopia_summaries, scan_text_for_lexicon_terms
 
 
 def get_filter_cache_key(prefix: str, query_params: dict) -> str:
-    """Generates a unique, deterministic cache key based on query parameters."""
+    """
+    Generates a unique, deterministic cache key based on query parameters.
+    Converts values to strings to prevent JSON serialization errors with dates/objects.
+    """
     normalized_params = {
         'view_all': str(query_params.get('view_all', '')).lower() in ['true', '1'],
         'start_date': str(query_params.get('start_date', '')),
@@ -23,27 +25,30 @@ def get_filter_cache_key(prefix: str, query_params: dict) -> str:
 
 
 def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
-    """Calculates trending narratives, risk actors, or hashtags for a filtered QuerySet."""
-    
+    """
+    Calculates trending narratives, risk actors, or hashtags for a filtered QuerySet.
+    """
+   
+    from dashboard.views import get_ethiopia_summaries, scan_text_for_lexicon_terms
+
     qs = ProcessedPost.objects.all()
 
-    # 1. Date Filters 
+    # 1. Apply Date Filters (using timestamp_share)
     if params.get('start_date'):
         qs = qs.filter(timestamp_share__gte=params['start_date'])
     if params.get('end_date'):
         qs = qs.filter(timestamp_share__lte=params['end_date'])
 
-    # 2. Category / Platform Filters
+    # 2. Apply Platform / Category Filters
     if params.get('platform'):
         qs = qs.filter(platform__iexact=params['platform'])
 
-    # 3. Handle View All vs Limit (Apply slice when evaluating, not to base QuerySet)
+    # 3. Handle View All vs Sliced Evaluation
     is_view_all = str(params.get('view_all', '')).lower() in ['true', '1']
     eval_qs = qs if is_view_all else qs[:1000]
 
-    # 4. Generate snapshot payload
+    # 4. Generate Snapshot Payload based on type
     if snapshot_type == 'narratives':
-        # Integrate existing cluster summarization pipeline
         summaries = get_ethiopia_summaries(eval_qs)
         return {
             'summaries': summaries,
@@ -52,24 +57,23 @@ def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
         }
 
     elif snapshot_type == 'home':
-        # Platform Distribution / Trend Analysis
+        # Platform distribution
         platform_counts = dict(Counter(
             eval_qs.values_list('platform', flat=True)
         ))
 
-        # Risk Actors Identification
+        # Risk actor and hashtag scanning
         risk_actors = []
         hashtag_counter = Counter()
 
-        # Iterate evaluated slice for risk & hashtag analysis
         for post in eval_qs:
             text = post.original_text or ''
             
-            # Count Hashtags
+            # Aggregate hashtags
             hashtags = [tag.strip().lower() for tag in text.split() if tag.startswith('#')]
             hashtag_counter.update(hashtags)
 
-            # Check Risk Level via Lexicon Scanner
+            # Check risk level via lexicon scanner
             matches = scan_text_for_lexicon_terms(text)
             if matches and post.account_id and post.account_id != 'Unknown':
                 high_risk = any(m.get('severity') in ['high', 'critical'] for m in matches)
@@ -97,7 +101,9 @@ def compute_filtered_analytics(snapshot_type: str, params: dict) -> dict:
 
 
 def get_analytics_snapshot(snapshot_type: str, request_params: dict):
-    """Tiered fetch: Low-level Cache -> Live On-Demand Fallback."""
+    """
+    Tiered fetch: Low-level Cache -> Live On-Demand Fallback.
+    """
     cache_key = get_filter_cache_key(snapshot_type, request_params)
 
     # Check cache first
@@ -108,7 +114,7 @@ def get_analytics_snapshot(snapshot_type: str, request_params: dict):
     # Cache miss: compute dynamically
     payload = compute_filtered_analytics(snapshot_type, request_params)
 
-    # Save to cache for 30 minutes
+    # Save to Redis / Cache store for 2hr
     cache.set(cache_key, payload, timeout=7200)
 
     return payload, payload.get('generated_at')
