@@ -428,14 +428,14 @@
             <i class="fas fa-info-circle text-blue-400"></i>
             <span>
                 {% if view_all %}
-                    Scanned <strong class="text-white">all {{ total_posts|default:0 }}</strong> posts in the database
+                    Showing precomputed detections for <strong class="text-white">all {{ total_posts|default:0 }}</strong> posts in the database
                 {% elif has_custom_date_filter %}
-                    Scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from 
+                    Showing precomputed detections for <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from
                     <strong class="text-white">{{ start_date|default:'start' }}</strong> to <strong class="text-white">{{ end_date|default:'end' }}</strong>
                 {% else %}
-                    Scanned <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from the last 3 months
+                    Showing precomputed detections for <strong class="text-white">{{ total_posts|default:0 }}</strong> posts from the last 3 months
                 {% endif %}
-                using a dictionary of <strong class="text-white">{{ total_terms|default:0 }}</strong> monitored trigger words 
+                using a dictionary of <strong class="text-white">{{ total_terms|default:0 }}</strong> monitored trigger words
                 <span class="text-slate-500">(ethnic slurs, violence terms, election keywords, etc.)</span>
             </span>
         </p>
@@ -483,6 +483,21 @@
             </table>
         </div>
     </div>
+    {% if page_obj.has_other_pages %}
+    <div class="mt-4 flex items-center justify-between text-sm text-slate-400">
+        <div>
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </div>
+        <div class="flex gap-2">
+            {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800">Previous</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Edit Modal -->
     <div id="editModal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm overflow-y-auto h-full w-full z-50 transition-opacity">

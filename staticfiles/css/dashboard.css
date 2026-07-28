@@ -1,91 +1,33 @@
-/* Dark Navy Blue Sidebar */
-.sidebar {
-    background-color: #1e3a5f; /* Dark navy blue */
-    color: white;
-    min-height: 100vh;
-    position: fixed;
-    width: 260px;
-    left: 0;
-    top: 0;
-    z-index: 1000;
+:root {
+  --primary-blue: #3b82f6;
+  --success-green: #10b981;
+  --warning-orange: #f59e0b;
+  --error-red: #ef4444;
 }
 
-.sidebar-brand {
-    background-color: #162d4a; /* Slightly darker navy */
-    padding: 1.5rem;
-    border-bottom: 2px solid #2a4a6f;
+.metric-card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-all hover:shadow-md;
 }
 
-.sidebar-menu {
-    padding: 1rem 0;
+.metric-value { @apply text-3xl font-bold text-gray-900; }
+.metric-label { @apply text-sm text-gray-500 mt-1; }
+
+.narrative-card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4 transition-all hover:shadow-md;
 }
 
-.sidebar-item {
-    margin: 0.25rem 0;
+.pep-card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-3 transition-all hover:shadow-md;
 }
 
-.sidebar-link {
-    display: flex;
-    align-items: center;
-    padding: 0.875rem 1.5rem;
-    color: rgba(255, 255, 255, 0.85);
-    text-decoration: none;
-    transition: all 0.3s ease;
-    border-left: 4px solid transparent;
-}
-
-.sidebar-link:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: white;
-    border-left-color: #4a90e2;
-}
-
-.sidebar-link.active {
-    background-color: #2a4a6f; /* Medium navy for active state */
-    color: white;
-    border-left-color: #60a5fa; /* Light blue accent for active */
-    font-weight: 600;
-}
-
-.sidebar-link i {
-    margin-right: 0.75rem;
-    width: 20px;
-    text-align: center;
-}
-
-.sidebar-section-title {
-    padding: 1rem 1.5rem 0.5rem;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: rgba(255, 255, 255, 0.5);
-    font-weight: 600;
-    margin-top: 1rem;
-}
-
-/* Main content area */
-.main-content {
-    margin-left: 260px;
-    padding: 2rem;
-    background-color: #f8fafc;
-    min-height: 100vh;
-}
-
-/* Card styling */
-.card {
-    background: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    border: none;
-}
-
-/* Button styling */
-.btn-primary {
-    background-color: #1e3a5f;
-    border-color: #1e3a5f;
-}
-
-.btn-primary:hover {
-    background-color: #162d4a;
-    border-color: #162d4a;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #0f172a;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+  }
+  .metric-card, .narrative-card, .pep-card {
+    @apply bg-gray-800 border-gray-700;
+  }
+  .metric-value, .narrative-theme, .pep-name { @apply text-white; }
 }

@@ -1,9 +1,18 @@
 import os
-import torch
-import torch.nn as nn
 import joblib
 import logging
-from transformers import AutoTokenizer, AutoModel
+
+try:
+    import torch
+    import torch.nn as nn
+    from transformers import AutoTokenizer, AutoModel
+    ML_DEPS_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    AutoTokenizer = None
+    AutoModel = None
+    ML_DEPS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -16,24 +25,25 @@ MODEL_DIR = os.path.join(
 CHECKPOINT_PATH = os.path.join(MODEL_DIR, 'hateguard_finetuned_v7.pt')
 LABEL_ENCODER_PATH = os.path.join(MODEL_DIR, 'label_encoder.pkl')
 
-class AfroXLMRClassifier(nn.Module):
-    """Matches the architecture from your Colab notebook"""
-    def __init__(self, num_classes=20, dropout=0.4):
-        super().__init__()
-        self.encoder = AutoModel.from_pretrained(MODEL_NAME)
-        hidden = self.encoder.config.hidden_size
-        self.classifier = nn.Sequential(
-            nn.Linear(hidden, 256),
-            nn.LayerNorm(256),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(256, num_classes)
-        )
+if ML_DEPS_AVAILABLE:
+    class AfroXLMRClassifier(nn.Module):
+        """Matches the architecture from your Colab notebook"""
+        def __init__(self, num_classes=20, dropout=0.4):
+            super().__init__()
+            self.encoder = AutoModel.from_pretrained(MODEL_NAME)
+            hidden = self.encoder.config.hidden_size
+            self.classifier = nn.Sequential(
+                nn.Linear(hidden, 256),
+                nn.LayerNorm(256),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(256, num_classes)
+            )
 
-    def forward(self, input_ids, attention_mask):
-        out = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        # Returns a raw Tensor, NOT a HuggingFace SequenceClassifierOutput
-        return self.classifier(out.last_hidden_state[:, 0, :])
+        def forward(self, input_ids, attention_mask):
+            out = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+            # Returns a raw Tensor, NOT a HuggingFace SequenceClassifierOutput
+            return self.classifier(out.last_hidden_state[:, 0, :])
 
 
 class AfroXlmrDetector:
@@ -46,6 +56,10 @@ class AfroXlmrDetector:
 
     def _load_model(self):
         try:
+            if not ML_DEPS_AVAILABLE:
+                logger.warning("AFRO-XLMR disabled because torch/transformers are not installed.")
+                return
+
             if not os.path.exists(CHECKPOINT_PATH):
                 logger.error(f"❌ Checkpoint not found at {CHECKPOINT_PATH}")
                 return

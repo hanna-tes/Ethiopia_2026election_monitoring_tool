@@ -15,26 +15,23 @@ load_dotenv(BASE_DIR / '.env')
 
 # Initialize environment variables
 env = environ.Env(
-    DEBUG=(bool, True),
+    DEBUG=(bool, False),
     SECRET_KEY=(str, 'django-insecure-change-this-in-production'),
 )
 
-# CSRF Configuration for Nginx Reverse Proxy
-CSRF_TRUSTED_ORIGINS = [
-    'https://ethio-monitor.investigate.africa',
-    'http://ethio-monitor.investigate.africa',
-    'http://localhost',
-    'http://127.0.0.1',
-]
+def env_list(name, default=''):
+    value = env(name, default=default)
+    return [item.strip() for item in value.split(',') if item.strip()]
+
+
+# CSRF Configuration for reverse proxies / load balancers
+CSRF_TRUSTED_ORIGINS = env_list(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://ethio-monitor.investigate.africa,http://ethio-monitor.investigate.africa,http://localhost,http://127.0.0.1',
+)
 
 # Trust the X-Forwarded-Proto header from Nginx
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-
-# CSRF cookie settings
-CSRF_COOKIE_SECURE = False  # Set to True if using HTTPS
-CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SAMESITE = 'Lax'
-
 
 # Read .env file if it exists (optional)
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
@@ -42,7 +39,12 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 # SECURITY
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
-ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1', '0.0.0.0', '52.49.201.188', 'ethio-monitor.investigate.africa']
+ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', '*')
+
+# CSRF cookie settings
+CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=not DEBUG)
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
 
 # Application definition
 INSTALLED_APPS = [
@@ -58,12 +60,14 @@ INSTALLED_APPS = [
     # Third-party
     'rest_framework',
     'corsheaders',
+    'storages',
     
     # Local
     'dashboard',
 ]
 
 MIDDLEWARE = [
+    'election_monitor.health.HealthCheckMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -98,16 +102,30 @@ TEMPLATES = [
 WSGI_APPLICATION = 'election_monitor.wsgi.application'
 
 # Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'ethiopia_election_db',
-        'USER': 'ethiopia_user',
-        'PASSWORD': 'ElectionDbSecure2026!',  
-        'HOST': 'localhost',
-        'PORT': '5432',
+DATABASE_URL = env('DATABASE_URL', default='')
+if DATABASE_URL:
+    DATABASES = {
+        'default': env.db_url('DATABASE_URL', conn_max_age=600),
     }
-}
+elif env('DB_HOST', default=''):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': env('DB_NAME', default='ethiopia_election_db'),
+            'USER': env('DB_USER', default='ethiopia_user'),
+            'PASSWORD': env('DB_PASSWORD', default=''),
+            'HOST': env('DB_HOST'),
+            'PORT': env('DB_PORT', default='5432'),
+            'CONN_MAX_AGE': 600,
+        }
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': env('SQLITE_PATH', default=str(BASE_DIR / 'db.sqlite3')),
+        }
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -129,10 +147,39 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'dashboard' / 'static',  
 ]
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME', default='')
+if AWS_STORAGE_BUCKET_NAME:
+    AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')
+    AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY', default='')
+    AWS_S3_REGION_NAME = env('AWS_S3_REGION_NAME', default='eu-west-1')
+    AWS_S3_ENDPOINT_URL = env('AWS_S3_ENDPOINT_URL', default=None)
+    AWS_S3_ADDRESSING_STYLE = env('AWS_S3_ADDRESSING_STYLE', default='path')
+    AWS_S3_SIGNATURE_VERSION = env('AWS_S3_SIGNATURE_VERSION', default='s3v4')
+    AWS_QUERYSTRING_AUTH = env.bool('AWS_QUERYSTRING_AUTH', default=False)
+    AWS_DEFAULT_ACL = None
+
+    aws_s3_custom_domain = env('AWS_S3_CUSTOM_DOMAIN', default='')
+    if aws_s3_custom_domain:
+        AWS_S3_CUSTOM_DOMAIN = aws_s3_custom_domain
+        AWS_S3_URL_PROTOCOL = env('AWS_S3_URL_PROTOCOL', default='http:')
+        MEDIA_URL = f"{AWS_S3_URL_PROTOCOL}//{AWS_S3_CUSTOM_DOMAIN}/"
+
+    STORAGES['default'] = {
+        'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage',
+    }
 
 # paths to your PEP Excel files (local or absolute)
 PEP_FILES = {
@@ -148,7 +195,8 @@ REST_FRAMEWORK = {
 }
 
 # CORS
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=DEBUG)
+CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS')
 
 # Django-Q2 Configuration using Redis Broker
 Q_CLUSTER = {
@@ -161,10 +209,12 @@ Q_CLUSTER = {
 }
 
 # ── REDIS CACHE ──────────────────────────────────────────────
+CFA_VALKEY_URL = env('CFA_VALKEY_URL', default='')
+REDIS_URL = env('REDIS_URL', default=CFA_VALKEY_URL or 'redis://127.0.0.1:6379/1')
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SOCKET_CONNECT_TIMEOUT": 5,
@@ -189,6 +239,46 @@ PEPS_CSV_URL = env('PEPS_CSV_URL', default='')
 DATA_UPLOAD_MAX_MEMORY_SIZE = 534773760  # 510 MB (510 * 1024 * 1024)
 
 FILE_UPLOAD_MAX_MEMORY_SIZE = 26214400  # 25 MB
+
+# Logging
+DATABASE_LOG_LEVEL = env('DATABASE_LOG_LEVEL', default='INFO')
+DATABASE_LOG_HANDLER_ENABLED = env.bool('DATABASE_LOG_HANDLER_ENABLED', default=False)
+APPLICATION_LOG_RETENTION_DAYS = env.int('APPLICATION_LOG_RETENTION_DAYS', default=90)
+root_log_handlers = ['console']
+if DATABASE_LOG_HANDLER_ENABLED:
+    root_log_handlers.append('database')
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {
+            'format': '[{levelname}] {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'database': {
+            'class': 'dashboard.utils.app_logging.DatabaseLogHandler',
+            'level': DATABASE_LOG_LEVEL,
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': root_log_handlers,
+        'level': env('LOG_LEVEL', default='INFO'),
+    },
+    'loggers': {
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
 
 # Gama model
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -83,6 +83,8 @@ class ProcessedPost(models.Model):
             models.Index(fields=['cluster', 'timestamp_share']),
             models.Index(fields=['is_election_related', 'timestamp_share']),
             models.Index(fields=['risk_level', 'timestamp_share']),
+            models.Index(fields=['timestamp_share'], name='idx_timestamp'),
+            models.Index(fields=['is_election_related'], name='idx_election_related'),
         ]
         ordering = ['-timestamp_share']
     
@@ -153,6 +155,73 @@ class DataUpload(models.Model):
     
     def __str__(self):
         return f"{self.original_filename} ({self.status})"
+
+
+class ApplicationLog(models.Model):
+    """Structured operational log entries for imports, uploads, syncs, and app events."""
+    LEVEL_CHOICES = [
+        ('DEBUG', 'Debug'),
+        ('INFO', 'Info'),
+        ('WARNING', 'Warning'),
+        ('ERROR', 'Error'),
+        ('CRITICAL', 'Critical'),
+    ]
+    STATUS_CHOICES = [
+        ('started', 'Started'),
+        ('success', 'Success'),
+        ('skipped', 'Skipped'),
+        ('warning', 'Warning'),
+        ('failed', 'Failed'),
+        ('info', 'Info'),
+    ]
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default='INFO', db_index=True)
+    logger_name = models.CharField(max_length=255, blank=True, db_index=True)
+    event_type = models.CharField(max_length=100, blank=True, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='info', db_index=True)
+    message = models.TextField()
+
+    actor = models.CharField(max_length=255, blank=True)
+    source = models.CharField(max_length=255, blank=True, db_index=True)
+    object_type = models.CharField(max_length=100, blank=True)
+    object_id = models.CharField(max_length=255, blank=True)
+    request_path = models.CharField(max_length=500, blank=True)
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    traceback = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['created_at', 'level'], name='dashboard_a_created_154f5e_idx'),
+            models.Index(fields=['event_type', 'status'], name='dashboard_a_event_t_f3b3b9_idx'),
+            models.Index(fields=['source', 'created_at'], name='dashboard_a_source_519066_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M:%S} [{self.level}] {self.message[:80]}"
+
+
+class DashboardAnalyticsSnapshot(models.Model):
+    """Precomputed dashboard payloads used to keep page loads lightweight."""
+    key = models.CharField(max_length=255, unique=True)
+    kind = models.CharField(max_length=100, db_index=True)
+    start_date = models.DateField(null=True, blank=True, db_index=True)
+    end_date = models.DateField(null=True, blank=True, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    generated_at = models.DateTimeField(default=timezone.now, db_index=True)
+    source = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        ordering = ['-generated_at']
+        indexes = [
+            models.Index(fields=['kind', 'generated_at'], name='dashboard_a_kind_57cda1_idx'),
+            models.Index(fields=['kind', 'start_date', 'end_date'], name='dashboard_a_kind_6b6408_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} snapshot ({self.generated_at:%Y-%m-%d %H:%M})"
         
 
 class LexiconTerm(models.Model):
@@ -172,10 +241,34 @@ class LexiconTerm(models.Model):
     is_election_related = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     justification = models.TextField(blank=True, null=True, help_text="Why is this a trigger term?")
-
     
     def __str__(self):
         return f"{self.term} ({self.severity})"
+
+
+class PostLexiconMatch(models.Model):
+    """Materialized lexicon detections for fast dashboard browsing."""
+    post = models.ForeignKey(ProcessedPost, on_delete=models.CASCADE, related_name='materialized_lexicon_matches')
+    term = models.CharField(max_length=255, db_index=True)
+    category = models.CharField(max_length=100, db_index=True)
+    severity = models.CharField(max_length=20, db_index=True)
+    target_entity = models.CharField(max_length=255, blank=True)
+    language = models.CharField(max_length=20, blank=True)
+    detected_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ['-detected_at']
+        constraints = [
+            models.UniqueConstraint(fields=['post', 'term', 'category'], name='uniq_post_lexicon_match'),
+        ]
+        indexes = [
+            models.Index(fields=['category', 'detected_at'], name='postlex_cat_detect_idx'),
+            models.Index(fields=['severity', 'detected_at'], name='postlex_sev_detect_idx'),
+            models.Index(fields=['term', 'detected_at'], name='dashboard_p_term_6f767a_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.term} on post {self.post_id}"
 
 class PEP(models.Model):
     """Political Exposed Person - election-focused"""
