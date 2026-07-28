@@ -2,17 +2,12 @@ import json
 import logging
 from datetime import timedelta
 
-from django.core.cache import cache
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.db.models import Max, Min
 from django.utils import timezone
 
 from dashboard.models import DashboardAnalyticsSnapshot, PEP, PostLexiconMatch, ProcessedPost
-from dashboard.utils.analytics_engine import (
-    compute_filtered_analytics,
-    get_filter_cache_key,
-)
 from dashboard.utils.app_logging import log_event
 from dashboard.views import (
     build_analytics_snapshot_key,
