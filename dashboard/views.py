@@ -76,6 +76,45 @@ def load_gemma_lora_model():
     logger.warning("Gemma LoRA model is DISABLED - insufficient RAM (current: 8GB, required: 16GB+)")
     return None, None
 
+def get_filter_cache_key(prefix: str, query_params: dict) -> str:
+    """
+    Generates a unique, reproducible cache key based on query parameters.
+    """
+    # Extract relevant filter keys and normalize them
+    normalized_params = {
+        'view_all': str(query_params.get('view_all', '')).lower() in ['true', '1'],
+        'start_date': query_params.get('start_date', ''),
+        'end_date': query_params.get('end_date', ''),
+        'platform': query_params.get('platform', ''),
+        'topic': query_params.get('topic', ''),
+        'tone': query_params.get('tone', ''),
+    }
+    
+    # Sort keys so parameter order in URL doesn't alter the key
+    param_str = json.dumps(normalized_params, sort_keys=True)
+    param_hash = hashlib.md5(param_str.encode('utf-8')).hexdigest()
+    
+    return f"analytics_{prefix}_{param_hash}"
+
+def get_analytics_snapshot(snapshot_type, request_params):
+    cache_key = get_filter_cache_key(snapshot_type, request_params)
+    
+    # 1. Try retrieving from low-level cache
+    cached_payload = cache.get(cache_key)
+    if cached_payload:
+        return cached_payload, cached_payload.get('generated_at')
+
+    # 2. Check persistent DB Snapshot table if applicable
+    # (Optional fallback to latest general snapshot if filtering allows)
+    
+    # 3. Cache Miss: Compute on-demand for the filtered QuerySet
+    payload = compute_filtered_analytics(snapshot_type, request_params)
+    
+    # 4. Save result in cache (caches for 2hr)
+    cache.set(cache_key, payload, timeout=7200)
+    
+    return payload, payload.get('generated_at')
+
 def get_combined_lexicon():
     """
     Merges CONFIG lexicon with Database lexicon terms.
