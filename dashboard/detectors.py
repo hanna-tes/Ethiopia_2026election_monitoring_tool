@@ -17,6 +17,7 @@ def is_election_related(text: str) -> bool:
         r'\bpolling\b', r'\bconstituency\b', r'\bconstituencies\b', r'\bcandidate\b',
         r'\bcandidates\b', r'\bparliament\b', r'\bparliamentary\b', r'\belectoral\b',
         r'\bcampaign\b', r'\bcampaigning\b', r'\bdemocra', r'\bcoalition\b',
+        # Amharic English-transliterated equivalents
         r'\bmerecha\b', r'\bmercha\b', r'\bdems\b', r'\bdimts\b', r'\bkoalishn\b'
     }
 
@@ -29,7 +30,7 @@ def is_election_related(text: str) -> bool:
         r'\badfm\b',             # Amhara Democratic Force Movement
         r'\bmedrek\b',           # Opposition Coalition
         r'\btplf\b',             # Tigray People's Liberation Front
-        r'\bpp\b',               # Abbreviation of Prosperity Party
+        r'\bpp\b',               # Abbreviation of Prosperity Party (checked carefully in context)
         r'\bprime minister\b',   # PM
         r'\babiy ahmed\b',       # PM Abiy Ahmed
         r'\bmelatwork hailu\b',  # NEBE Chairperson
@@ -47,16 +48,23 @@ def is_election_related(text: str) -> bool:
 
     score = 0
 
+    # 1. Check for Category 2 (Entities/Parties) first - Highly predictive
     for pattern in political_entities:
         if re.search(pattern, text_lower):
             score += 4
 
+    # 2. Check for Category 1 (Electoral terminology)
     for pattern in electoral_terms:
         if re.search(pattern, text_lower):
             score += 3
 
+    # 3. Check for Category 3 (Geographic Anchors) - Only contributes if other signals exist
     for pattern in ethiopian_contexts:
         if re.search(pattern, text_lower):
             score += 1
 
+    # Score Evaluation:
+    # A score of >= 4 means we have either a direct political entity mentioned, 
+    # or an electoral term with a geographic anchor (3 + 1), or multiple electoral terms.
+    # This prevents purely geographic news (e.g. "Weather in Gondar") from being flagged.
     return score >= 4

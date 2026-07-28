@@ -1,0 +1,30 @@
+
+8 distinct platform value(s):
+
+  'X'                            count=20522
+  'Media'                        count=2985
+  'Facebook'                     count=1103
+  'Telegram'                     count=185
+  'YouTube'                      count=116
+  'Instagram'                    count=58
+  'News/Media'                   count=15
+  'TikTok'                       count=12
+
+Total election-related posts: 21067
+Coordination groups found: 50
+
+  group #38  accounts=3    posts=17    platforms=['X'] first_user=amharahq
+  group #3   accounts=11   posts=312   platforms=['X'] first_user=shalomzon
+  group #1   accounts=12   posts=350   platforms=['X'] first_user=shalomzon
+  group #2   accounts=13   posts=328   platforms=['X'] first_user=shalomzon
+  group #6   accounts=8    posts=205   platforms=['X'] first_user=bizunehneb2
+  group #7   accounts=8    posts=186   platforms=['X'] first_user=bizunehneb2
+  group #8   accounts=9    posts=170   platforms=['X'] first_user=bizunehneb2
+  group #5   accounts=18   posts=249   platforms=['X'] first_user=anketseberhan
+  group #4   accounts=22   posts=265   platforms=['X'] first_user=anketseberhan
+  group #21  accounts=48   posts=48    platforms=['X'] first_user=i_tinsae (Idelawit Tinsae 🇪🇹)
+  group #27  accounts=28   posts=29    platforms=['X'] first_user=BirukEndale7 (Biruk Endale)
+  group #14  accounts=27   posts=113   platforms=['X'] first_user=azulebattle
+  group #28  accounts=27   posts=27    platforms=['X'] first_user=p_f_lherisson_
+  group #15  accounts=25   posts=110   platforms=['X'] first_user=azulebattle
+  group #29  accounts=22   posts=24    platforms=['X'] first_user=unlikely_buddha
