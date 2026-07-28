@@ -2757,26 +2757,25 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                     'label': src_key, 
                     'type': 'source', 
                     'group': 'source',
-<<<<<<< HEAD
-<<<<<<< HEAD
+
                     'color': '#1e90ff',  # Force Blue
                     'size': 24,
-=======
-                    'color': '#1e90ff',  # Force Blue for all Sources
-                    'size': 26,=======
+
                     'color': '#1e90ff',  # Force Blue for all Sources
                     'size': 26,
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
+                    'color': '#1e90ff',  # Force Blue for all Sources
+                    'size': 26,
+
                     'shape': 'dot',
                     'physics': True
                 })
                 existing_nodes.add(src_key.lower())
             
         # Injects Amplifiers (Orange Nodes) and links them to every Source Node
-        for amp in amplifiers_list:=======
+        for amp in amplifiers_list:
         # Injects Amplifiers (Orange Nodes) and links them to every Source Node
         for amp in amplifiers_list:
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
+
             amp_key = str(amp).strip()
             if amp_key.lower() not in existing_nodes:
                 graph_nodes.append({
@@ -2793,7 +2792,7 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                 
             # Create directional links from ALL sources to this amplifier=======
             # Create directional links from ALL sources to this amplifier
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
+
             for src in sources_list:
                 s_id = str(src).strip()
                 t_id = str(amp_key).strip()
@@ -2804,9 +2803,8 @@ def get_coordination_groups(posts_queryset, min_accounts=3, max_groups=15, simil
                         'to': t_id,
                         'source': s_id,
                         'target': t_id,
-                        'length': 80,=======
                         'length': 80,
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
+                        'length': 80,
                         'arrows': 'to',
                         'width': 1.5
                     })
@@ -6363,7 +6361,7 @@ class LexiconsView(TemplateView):
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
         # ── 2. Fetch posts and materialized detections ────────────────────
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
+
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
             filtered_posts = (
@@ -6387,8 +6385,8 @@ class LexiconsView(TemplateView):
         category_terms = []
         posts_with_terms = []
         if selected_category:
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
-=======            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
+
+            db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
@@ -6396,7 +6394,7 @@ class LexiconsView(TemplateView):
                 matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
                 if matched_config_key:
                     category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
-=======
+
             grouped_posts = defaultdict(lambda: {
                 'matched_terms': set(),
                 'post': None,
@@ -6446,7 +6444,6 @@ class LexiconsView(TemplateView):
             for row in term_rows
             if len(row['term'].strip()) > 1
         ]
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
         
         # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
@@ -6922,13 +6919,11 @@ class LexiconManagementView(TemplateView):
             ).order_by('category', 'severity')
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======        # RESPECT THE GLOBAL DATE FILTER
+       # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
 
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
+
 
         # Get distinct categories for filter dropdown
         categories = lexicon_terms.values_list('category', flat=True).distinct()
@@ -6941,9 +6936,6 @@ class LexiconManagementView(TemplateView):
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 
 
-<<<<<<< HEAD
-        
-=======
         # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
         total_posts_in_filter = filtered_posts.count()
@@ -6959,7 +6951,7 @@ class LexiconManagementView(TemplateView):
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
 
 
-=======        total_terms = lexicon_terms.count()
+        total_terms = lexicon_terms.count()
         critical_count = lexicon_terms.filter(severity='critical').count()
         amharic_count = lexicon_terms.filter(language='amharic').count()
         paginator = Paginator(lexicon_terms, 100)
@@ -6968,10 +6960,6 @@ class LexiconManagementView(TemplateView):
         matches_qs = get_materialized_lexicon_matches(filtered_posts)
         total_matches = matches_qs.count()
         posts_scanned = matches_qs.values('post_id').distinct().count()
-<<<<<<< HEAD
->>>>>>> 2c2218aae3c16901775f2e89e95a7ec983023f46
-=======
->>>>>>> 7b054ab563abf05dc32969a617a48987d9d54b93
 
         context.update({
             'active_tab': 'lexicon_management',
