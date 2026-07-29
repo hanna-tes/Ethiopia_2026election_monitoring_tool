@@ -7,7 +7,7 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
-            <h2 class="text-2xl font-bold text-white">🗣️ Mapped Lexicons</h2>
+            <h2 class="text-2xl font-bold text-white">️ Mapped Lexicons</h2>
             <p class="text-gray-400 mt-1">Detecting hateful terms with AI-powered analysis + AFRO-XLMR model</p>
         </div>
         <div class="flex gap-2">
@@ -22,6 +22,20 @@
             </span>
         </div>
     </div>
+
+    <!-- Analytics Pending Banner -->
+    {% if analytics_pending %}
+    <div class="mb-6 p-4 bg-yellow-900/30 border border-yellow-700 rounded-lg flex items-start gap-3">
+        <div class="text-2xl"></div>
+        <div>
+            <h3 class="font-bold text-yellow-300">Analytics are being prepared</h3>
+            <p class="text-sm text-yellow-200 mt-1">
+                The background worker is currently scanning posts and building the lexicon matches. 
+                Please check back in a few minutes, or trigger a manual refresh from the Lexicon Management tab.
+            </p>
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Dual Engine Explanation Banner -->
     <div class="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -64,7 +78,7 @@
         </div>
     </div>
 
-    {% if top_terms %}
+    {% if top_terms or category_counts %}
     <!-- SECTION 1: LEXICON ENGINE RESULTS (BLUE) -->
     <div class="mb-8 border-t border-blue-500/50 pt-6">
         <div class="flex items-center gap-3 mb-4">
@@ -101,7 +115,7 @@
         </div>
 
         <!-- Top Trigger Terms - Card Grid Layout (ONLY SHOW IN OVERVIEW) -->
-        {% if not selected_category %}
+        {% if not selected_category and top_terms %}
         <div class="mb-6">
             <h4 class="text-lg font-bold text-blue-300 mb-4 flex items-center gap-2">
                 <span>🔥</span> Top Trigger Terms (Lexicon Matches)
@@ -152,14 +166,15 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div>
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold text-gray-200">📂 By Category</h3>
+                <h3 class="text-lg font-semibold text-gray-200"> By Category</h3>
                 {% if selected_category %}
                 <a href="{% url 'lexicons' %}" class="text-xs text-blue-400 hover:text-blue-300">Clear Filter ✕</a>
                 {% endif %}
             </div>
             <div class="grid grid-cols-2 gap-3">
                 {% for category, count in category_counts.items %}
-                <a href="?category={{ category }}" class="block bg-gray-800 rounded-lg p-3 text-center border {% if selected_category == category %}border-blue-500 ring-2 ring-blue-500{% else %}border-gray-700 hover:border-blue-500{% endif %} transition-colors cursor-pointer">
+                <!-- we have |urlencode to properly handle spaces in "Cross-Border Geopolitical Narratives" -->
+                <a href="?category={{ category|urlencode }}" class="block bg-gray-800 rounded-lg p-3 text-center border {% if selected_category == category %}border-blue-500 ring-2 ring-blue-500{% else %}border-gray-700 hover:border-blue-500{% endif %} transition-colors cursor-pointer">
                     <div class="text-2xl font-bold text-blue-400">{{ count }}</div>
                     <div class="text-xs text-gray-400">{{ category|title }}</div>
                 </a>
@@ -186,7 +201,7 @@
     {% if selected_category %}
     <div class="mb-8 border-t border-blue-500/50 pt-6">
         <div class="flex items-center gap-3 mb-4">
-            <span class="text-3xl"></span>
+            <span class="text-3xl">🔎</span>
             <div>
                 <h3 class="text-xl font-bold text-blue-300">Category: "{{ selected_category|title }}"</h3>
                 <p class="text-sm text-blue-400">Terms in this category and posts containing them</p>
@@ -249,7 +264,7 @@
                     <!-- Model Detection Info -->
                     <div class="mb-3 p-2 bg-gray-900/50 rounded border border-gray-700">
                         <div class="flex items-center gap-2 text-xs">
-                            <span class="font-semibold text-purple-400">🤖 Detected by:</span>
+                            <span class="font-semibold text-purple-400"> Detected by:</span>
                             <span class="px-2 py-0.5 rounded 
                                 {% if post.detected_by == 'AFRO-XLMR' %}bg-purple-900/50 text-purple-300 border border-purple-700
                                 {% elif post.detected_by == 'LLM' %}bg-blue-900/50 text-blue-300 border border-blue-700
