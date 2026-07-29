@@ -4037,7 +4037,7 @@ CONFIG = {
         },
         
         # === Cross-Border Geopolitical Narratives ===
-        "Cross-Border Geopolitical Narratives": {
+        "foreign_interference":{
             "ግብፅ": {"severity": "low", "target_entity": "Egypt", "language": "Amharic"},
             "egypt": {"severity": "low", "target_entity": "Egypt", "language": "English"},
             "ሱዳን": {"severity": "low", "target_entity": "Sudan", "language": "Amharic"},
