@@ -1487,7 +1487,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
             if is_neutral_context and metadata.get('severity') == 'low':
                 continue
 
-            pattern = _get_cached_pattern(term_clean, metadata.get("language", "english"))
+            pattern = get_cached_pattern(term_clean, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
                     'term': term_clean,
