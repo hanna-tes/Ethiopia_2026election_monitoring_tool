@@ -1406,7 +1406,7 @@ def dashboard_view(request):
 # Compile patterns once, reuse them forever
 _COMPILED_PATTERNS = {}
 
-def get_cached_pattern(term, language):  # 🔥 FIXED: Removed underscore
+def get_cached_pattern(term, language):  # Removed underscore
     """Get or compile a regex pattern, caching it to prevent memory spikes."""
     cache_key = f"{term}_{language}"
     
@@ -1427,17 +1427,16 @@ def get_cached_pattern(term, language):  # 🔥 FIXED: Removed underscore
 def scan_text_for_lexicon_terms(text, category_filter=None):
     """
     FAST PATH: Regex matching for lexicon terms across categories.
-    - Excludes standard retweets (RT @...) from being generated as clean sample/exemplar posts.
-    - Supports broader geopolitical term lists beyond just 'foreign'.
+    - Scans ALL posts (including retweets) for accurate aggregate volume counts.
+    - Flags retweets (`is_retweet: True`) so UI components can exclude them from exemplar/sample post displays.
     """
     if not isinstance(text, str) or not text.strip():
         return []
 
     text_lower = text.lower()
-
-    # 1. Immediately drop retweets if you don't want them returned as mapped examples
-    if re.match(r'^\s*rt\s+@\w+', text_lower, re.IGNORECASE):
-        return []
+    
+    # 1. Flag retweets instead of discarding them during scanning
+    is_retweet = bool(re.match(r'^\s*rt\s+@\w+', text_lower, re.IGNORECASE))
 
     matches = []
     lexicon = CONFIG.get("lexicon", {})
@@ -1451,22 +1450,18 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
         'russia', 'china', 'usa', 'western', 'proxy', 'bilateral', 'sovereignty'
     ]
 
-    # Neutral indicators to prevent false positives for high-severity tags
-    neutral_indicators = [
-        'regional state', 'development', 'news', 'media', 'platform',
-        'solar', 'water access', 'farmers', 'installed', 'modernization',
-        'studied', 'experience', 'applied', 'wrote', 'seen',
-        'followers', 'condemns', 'urges', 'respect'
-    ]
-
-    is_neutral_context = any(indicator in text_lower for indicator in neutral_indicators)
-
     for category in categories_to_check:
-        # Dynamically build category terms dictionary
         category_terms = lexicon.get(category, {}).copy()
 
-        # If processing geopolitical category, merge the extended terms into the active term dict
-        if category in ["Cross-Border Geopolitical Narratives", "cross_border_geopolitical"]:
+        # Fuzzy match category name for geopolitical/cross-border terms
+        category_normalized = category.lower().replace(" ", "_").replace("-", "_")
+        is_geopolitical_category = any(
+            kw in category_normalized 
+            for kw in ["cross_border", "geopolitical", "foreign"]
+        )
+
+        # Inject extended terms if it's a geopolitical category OR if category wasn't originally in lexicon
+        if is_geopolitical_category or category not in lexicon:
             for ext_term in cross_border_extended_terms:
                 if ext_term not in category_terms:
                     category_terms[ext_term] = {
@@ -1480,13 +1475,12 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
 
         for term, metadata in category_terms.items():
             term_clean = term.strip()
+            
+            # Allow short terms >= 2 chars, or Ethiopic script chars
             if len(term_clean) < 2 and not re.match(r'^[\u1200-\u137F]+$', term_clean):
                 continue
 
-            # Skip low-severity terms ONLY if a non-geopolitical neutral context is present
-            if is_neutral_context and metadata.get('severity') == 'low':
-                continue
-
+            # Match using cached regex
             pattern = get_cached_pattern(term_clean, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
@@ -1496,7 +1490,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     'target_entity': metadata.get('target_entity', ''),
                     'language': metadata.get('language', 'english'),
                     'source': 'Lexicon',
-                    'is_retweet': False
+                    'is_retweet': is_retweet
                 })
 
     return matches
