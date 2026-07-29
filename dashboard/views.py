@@ -1434,16 +1434,16 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
         return []
 
     text_lower = text.lower()
-    
-    # 1. Clean check: Skip retweets/reposts if selecting clean example posts
-    is_retweet = bool(re.match(r'^\s*rt\s+@\w+', text_lower, re.IGNORECASE))
-    
+
+    # 1. Immediately drop retweets if you don't want them returned as mapped examples
+    if re.match(r'^\s*rt\s+@\w+', text_lower, re.IGNORECASE):
+        return []
+
     matches = []
     lexicon = CONFIG.get("lexicon", {})
     categories_to_check = category_filter if category_filter else lexicon.keys()
 
     # Broadened cross-border and geopolitical contextual indicators
-    # Expanding beyond just the word 'foreign'
     cross_border_extended_terms = [
         'foreign', 'international', 'cross border', 'horn of africa', 'somaliland',
         'red sea', 'gerd', 'nile', 'mou', 'au', 'un', 'eu', 'diaspora',
@@ -1451,30 +1451,42 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
         'russia', 'china', 'usa', 'western', 'proxy', 'bilateral', 'sovereignty'
     ]
 
-    # Neutral indicators to prevent false positives in high-severity tags
+    # Neutral indicators to prevent false positives for high-severity tags
     neutral_indicators = [
         'regional state', 'development', 'news', 'media', 'platform',
         'solar', 'water access', 'farmers', 'installed', 'modernization',
         'studied', 'experience', 'applied', 'wrote', 'seen',
-        'diaspora', 'followers', 'condemns', 'urges', 'respect',
-        'sovereignty', 'ministry', 'foreign affairs'
+        'followers', 'condemns', 'urges', 'respect'
     ]
-    
+
     is_neutral_context = any(indicator in text_lower for indicator in neutral_indicators)
 
     for category in categories_to_check:
-        if category not in lexicon:
+        # Dynamically build category terms dictionary
+        category_terms = lexicon.get(category, {}).copy()
+
+        # If processing geopolitical category, merge the extended terms into the active term dict
+        if category in ["Cross-Border Geopolitical Narratives", "cross_border_geopolitical"]:
+            for ext_term in cross_border_extended_terms:
+                if ext_term not in category_terms:
+                    category_terms[ext_term] = {
+                        'severity': 'medium',
+                        'target_entity': 'geopolitical',
+                        'language': 'english'
+                    }
+
+        if not category_terms:
             continue
-            
-        for term, metadata in lexicon[category].items():
+
+        for term, metadata in category_terms.items():
             term_clean = term.strip()
             if len(term_clean) < 2 and not re.match(r'^[\u1200-\u137F]+$', term_clean):
                 continue
-                
+
+            # Skip low-severity terms ONLY if a non-geopolitical neutral context is present
             if is_neutral_context and metadata.get('severity') == 'low':
                 continue
 
-            # Check matching pattern using cached regex
             pattern = _get_cached_pattern(term_clean, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
@@ -1484,7 +1496,7 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
                     'target_entity': metadata.get('target_entity', ''),
                     'language': metadata.get('language', 'english'),
                     'source': 'Lexicon',
-                    'is_retweet': is_retweet  # Flag to easily filter out RT posts when picking sample posts
+                    'is_retweet': False
                 })
 
     return matches
