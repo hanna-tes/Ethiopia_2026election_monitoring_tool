@@ -6957,10 +6957,6 @@ class LexiconManagementView(TemplateView):
             term__regex=r'^.$'
         ).order_by('category', 'severity')
 
-
-
-        
-
         # If DB is empty, seed from CONFIG (one-time migration)
         if not lexicon_terms.exists():
             for category, terms in CONFIG['lexicon'].items():
@@ -6973,34 +6969,13 @@ class LexiconManagementView(TemplateView):
                                 'severity': metadata.get('severity', 'medium'),
                                 'target_entity': metadata.get('target_entity', ''),
                                 'language': metadata.get('language', 'english'),
-
-
                                 'justification': '',  # Empty for CONFIG terms
-
                                 'is_election_related': True
                             }
                         )
             lexicon_terms = LexiconTerm.objects.exclude(
                 term__regex=r'^.$'
             ).order_by('category', 'severity')
-
-
-       # RESPECT THE GLOBAL DATE FILTER
-        filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-        total_posts_in_filter = filtered_posts.count()
-
-
-
-        # Get distinct categories for filter dropdown
-        categories = lexicon_terms.values_list('category', flat=True).distinct()
-
-        # Get scan results from session (if any) and clear immediately
-        scan_results = self.request.session.pop('scan_results', None)
-
-        # Determine filter state for the template text
-        view_all = self.request.GET.get('view_all') == 'true'
-        has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
-
 
         # RESPECT THE GLOBAL DATE FILTER
         filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
@@ -7015,7 +6990,6 @@ class LexiconManagementView(TemplateView):
         # Determine filter state for the template text
         view_all = self.request.GET.get('view_all') == 'true'
         has_custom_date_filter = self.request.GET.get('start_date') and self.request.GET.get('end_date') and not view_all
-
 
         total_terms = lexicon_terms.count()
         critical_count = lexicon_terms.filter(severity='critical').count()
@@ -7106,9 +7080,6 @@ class LexiconManagementView(TemplateView):
             else:
                 messages.warning(request, "Term must be at least 2 characters long. Single characters are skipped.")
 
-
-        
-
         # Handle Scan Text
         elif action == 'scan_text':
             text = request.POST.get('scan_text', '').strip()
@@ -7120,24 +7091,15 @@ class LexiconManagementView(TemplateView):
                 # 2. LLM-based detection
                 llm_result = detect_hate_speech_llm(text)
 
-
                 # 3. Extract NEW trigger terms not in lexicon
                 new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
 
-                # 4. Fine-tuned AFRO-XLMR Model detection (Swapped out Gemma here)
-
-                
-                # 3. Extract NEW trigger terms not in lexicon
-                new_terms = extract_new_trigger_terms_llm(text, lexicon_matches)
-                
                 # 4. Fine-tuned AFRO-XLMR Model detection
-
                 try:
                     afro_result = detect_hate_speech_afro_xlmr(text)
                 except Exception as e:
                     logger.error(f"AFRO-XLMR detection failed: {e}")
                     afro_result = {'category': 'error', 'confidence': 0.0, 'severity': 'low', 'is_hate_speech': False, 'error': 'Model failed to compute'}
-                
 
                 # 5. Determine final verdict - AFRO-XLMR / LLM Priority Check
                 is_hate_speech = False
@@ -7151,18 +7113,6 @@ class LexiconManagementView(TemplateView):
                 afro_is_hate = afro_result.get('is_hate_speech', False)
                 afro_confidence = afro_result.get('confidence', 0)
 
-                # 5. Determine final verdict
-                is_hate_speech = False
-                overall_severity_num = 1
-                explanation = ""
-                
-                llm_is_hate = llm_result.get('is_hate_speech', False)
-                llm_confidence = llm_result.get('confidence', 0)
-                llm_explanation = llm_result.get('explanation', '').lower()
-                
-                afro_is_hate = afro_result.get('is_hate_speech', False)
-                afro_confidence = afro_result.get('confidence', 0)
-                
                 # SAFETY NET
                 hate_indicators = [
                     'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
@@ -7173,25 +7123,25 @@ class LexiconManagementView(TemplateView):
                 if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
                     llm_is_hate = True
                     llm_confidence = max(llm_confidence, 0.75)
-                
+
                 # PRIORITY 1: AFRO-XLMR
                 if afro_is_hate and afro_confidence >= 0.6:
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_result.get('severity', 'medium'), 2)
                     explanation = f"AFRO-XLMR Model detected hate speech ({afro_confidence*100:.0f}% confidence)."
-                
+
                 # PRIORITY 2: LLM
                 elif llm_is_hate and llm_confidence >= 0.6:
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
                     explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
-                
+
                 # PRIORITY 3: Lexicon
                 elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
                     is_hate_speech = True
                     overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
                     explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
-                
+
                 # PRIORITY 4: Default
                 else:
                     is_hate_speech = False
@@ -7200,9 +7150,9 @@ class LexiconManagementView(TemplateView):
                         explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
                     else:
                         explanation = "No hate speech detected by any method."
-                
+
                 severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
-                
+
                 # Create combined analysis
                 analysis_parts = []
                 if llm_result.get('explanation'):
@@ -7212,63 +7162,13 @@ class LexiconManagementView(TemplateView):
                     analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
                 combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
 
-                
-                # SAFETY NET: If LLM explanation indicates hate speech, force flag
-                hate_indicators = [
-                    'dehumaniz', 'incite', 'violence', 'hatred', 'hate speech', 
-                    'derogatory', 'discrimination', 'dangerous', 'threat',
-                    'ethnic cleansing', 'genocide', 'kill', 'attack', 'slaughter'
-                ]
-                
-                if not llm_is_hate and any(indicator in llm_explanation for indicator in hate_indicators):
-                    llm_is_hate = True
-                    llm_confidence = max(llm_confidence, 0.75)
-                
-                # PRIORITY 1: AFRO-XLMR detects hate speech confidently
-                if afro_is_hate and afro_confidence >= 0.6:
-                    is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(afro_result.get('severity', 'medium'), 2)
-                    explanation = f"AFRO-XLMR Model detected hate speech ({afro_confidence*100:.0f}% confidence)."
-                
-                # PRIORITY 2: LLM says hate speech
-                elif llm_is_hate and llm_confidence >= 0.6:
-                    is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(llm_result.get('severity', 'medium'), 2)
-                    explanation = f"LLM detected hate speech ({llm_confidence*100:.0f}% confidence). {llm_explanation[:150]}"
-                
-                # PRIORITY 3: Lexicon finds high-risk terms
-                elif lexicon_risk.get('score', 0) > 3 or any(m.get('severity') in ['high', 'critical'] for m in lexicon_matches):
-                    is_hate_speech = True
-                    overall_severity_num = {'low':1, 'medium':2, 'high':3, 'critical':4}.get(lexicon_risk.get('level', 'medium'), 2)
-                    explanation = f"Lexicon detected {len(lexicon_matches)} high-risk term(s) (score: {lexicon_risk.get('score', 0)})"
-                
-                # PRIORITY 4: Default to neutral
-                else:
-                    is_hate_speech = False
-                    overall_severity_num = 1
-                    if lexicon_matches:
-                        explanation = f"AI models classify as neutral. Lexicon found {len(lexicon_matches)} term(s), but context appears legitimate."
-                    else:
-                        explanation = "No hate speech detected by any method."
-                
-                severity_map = {1:'low', 2:'medium', 3:'high', 4:'critical'}
-                
-                # Create combined analysis field
-                analysis_parts = []
-                if llm_result.get('explanation'):
-                    analysis_parts.append(f"LLM Analysis: {llm_result['explanation']}")
-                if lexicon_matches:
-                    terms_found = [f"'{m['term']}'" for m in lexicon_matches[:5]]
-                    analysis_parts.append(f"Lexicon matched {len(lexicon_matches)} term(s): {', '.join(terms_found)}")
-                combined_analysis = ". ".join(analysis_parts) if analysis_parts else "No specific patterns detected"
-                
                 # Save data safely back to UI template context via session
                 request.session['scan_results'] = {
                     'text': text[:200] + '...' if len(text) > 200 else text,
                     'lexicon_matches': lexicon_matches,
                     'lexicon_risk': lexicon_risk,
                     'llm_result': llm_result,
-                    'afro_xlmr_result': afro_result,  # Replaces gemma_result key smoothly
+                    'afro_xlmr_result': afro_result,
                     'is_hate_speech': is_hate_speech,
                     'overall_severity': severity_map[overall_severity_num],
                     'overall_confidence': round(max(llm_confidence, afro_confidence), 2),
@@ -7281,7 +7181,7 @@ class LexiconManagementView(TemplateView):
                     'new_trigger_terms': new_terms,
                     'has_new_terms': len(new_terms) > 0,
                 }
-                
+
                 if is_hate_speech:
                     messages.warning(request, f"Potential hate speech detected! Severity: {severity_map[overall_severity_num].upper()}")
                     if new_terms:
