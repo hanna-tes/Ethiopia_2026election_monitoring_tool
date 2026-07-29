@@ -6414,8 +6414,6 @@ class LexiconsView(TemplateView):
                 continue
 
             # Context Check: filter out generic keywords lacking supporting intent context
-
-
             if not self._is_valid_context(m['term'], text_lower):
                 continue
             if _is_genuine_match(m['term'], text_lower, m.get('severity', 'medium'), is_innocuous):
@@ -6431,19 +6429,17 @@ class LexiconsView(TemplateView):
             return True
         return False
 
-    def get_context_data(self, **kwargs):
+        def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
         # ── 1. URL params ────────────────────────────────────────────────
         raw_category = self.request.GET.get('category', '').strip()
         view_all = self.request.GET.get('view_all') == 'true'
-        selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
-        # ── 2. Fetch posts and materialized detections ────────────────────=======
+        # Translate display name to internal key before processing.
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
         # ── 2. Fetch posts and materialized detections ────────────────────
-
         try:
             filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
             filtered_posts = (
@@ -6466,8 +6462,9 @@ class LexiconsView(TemplateView):
 
         category_terms = []
         posts_with_terms = []
+        
         if selected_category:
-
+            # 1. Get category terms
             db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
@@ -6477,6 +6474,7 @@ class LexiconsView(TemplateView):
                 if matched_config_key:
                     category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
 
+            # 2. Group matches by post
             grouped_posts = defaultdict(lambda: {
                 'matched_terms': set(),
                 'post': None,
@@ -6486,6 +6484,7 @@ class LexiconsView(TemplateView):
                 item['post'] = match.post
                 item['matched_terms'].add(match.term)
 
+            # 3. Build the posts_with_terms list FIRST
             for post_id, item in list(grouped_posts.items())[:100]:
                 post = item['post']
                 posts_with_terms.append({
@@ -6500,6 +6499,47 @@ class LexiconsView(TemplateView):
                     'model_category': selected_category,
                 })
 
+            # 4. Apply LLM VALIDATION (since posts_with_terms is now populated)
+            if selected_category == 'foreign_interference' and posts_with_terms:
+                try:
+                    # Only validate the top 30 posts to keep page load fast
+                    posts_to_validate = posts_with_terms[:30]
+                    
+                    # Format texts for the LLM
+                    texts_for_llm = "\n".join([f"[{i}] {p['text'][:300]}" for i, p in enumerate(posts_to_validate)])
+                    
+                    prompt = (
+                        "You are an expert geopolitical analyst. I will give you a list of social media posts flagged by a keyword scanner for 'Cross-Border Geopolitical Narratives'.\n\n"
+                        "Your task is to identify which posts are ACTUALLY discussing cross-border geopolitical interference, foreign influence, or regional geopolitical narratives (e.g., Egypt/Sudan/Eritrea interfering in Ethiopia, foreign funding, proxy wars, GERD negotiations, foreign agents).\n\n"
+                        "REJECT posts that:\n"
+                        "- Merely mention a country name in a list or hashtag spam.\n"
+                        "- Use the word 'foreign' in an unrelated context (e.g., 'foreign policy' without substance, 'foreigner' in sports).\n"
+                        "- Are just general news without geopolitical context.\n\n"
+                        f"Here are the posts:\n{texts_for_llm}\n\n"
+                        "Return ONLY a valid JSON array of the indices (0-based) of the posts that are VALID examples. Example: [0, 2, 5]"
+                    )
+    
+                    from .utils.llm_service import safe_llm_call
+                    response = safe_llm_call(prompt, max_tokens=150)
+                    
+                    # Parse the JSON array from the LLM response
+                    json_match = re.search(r'\[.*?\]', response, re.DOTALL)
+                    if json_match:
+                        valid_indices = json.loads(json_match.group(0))
+                        # Filter the list to ONLY keep posts the LLM validated
+                        filtered_posts_llm = [posts_to_validate[i] for i in valid_indices if i < len(posts_to_validate)]
+                        
+                        # Fallback: keep original list if LLM returns empty or fails
+                        if filtered_posts_llm:
+                            posts_with_terms = filtered_posts_llm
+                            logger.info(f"✅ LLM filtered geopolitical posts: {len(posts_to_validate)} -> {len(posts_with_terms)}")
+                        else:
+                            logger.info("⚠️ LLM validation returned empty, keeping original posts as fallback.")
+                            
+                except Exception as e:
+                    logger.warning(f"⚠️ LLM validation for foreign_interference failed: {e}. Keeping original posts as fallback.")
+
+        # ── 5. Aggregate Analytics ─────────────────────────────────────────
         category_counts = Counter()
         for row in matches_qs.values('category').annotate(count=Count('id')).order_by('-count'):
             display_name = self.CATEGORY_DISPLAY_NAMES.get(row['category'], row['category'])
@@ -6513,6 +6553,7 @@ class LexiconsView(TemplateView):
         term_rows = matches_qs.values(
             'term', 'severity', 'target_entity', 'language'
         ).annotate(count=Count('id')).order_by('-count')[:50]
+        
         top_terms_with_meta = [
             {
                 'term': row['term'],
@@ -6526,42 +6567,51 @@ class LexiconsView(TemplateView):
             for row in term_rows
             if len(row['term'].strip()) > 1
         ]
-        
-        # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
+
+        # ── 6. Word cloud & Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if top_terms_with_meta and not selected_category:
             try:
                 valid_terms = [{'term': item['term'], 'count': item['count']} for item in top_terms_with_meta]
                 wc = generate_trigger_wordcloud({'top_terms': valid_terms})
-                if wc: wordcloud_base64 = wordcloud_to_base64(wc)
-            except Exception: pass
-            
+                if wc: 
+                    wordcloud_base64 = wordcloud_to_base64(wc)
+            except Exception: 
+                pass
+                
         targeted_entities = []
         if not selected_category:
             try:
-                targeted_entities = [
-                    {'entity': row['target_entity'], 'count': row['count']}
-                    for row in matches_qs.exclude(target_entity='').values('target_entity').annotate(count=Count('id')).order_by('-count')[:10]
-                ]
-            except Exception: pass
+                entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE)\b', r'\b(Amhara|Tigray|Oromo|Somali)\b']
+                entities_found = Counter()
+                for m in term_rows: #  using term_rows here as it has the matched terms
+                    for pattern in entity_patterns:
+                        for match in re.findall(pattern, m['term'], re.IGNORECASE):
+                            entities_found[match.strip()] += 1
+                targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
+            except Exception: 
+                pass
         
-        # ── 8. Build context ───────────────────────────────────────────────
+        # ── 7. Build context ───────────────────────────────────────────────
         shared = {
-            'active_tab': 'lexicons', 'top_terms': top_terms_with_meta,
-            'category_counts': dict(category_counts), 'severity_counts': dict(severity_counts),
-            'total_matches': total_matches, 'posts_scanned': posts_scanned,
-            'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
+            'active_tab': 'lexicons', 
+            'top_terms': top_terms_with_meta,
+            'category_counts': dict(category_counts), 
+            'severity_counts': dict(severity_counts),
+            'total_matches': total_matches, 
+            'posts_scanned': posts_scanned,
+            'total_posts': total_posts, 
+            'start_date': start_str, 
+            'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
-            'scan_timed_out': False, 'wordcloud_base64': wordcloud_base64,
+            'scan_timed_out': False, 
+            'wordcloud_base64': wordcloud_base64,
             'targeted_entities': targeted_entities,
             'analytics_pending': analytics_pending,
         }
-
+        
         context.update(shared)
-
-        context['selected_category'] = selected_category
         context['selected_category'] = raw_category  # Keep original for UI highlighting
-
         context['category_terms'] = category_terms
         context['posts_with_terms'] = posts_with_terms[:100]
         
