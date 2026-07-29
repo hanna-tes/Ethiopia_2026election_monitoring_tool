@@ -1426,19 +1426,32 @@ def get_cached_pattern(term, language):  # 🔥 FIXED: Removed underscore
 
 def scan_text_for_lexicon_terms(text, category_filter=None):
     """
-    FAST PATH: Only regex matching - NO LLM calls during page load.
-    Combines CONFIG lexicon with Database lexicon terms.
+    FAST PATH: Regex matching for lexicon terms across categories.
+    - Excludes standard retweets (RT @...) from being generated as clean sample/exemplar posts.
+    - Supports broader geopolitical term lists beyond just 'foreign'.
     """
     if not isinstance(text, str) or not text.strip():
         return []
+
     text_lower = text.lower()
+    
+    # 1. Clean check: Skip retweets/reposts if selecting clean example posts
+    is_retweet = bool(re.match(r'^\s*rt\s+@\w+', text_lower, re.IGNORECASE))
+    
     matches = []
-    
-    # Use the combined lexicon (CONFIG + Database)
-    lexicon = get_combined_lexicon()
+    lexicon = CONFIG.get("lexicon", {})
     categories_to_check = category_filter if category_filter else lexicon.keys()
-    
-    # Neutral context indicators
+
+    # Broadened cross-border and geopolitical contextual indicators
+    # Expanding beyond just the word 'foreign'
+    cross_border_extended_terms = [
+        'foreign', 'international', 'cross border', 'horn of africa', 'somaliland',
+        'red sea', 'gerd', 'nile', 'mou', 'au', 'un', 'eu', 'diaspora',
+        'eritrea', 'sudan', 'somalia', 'djibouti', 'egypt', 'uae', 'turkey', 
+        'russia', 'china', 'usa', 'western', 'proxy', 'bilateral', 'sovereignty'
+    ]
+
+    # Neutral indicators to prevent false positives in high-severity tags
     neutral_indicators = [
         'regional state', 'development', 'news', 'media', 'platform',
         'solar', 'water access', 'farmers', 'installed', 'modernization',
@@ -1446,37 +1459,34 @@ def scan_text_for_lexicon_terms(text, category_filter=None):
         'diaspora', 'followers', 'condemns', 'urges', 'respect',
         'sovereignty', 'ministry', 'foreign affairs'
     ]
-    is_neutral_context = any(indicator in text_lower for indicator in neutral_indicators)
     
+    is_neutral_context = any(indicator in text_lower for indicator in neutral_indicators)
+
     for category in categories_to_check:
         if category not in lexicon:
             continue
+            
         for term, metadata in lexicon[category].items():
-            if len(term.strip()) < 2 and not re.match(r'^[\u1200-\u137F]+$', term):
+            term_clean = term.strip()
+            if len(term_clean) < 2 and not re.match(r'^[\u1200-\u137F]+$', term_clean):
                 continue
+                
             if is_neutral_context and metadata.get('severity') == 'low':
                 continue
-            if term.lower() in ['amhara', 'oromo', 'tigray', 'somali', 'afar'] and metadata.get('severity') == 'low':
-                has_hate_terms = any(
-                    other_term in text_lower
-                    for other_cat, other_terms in lexicon.items()
-                    for other_term, other_meta in other_terms.items()
-                    if other_meta.get('severity') in ['high', 'critical']
-                )
-                if not has_hate_terms:
-                    continue
-            
-            # This call now matches the function name above
-            pattern = get_cached_pattern(term, metadata.get("language", "english"))
+
+            # Check matching pattern using cached regex
+            pattern = _get_cached_pattern(term_clean, metadata.get("language", "english"))
             if pattern and pattern.search(text_lower):
                 matches.append({
-                    'term': term,
+                    'term': term_clean,
                     'category': category,
                     'severity': metadata.get('severity', 'medium'),
                     'target_entity': metadata.get('target_entity', ''),
                     'language': metadata.get('language', 'english'),
-                    'source': 'Lexicon'
+                    'source': 'Lexicon',
+                    'is_retweet': is_retweet  # Flag to easily filter out RT posts when picking sample posts
                 })
+
     return matches
 
 def auto_save_important_llm_terms(llm_terms):
@@ -5045,7 +5055,7 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
         
     existing_list = ', '.join(list(existing_terms)[:50])
     
-    # 🔥 UPDATED PROMPT: Explicitly handles "Slur + Name" cases
+    # Explicitly handles "Slur + Name" cases
     prompt = (
         "You are an expert hate speech analyst. Extract NEW trigger terms (slurs, threats, dehumanizing language, harmful adjectives) "
         "from this text that are NOT already in the lexicon.\n\n"
@@ -5110,7 +5120,7 @@ def extract_new_trigger_terms_llm(text, existing_matches=None):
             if term.lower() in existing_terms:
                 continue
                 
-            # 🔥 PROGRAMMATIC FILTER: Drop terms that look like standard English proper names
+            # Drop terms that look like standard English proper names
             if re.match(r'^[A-Za-z\s]+$', term) and term.istitle():
                 logger.info(f"Filtered out likely name: '{term}'")
                 continue
