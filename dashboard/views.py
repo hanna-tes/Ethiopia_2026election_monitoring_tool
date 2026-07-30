@@ -6344,7 +6344,7 @@ class LexiconsView(TemplateView):
     template_name = 'dashboard/lexicons.html'
     
     # ── CONFIGURATION ──────────────────────────────────────────────────────
-    SCAN_LIMIT = 5000           # Baseline limit for regular queries
+    #SCAN_LIMIT = 5000           # Baseline limit for regular queries
     TIMEOUT_SECONDS = 90        # Hard stop after 90 seconds (leaves buffer for 100s Cloudflare limit)
     CHUNK_SIZE = 1000           # Process posts in larger chunks
     CACHE_DURATION = 7200       # Cache for 2 hours (7200 seconds)
