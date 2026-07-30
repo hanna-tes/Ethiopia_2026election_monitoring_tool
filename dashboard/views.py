@@ -6431,6 +6431,7 @@ class LexiconsView(TemplateView):
 
     def get_context_data(self, **kwargs):
         import time
+        import json
         start_time = time.time()
         context = super().get_context_data(**kwargs)
         
@@ -6455,7 +6456,7 @@ class LexiconsView(TemplateView):
             context['posts_with_terms']  = []
             context['scan_timed_out']    = False
             return context
-
+    
         # ── 3. Fetch posts ────────────────────────────────────────────────
         try:
             _, start_date, end_date = get_election_posts_queryset(self.request)
@@ -6473,7 +6474,7 @@ class LexiconsView(TemplateView):
         
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
-
+    
         # Expand limits safely. Category view gets 10k, Overview gets 5k to prevent timeouts.
         effective_limit = 10000 if selected_category else self.SCAN_LIMIT
         scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
@@ -6483,7 +6484,7 @@ class LexiconsView(TemplateView):
         all_matches     = []
         posts_scanned   = 0
         scan_timed_out  = False
-
+    
         # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
             logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
@@ -6509,7 +6510,7 @@ class LexiconsView(TemplateView):
                     compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
                 except Exception:
                     compiled_category_re = None
-
+    
                 # Track seen posts to avoid duplicates
                 seen_post_ids = set()
                 seen_post_texts = set()
@@ -6571,9 +6572,9 @@ class LexiconsView(TemplateView):
                             'confidence':    1.0,
                             'model_category': selected_category,
                         })
-
+    
                 # ========================================================================
-                #  DYNAMIC LLM VALIDATION FOR ALL CATEGORIES
+                # 🔥 DYNAMIC LLM VALIDATION FOR ALL CATEGORIES
                 # ========================================================================
                 if posts_with_terms:
                     try:
@@ -6595,7 +6596,7 @@ class LexiconsView(TemplateView):
                             f"Here are the posts:\n{texts_for_llm}\n\n"
                             "Return ONLY a valid JSON array of the indices (0-based) of the posts that are VALID examples. Example: [0, 2, 5]"
                         )
-
+    
                         from .utils.llm_service import safe_llm_call
                         response = safe_llm_call(prompt, max_tokens=150)
                         
@@ -6616,14 +6617,14 @@ class LexiconsView(TemplateView):
                     except Exception as e:
                         logger.warning(f"⚠️ LLM validation for {selected_category} failed: {e}. Keeping original posts as fallback.")
                 # ========================================================================
-
+    
                 # LLM translations block for foreign terms
                 unique_foreign_terms = {t for p in posts_with_terms for t in p.get('matched_terms', []) if re.search(r'[^\x00-\x7F]', t)}
                 if unique_foreign_terms:
                     translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
                     for p_dict in posts_with_terms:
                         p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
-
+    
         # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
         else:
             logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
@@ -6639,7 +6640,7 @@ class LexiconsView(TemplateView):
                         all_matches.extend(matches)
                 except Exception as e: 
                     continue
-
+    
         # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
         try:
             term_counts     = Counter([m['term']     for m in all_matches])
@@ -6651,7 +6652,7 @@ class LexiconsView(TemplateView):
             for cat_key, count in raw_category_counts.items():
                 display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key)
                 category_counts[display_name] = count
-
+    
             if selected_category and category_terms:
                 top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
             else:
@@ -6672,7 +6673,7 @@ class LexiconsView(TemplateView):
             top_terms_with_meta = []
             category_counts     = Counter()
             severity_counts     = Counter()
-
+    
         # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
         wordcloud_base64 = None
         if all_matches and not selected_category:
@@ -6693,17 +6694,23 @@ class LexiconsView(TemplateView):
                             entities_found[match.strip()] += 1
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
             except Exception: pass
-
+    
         # ── 8. Build context ───────────────────────────────────────────────
         shared = {
-            'active_tab': 'lexicons', 'top_terms': top_terms_with_meta,
-            'category_counts': dict(category_counts), 'severity_counts': dict(severity_counts),
-            'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
-            'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
+            'active_tab': 'lexicons', 
+            'top_terms': top_terms_with_meta,
+            'category_counts': dict(category_counts), 
+            'severity_counts': dict(severity_counts),
+            'total_matches': len(all_matches), # ✅ FIXED: Prevents NameError
+            'posts_scanned': posts_scanned,
+            'total_posts': total_posts, 
+            'start_date': start_str, 
+            'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
-            'scan_timed_out': scan_timed_out, 'wordcloud_base64': wordcloud_base64,
+            'scan_timed_out': scan_timed_out, 
+            'wordcloud_base64': wordcloud_base64,
             'targeted_entities': targeted_entities,
-            'analytics_pending': len(all_matches) == 0 and total_posts > 0,
+            'analytics_pending': len(all_matches) == 0 and total_posts > 0, # ✅ FIXED: Prevents NameError
         }
         
         # ── CACHE (only simple data, no model instances) ───────
