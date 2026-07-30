@@ -6703,7 +6703,7 @@ class LexiconsView(TemplateView):
             'lexicon_term_count': self._get_lexicon_term_count(),
             'scan_timed_out': scan_timed_out, 'wordcloud_base64': wordcloud_base64,
             'targeted_entities': targeted_entities,
-            'analytics_pending': total_matches == 0 and total_posts > 0,
+            'analytics_pending': len(all_matches) == 0 and total_posts > 0,
         }
         
         # ── CACHE (only simple data, no model instances) ───────
