@@ -6429,7 +6429,9 @@ class LexiconsView(TemplateView):
             return True
         return False
 
-        def get_context_data(self, **kwargs):
+    def get_context_data(self, **kwargs):
+        import time
+        start_time = time.time()
         context = super().get_context_data(**kwargs)
         
         # ── 1. URL params ────────────────────────────────────────────────
@@ -6439,14 +6441,31 @@ class LexiconsView(TemplateView):
         # Translate display name to internal key before processing.
         selected_category = self.DISPLAY_TO_INTERNAL.get(raw_category, raw_category)
         
-        # ── 2. Fetch posts and materialized detections ────────────────────
+        # ── 2. Cache (overview only, keyed to date range) ─────────────────
+        req_start = self.request.GET.get('start_date', '')
+        req_end   = self.request.GET.get('end_date', '')
+        cache_key = f"lexicon_dashboard_v7_{req_start}_{req_end}_{view_all}_{selected_category}"
+        cached_data = cache.get(cache_key)
+        if cached_data and not selected_category:
+            logger.info("✅ LexiconsView: Serving from cache (instant load)")
+            context.update(cached_data)
+            context['lexicon_term_count'] = self._get_lexicon_term_count()
+            context['selected_category'] = ''
+            context['category_terms']    = []
+            context['posts_with_terms']  = []
+            context['scan_timed_out']    = False
+            return context
+
+        # ── 3. Fetch posts ────────────────────────────────────────────────
         try:
-            filtered_posts, start_date, end_date = get_election_posts_queryset(self.request)
-            filtered_posts = (
-                filtered_posts
-                .exclude(platform__icontains='media')
-                .exclude(platform__icontains='news')
-            )
+            _, start_date, end_date = get_election_posts_queryset(self.request)
+            query_filters = {}
+            if not view_all:
+                query_filters['timestamp_share__range'] = (start_date, end_date)
+            
+            filtered_posts = ProcessedPost.objects.filter(
+                **query_filters
+            ).exclude(platform__icontains='media').exclude(platform__icontains='news').order_by('-timestamp_share')
             total_posts = filtered_posts.count()
         except Exception as e:
             logger.error(f"LexiconsView error: {e}")
@@ -6455,161 +6474,246 @@ class LexiconsView(TemplateView):
         start_str = (start_date.date().isoformat() if hasattr(start_date, 'date') else str(start_date))
         end_str   = (end_date.date().isoformat() if hasattr(end_date, 'date') else str(end_date))
 
-        matches_qs = get_materialized_lexicon_matches(filtered_posts, category=selected_category)
-        total_matches = matches_qs.count()
-        posts_scanned = matches_qs.values('post_id').distinct().count()
-        analytics_pending = total_matches == 0 and total_posts > 0
-
-        category_terms = []
-        posts_with_terms = []
+        # Expand limits safely. Category view gets 10k, Overview gets 5k to prevent timeouts.
+        effective_limit = 10000 if selected_category else self.SCAN_LIMIT
+        scan_pool = filtered_posts[:effective_limit].iterator(chunk_size=2000)
         
+        category_terms  = []
+        posts_with_terms = []
+        all_matches     = []
+        posts_scanned   = 0
+        scan_timed_out  = False
+
+        # ── 4a. CATEGORY VIEW ──────────────────────────────────────────────
         if selected_category:
-            # 1. Get category terms
+            logger.info(f"LexiconsView: category view → {selected_category} (limit: {effective_limit} posts)")
+            
+            # 1. Look up using case-insensitive check in DB
             db_terms = LexiconTerm.objects.filter(category__iexact=selected_category)
             if db_terms.exists():
                 category_terms = [{'term': t.term, 'severity': t.severity, 'target_entity': t.target_entity, 'language': t.language} for t in db_terms]
             else:
+                # 2. Case-insensitive fallback lookup in the CONFIG dictionary
                 config_lexicon = CONFIG.get('lexicon', {})
                 matched_config_key = next((k for k in config_lexicon.keys() if k.lower() == selected_category.lower()), None)
                 if matched_config_key:
                     category_terms = [{'term': t, 'severity': m.get('severity', 'medium'), 'target_entity': m.get('target_entity', ''), 'language': m.get('language', '')} for t, m in config_lexicon[matched_config_key].items()]
-
-            # 2. Group matches by post
-            grouped_posts = defaultdict(lambda: {
-                'matched_terms': set(),
-                'post': None,
-            })
-            for match in matches_qs.select_related('post').order_by('-post__timestamp_share')[:500]:
-                item = grouped_posts[match.post_id]
-                item['post'] = match.post
-                item['matched_terms'].add(match.term)
-
-            # 3. Build the posts_with_terms list FIRST
-            for post_id, item in list(grouped_posts.items())[:100]:
-                post = item['post']
-                posts_with_terms.append({
-                    'id': post_id,
-                    'text': post.original_text,
-                    'platform': post.platform,
-                    'timestamp': post.timestamp_share,
-                    'url': post.url,
-                    'matched_terms': list(item['matched_terms'])[:5],
-                    'detected_by': 'Lexicon',
-                    'confidence': 1.0,
-                    'model_category': selected_category,
-                })
-
-            # 4. Apply LLM VALIDATION (since posts_with_terms is now populated)
-            if selected_category == 'foreign_interference' and posts_with_terms:
-                try:
-                    # Only validate the top 30 posts to keep page load fast
-                    posts_to_validate = posts_with_terms[:30]
-                    
-                    # Format texts for the LLM
-                    texts_for_llm = "\n".join([f"[{i}] {p['text'][:300]}" for i, p in enumerate(posts_to_validate)])
-                    
-                    prompt = (
-                        "You are an expert geopolitical analyst. I will give you a list of social media posts flagged by a keyword scanner for 'Cross-Border Geopolitical Narratives'.\n\n"
-                        "Your task is to identify which posts are ACTUALLY discussing cross-border geopolitical interference, foreign influence, or regional geopolitical narratives (e.g., Egypt/Sudan/Eritrea interfering in Ethiopia, foreign funding, proxy wars, GERD negotiations, foreign agents).\n\n"
-                        "REJECT posts that:\n"
-                        "- Merely mention a country name in a list or hashtag spam.\n"
-                        "- Use the word 'foreign' in an unrelated context (e.g., 'foreign policy' without substance, 'foreigner' in sports).\n"
-                        "- Are just general news without geopolitical context.\n\n"
-                        f"Here are the posts:\n{texts_for_llm}\n\n"
-                        "Return ONLY a valid JSON array of the indices (0-based) of the posts that are VALID examples. Example: [0, 2, 5]"
-                    )
-    
-                    from .utils.llm_service import safe_llm_call
-                    response = safe_llm_call(prompt, max_tokens=150)
-                    
-                    # Parse the JSON array from the LLM response
-                    json_match = re.search(r'\[.*?\]', response, re.DOTALL)
-                    if json_match:
-                        valid_indices = json.loads(json_match.group(0))
-                        # Filter the list to ONLY keep posts the LLM validated
-                        filtered_posts_llm = [posts_to_validate[i] for i in valid_indices if i < len(posts_to_validate)]
-                        
-                        # Fallback: keep original list if LLM returns empty or fails
-                        if filtered_posts_llm:
-                            posts_with_terms = filtered_posts_llm
-                            logger.info(f"✅ LLM filtered geopolitical posts: {len(posts_to_validate)} -> {len(posts_with_terms)}")
-                        else:
-                            logger.info("⚠️ LLM validation returned empty, keeping original posts as fallback.")
-                            
-                except Exception as e:
-                    logger.warning(f"⚠️ LLM validation for foreign_interference failed: {e}. Keeping original posts as fallback.")
-
-        # ── 5. Aggregate Analytics ─────────────────────────────────────────
-        category_counts = Counter()
-        for row in matches_qs.values('category').annotate(count=Count('id')).order_by('-count'):
-            display_name = self.CATEGORY_DISPLAY_NAMES.get(row['category'], row['category'])
-            category_counts[display_name] = row['count']
-
-        severity_counts = Counter({
-            row['severity']: row['count']
-            for row in matches_qs.values('severity').annotate(count=Count('id')).order_by('-count')
-        })
-
-        term_rows = matches_qs.values(
-            'term', 'severity', 'target_entity', 'language'
-        ).annotate(count=Count('id')).order_by('-count')[:50]
-        
-        top_terms_with_meta = [
-            {
-                'term': row['term'],
-                'count': row['count'],
-                'metadata': {
-                    'severity': row['severity'],
-                    'target_entity': row['target_entity'],
-                    'language': row['language'],
-                },
-            }
-            for row in term_rows
-            if len(row['term'].strip()) > 1
-        ]
-
-        # ── 6. Word cloud & Targeted entities ───────────────────────────
-        wordcloud_base64 = None
-        if top_terms_with_meta and not selected_category:
-            try:
-                valid_terms = [{'term': item['term'], 'count': item['count']} for item in top_terms_with_meta]
-                wc = generate_trigger_wordcloud({'top_terms': valid_terms})
-                if wc: 
-                    wordcloud_base64 = wordcloud_to_base64(wc)
-            except Exception: 
-                pass
+            
+            # This check is now completely safe!
+            if category_terms:
+                term_meta = {td['term'].lower(): td for td in category_terms if len(td['term']) > 1}
                 
+                # SPEED OPTIMIZATION: Pre-verify matching text layout using regex patterns
+                regex_pattern = r'(' + '|'.join(re.escape(t) for t in term_meta.keys()) + r')'
+                try:
+                    compiled_category_re = re.compile(regex_pattern, re.IGNORECASE)
+                except Exception:
+                    compiled_category_re = None
+
+                # Track seen posts to avoid duplicates
+                seen_post_ids = set()
+                seen_post_texts = set()
+                
+                for post in scan_pool:
+                    if self._check_timeout(start_time):
+                        scan_timed_out = True
+                        break
+                    posts_scanned += 1
+                    if not post.original_text: 
+                        continue
+                    
+                    # Skip RT/retweet posts
+                    if post.original_text.strip().lower().startswith('rt ') or post.original_text.strip().lower().startswith('rt\n'):
+                        continue
+                    
+                    # Skip if we've already seen this post
+                    if post.id in seen_post_ids:
+                        continue
+                    
+                    text       = post.original_text
+                    text_lower = text.lower()
+                    
+                    # Skip if we've already seen this exact text content
+                    text_hash = hash(text.strip())
+                    if text_hash in seen_post_texts:
+                        continue
+                    
+                    # Instantly drops unrelated records out of processing loop
+                    if compiled_category_re and not compiled_category_re.search(text_lower):
+                        continue
+                    
+                    is_inoc    = bool(_INNOCUOUS_RE.search(text_lower))
+                    matched_terms = []
+                    
+                    for term_lower, meta in term_meta.items():
+                        if term_lower not in text_lower:
+                            continue
+                        if not self._is_valid_context(meta['term'], text_lower):
+                            continue
+                        if not _is_genuine_match(term_lower, text_lower, meta.get('severity', 'medium'), is_inoc):
+                            continue
+                        matched_terms.append(meta['term'])
+                    
+                    all_matches.append({'term': matched_terms[0] if matched_terms else '', 'category': selected_category, 'severity': meta.get('severity', 'medium'), 'target_entity': meta.get('target_entity', ''), 'language': meta.get('language', '')})
+                    
+                    if matched_terms:
+                        # Mark this post as seen
+                        seen_post_ids.add(post.id)
+                        seen_post_texts.add(text_hash)
+                        posts_with_terms.append({
+                            'id':            post.id,
+                            'text':          text,
+                            'platform':      post.platform,
+                            'timestamp':     post.timestamp_share,
+                            'url':           post.url,
+                            'matched_terms': list(set(matched_terms))[:5],
+                            'detected_by':   'Lexicon',
+                            'confidence':    1.0,
+                            'model_category': selected_category,
+                        })
+
+                # ========================================================================
+                #  DYNAMIC LLM VALIDATION FOR ALL CATEGORIES
+                # ========================================================================
+                if posts_with_terms:
+                    try:
+                        # Only validate the top 30 posts to keep page load fast
+                        posts_to_validate = posts_with_terms[:30]
+                        
+                        # Format texts for the LLM
+                        texts_for_llm = "\n".join([f"[{i}] {p['text'][:300]}" for i, p in enumerate(posts_to_validate)])
+                        
+                        # Dynamically get the display name for the prompt
+                        category_display_name = self.CATEGORY_DISPLAY_NAMES.get(selected_category, selected_category.replace('_', ' ').title())
+                        
+                        prompt = (
+                            f"You are an expert content analyst. I will give you a list of social media posts flagged by a keyword scanner for the category: '{category_display_name}'.\n\n"
+                            f"Your task is to identify which posts are ACTUALLY relevant to '{category_display_name}' and contain genuine examples of this type of content, rather than just coincidental keyword matches, spam, or unrelated contexts.\n\n"
+                            "REJECT posts that:\n"
+                            "- Merely mention a keyword in a list, hashtag spam, or unrelated context.\n"
+                            "- Are just general news or spam without the specific thematic context of the category.\n\n"
+                            f"Here are the posts:\n{texts_for_llm}\n\n"
+                            "Return ONLY a valid JSON array of the indices (0-based) of the posts that are VALID examples. Example: [0, 2, 5]"
+                        )
+
+                        from .utils.llm_service import safe_llm_call
+                        response = safe_llm_call(prompt, max_tokens=150)
+                        
+                        # Parse the JSON array from the LLM response
+                        json_match = re.search(r'\[.*?\]', response, re.DOTALL)
+                        if json_match:
+                            valid_indices = json.loads(json_match.group(0))
+                            # Filter the list to ONLY keep posts the LLM validated
+                            filtered_posts_llm = [posts_to_validate[i] for i in valid_indices if i < len(posts_to_validate)]
+                            
+                            # Fallback: keep original list if LLM returns empty or fails
+                            if filtered_posts_llm:
+                                posts_with_terms = filtered_posts_llm
+                                logger.info(f"✅ LLM filtered {category_display_name} posts: {len(posts_to_validate)} -> {len(posts_with_terms)}")
+                            else:
+                                logger.info(f"⚠️ LLM validation returned empty for {category_display_name}, keeping original posts as fallback.")
+                                
+                    except Exception as e:
+                        logger.warning(f"⚠️ LLM validation for {selected_category} failed: {e}. Keeping original posts as fallback.")
+                # ========================================================================
+
+                # LLM translations block for foreign terms
+                unique_foreign_terms = {t for p in posts_with_terms for t in p.get('matched_terms', []) if re.search(r'[^\x00-\x7F]', t)}
+                if unique_foreign_terms:
+                    translations_map = batch_translate_terms_llm(list(unique_foreign_terms))
+                    for p_dict in posts_with_terms:
+                        p_dict['english_translations'] = [f"{t}: {translations_map[t]}" for t in p_dict.get('matched_terms', []) if t in translations_map]
+
+        # ── 4b. OVERVIEW SCAN ─────────────────────────────────────────────
+        else:
+            logger.info(f"LexiconsView: overview scan (limit: {effective_limit} posts)")
+            for post in scan_pool:
+                if self._check_timeout(start_time):
+                    scan_timed_out = True
+                    break
+                posts_scanned += 1
+                if not post.original_text: continue
+                try:
+                    matches = self._scan_post(post.original_text)
+                    if matches: 
+                        all_matches.extend(matches)
+                except Exception as e: 
+                    continue
+
+        # ── 5. AGGREGATE ANALYTICS ─────────────────────────────────────────
+        try:
+            term_counts     = Counter([m['term']     for m in all_matches])
+            raw_category_counts = Counter([m['category'] for m in all_matches])
+            severity_counts = Counter([m['severity'] for m in all_matches])
+            
+            # Transform category keys to display names
+            category_counts = Counter()
+            for cat_key, count in raw_category_counts.items():
+                display_name = self.CATEGORY_DISPLAY_NAMES.get(cat_key, cat_key)
+                category_counts[display_name] = count
+
+            if selected_category and category_terms:
+                top_terms_with_meta = sorted([{'term': td['term'], 'count': term_counts.get(td['term'], 0), 'metadata': td} for td in category_terms], key=lambda x: x['count'], reverse=True)
+            else:
+                top_terms_with_meta = []
+                for term, count in term_counts.most_common(15):
+                    if len(term.strip()) <= 1: continue
+                    metadata = {}
+                    for cat, terms in CONFIG.get('lexicon', {}).items():
+                        if term in terms: 
+                            metadata = terms[term]
+                            break
+                    if not metadata:
+                        db_t = LexiconTerm.objects.filter(term=term).first()
+                        if db_t: metadata = {'severity': db_t.severity, 'target_entity': db_t.target_entity, 'language': db_t.language}
+                    top_terms_with_meta.append({'term': term, 'count': count, 'metadata': metadata})
+        except Exception as e:
+            logger.error(f"LexiconsView: aggregation error: {e}")
+            top_terms_with_meta = []
+            category_counts     = Counter()
+            severity_counts     = Counter()
+
+        # ─ 6. Word cloud & 7. Targeted entities ───────────────────────────
+        wordcloud_base64 = None
+        if all_matches and not selected_category:
+            try:
+                valid_terms = [{'term': t, 'count': c} for t, c in term_counts.most_common(50) if len(t.strip()) > 1]
+                wc = generate_trigger_wordcloud({'top_terms': valid_terms})
+                if wc: wordcloud_base64 = wordcloud_to_base64(wc)
+            except Exception: pass
+            
         targeted_entities = []
         if not selected_category:
             try:
                 entity_patterns = [r'\b(Abiy\s+Ahmed|Prosperity\s+Party|FANO|NEBE)\b', r'\b(Amhara|Tigray|Oromo|Somali)\b']
                 entities_found = Counter()
-                for m in term_rows: #  using term_rows here as it has the matched terms
+                for m in all_matches:
                     for pattern in entity_patterns:
                         for match in re.findall(pattern, m['term'], re.IGNORECASE):
                             entities_found[match.strip()] += 1
                 targeted_entities = [{'entity': e, 'count': c} for e, c in entities_found.most_common(10)]
-            except Exception: 
-                pass
-        
-        # ── 7. Build context ───────────────────────────────────────────────
+            except Exception: pass
+
+        # ── 8. Build context ───────────────────────────────────────────────
         shared = {
-            'active_tab': 'lexicons', 
-            'top_terms': top_terms_with_meta,
-            'category_counts': dict(category_counts), 
-            'severity_counts': dict(severity_counts),
-            'total_matches': total_matches, 
-            'posts_scanned': posts_scanned,
-            'total_posts': total_posts, 
-            'start_date': start_str, 
-            'end_date': end_str,
+            'active_tab': 'lexicons', 'top_terms': top_terms_with_meta,
+            'category_counts': dict(category_counts), 'severity_counts': dict(severity_counts),
+            'total_matches': len(all_matches), 'posts_scanned': posts_scanned,
+            'total_posts': total_posts, 'start_date': start_str, 'end_date': end_str,
             'lexicon_term_count': self._get_lexicon_term_count(),
-            'scan_timed_out': False, 
-            'wordcloud_base64': wordcloud_base64,
+            'scan_timed_out': scan_timed_out, 'wordcloud_base64': wordcloud_base64,
             'targeted_entities': targeted_entities,
-            'analytics_pending': analytics_pending,
+            'analytics_pending': total_matches == 0 and total_posts > 0,
         }
         
+        # ── CACHE (only simple data, no model instances) ───────
+        if not selected_category:
+            try:
+                cache.set(cache_key, shared, self.CACHE_DURATION)
+                logger.info(f"💾 LexiconsView cached for {self.CACHE_DURATION}s")
+            except Exception as e:
+                logger.warning(f"Cache save failed: {e}")
+                
         context.update(shared)
         context['selected_category'] = raw_category  # Keep original for UI highlighting
         context['category_terms'] = category_terms
